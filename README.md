@@ -4,6 +4,8 @@ EvalData is a Python desktop application for loading, preparing, previewing, and
 
 Deeper project notes live in `docs/`, starting with `docs/technical-overview.md` and `docs/screenshots.md`.
 
+User-facing documentation starts with `docs/quickstart.md` and `docs/user-guide.md`.
+
 ## Features
 
 - dataset import and summary views
@@ -11,6 +13,18 @@ Deeper project notes live in `docs/`, starting with `docs/technical-overview.md`
 - overview plotting in the main window
 - a dedicated analysis workspace for filtering, spectral analysis, and cycle-oriented exploration
 - demo datasets for validating workflows and signal-processing behavior
+
+## Workflow Overview
+
+```mermaid
+flowchart TB
+	A[Load file or demo dataset] --> B[Review preview table and overview plot]
+	B --> C[Assign semantic column roles]
+	C --> D[Adjust visible output range]
+	D --> E[Create prepared dataset]
+	E --> F[Open analysis workspace]
+	F --> G[Filter signals, inspect spectra, analyze cycles]
+```
 
 ## Requirements
 
@@ -62,6 +76,17 @@ The repository now reserves `docs/images/` for UI screenshots and `docs/screensh
 
 No screenshots are committed yet, but the structure is in place so the GitHub page can grow without changing the repo layout again.
 
+## User Documentation
+
+For non-expert users, start here:
+
+- `docs/quickstart.md`: shortest path through the app using a demo dataset
+- `docs/user-guide.md`: step-by-step normal workflow
+- `docs/which-tool-when.md`: which part of the app to use for which job
+- `docs/data-formats.md`: supported file types, inputs, and exports
+- `docs/glossary.md`: plain-language definitions of the main terms
+- `docs/faq.md`: common problems and practical fixes
+
 ## Project Layout
 
 - `EvalData.py`: main application window and orchestration
@@ -80,5 +105,11 @@ The repository uses Markdown for the primary documentation so it renders directl
 
 Current documentation entry points:
 
+- `docs/quickstart.md`: end-user getting-started guide
+- `docs/user-guide.md`: end-user workflow reference
+- `docs/which-tool-when.md`: task-to-tool guidance
+- `docs/data-formats.md`: supported input and output behavior
+- `docs/glossary.md`: plain-language terminology
+- `docs/faq.md`: troubleshooting and common questions
 - `docs/technical-overview.md`: architecture and workflow overview
 - `docs/screenshots.md`: screenshot plan and image locations

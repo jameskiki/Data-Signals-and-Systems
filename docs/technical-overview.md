@@ -10,6 +10,18 @@ The current design separates three concerns:
 - preparation and preview workflows
 - reusable dataframe and signal-processing operations
 
+## Workflow Diagram
+
+```mermaid
+flowchart TB
+	Input[Raw file or demo data] --> Main[Main window]
+	Main --> Preview[Preview table and overview plot]
+	Preview --> Roles[Column role assignment]
+	Roles --> Prepare[Prepared dataset creation]
+	Prepare --> Workspace[Analysis workspace]
+	Workspace --> Output[Plots, summaries, spectra, cycle views]
+```
+
 ## Main Flow
 
 1. Load or generate a dataset in the main window.
@@ -19,6 +31,40 @@ The current design separates three concerns:
 5. Open a prepared dataset in the analysis workspace for detailed work.
 
 ## Module Structure
+
+```mermaid
+flowchart TB
+	subgraph MainWindow[Main Window]
+		EvalData[EvalData.py]
+		Layout[evaldata_layout.py]
+		Preview[evaldata_preview.py]
+		Preparation[evaldata_preparation.py]
+		Datasets[evaldata_datasets.py]
+		Demo[evaldata_demo.py]
+		Plotting[evaldata_plotting.py]
+	end
+
+	subgraph AnalysisWorkspace[Analysis Workspace]
+		Analysis[analysis_workspace.py]
+		AnalysisLayout[analysis_workspace_layout.py]
+		Refresh[analysis_workspace_refresh.py]
+		Actions[analysis_workspace_actions.py]
+		Views[analysis_workspace_views.py]
+		State[analysis_workspace_state.py]
+	end
+
+	subgraph DataLayer[Data Layer]
+		Ops[data_ops/*]
+		Compat[data_operations.py]
+	end
+
+	EvalData --> Analysis
+	EvalData --> Ops
+	Preview --> Ops
+	Preparation --> Ops
+	Analysis --> Ops
+	Compat --> Ops
+```
 
 ### Main Window
 
