@@ -1,10 +1,18 @@
 # EvalData
 
+## AI Assistance Notice
+
+This repository is entirely AI-generated. The author did not write the code manually, and the codebase, documentation, and analysis behavior should be treated as unreviewed output.
+
+Do not assume correctness, safety, or engineering validity. Before using this tool for real work, review and validate all important behavior manually, especially data parsing, transformations, exports, analysis results, and any engineering conclusions drawn from them.
+
 EvalData is a Python desktop application for loading, preparing, previewing, and analyzing measurement datasets.
 
 Deeper project notes live in `docs/`, starting with `docs/technical-overview.md` and `docs/screenshots.md`.
 
 User-facing documentation starts with `docs/quickstart.md` and `docs/user-guide.md`.
+
+Formal algorithm notes now also have a small LaTeX example in `docs/latex/`.
 
 ## Features
 
@@ -99,12 +107,6 @@ For non-expert users, start here:
 
 There is currently no automated test suite in the repository. The current baseline has been checked with module import smoke tests and a compile-time pass.
 
-## AI Assistance Notice
-
-This repository is entirely AI-generated. The author did not write the code manually, and the codebase, documentation, and analysis behavior should be treated as unreviewed output.
-
-Do not assume correctness, safety, or engineering validity. Before using this tool for real work, review and validate all important behavior manually, especially data parsing, transformations, exports, analysis results, and any engineering conclusions drawn from them.
-
 ## Documentation Approach
 
 The repository uses Markdown for the primary documentation so it renders directly on Git hosting. A later LaTeX-based technical manual remains a good option for deeper theory, figures, and formal documentation.
@@ -119,3 +121,5 @@ Current documentation entry points:
 - `docs/faq.md`: troubleshooting and common questions
 - `docs/technical-overview.md`: architecture and workflow overview
 - `docs/screenshots.md`: screenshot plan and image locations
+- `docs/latex/README.md`: LaTeX-based algorithm notes and PDF example
+- `docs/latex/fft_welch_example.pdf`: compiled LaTeX example covering FFT amplitude and Welch PSD

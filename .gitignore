@@ -12,6 +12,13 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+docs/latex/*.aux
+docs/latex/*.log
+docs/latex/*.out
+docs/latex/*.toc
+docs/latex/*.lof
+docs/latex/*.lot
+
 .vscode/settings.json
 
 Thumbs.db
