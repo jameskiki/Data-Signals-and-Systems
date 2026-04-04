@@ -2,7 +2,8 @@
 
 EvalData is a Python desktop application for loading, preparing, previewing, and analyzing measurement datasets.
 
-It provides:
+## Features
+
 - dataset import and summary views
 - preparation workflows for row-range selection, column-role assignment, and dataset splitting
 - overview plotting in the main window
@@ -12,11 +13,11 @@ It provides:
 ## Requirements
 
 - Python 3.12
-- Windows-oriented setup and packaging
+- Windows-oriented local setup and packaging
 
-## Run Locally
+## Local Setup
 
-Create and activate a virtual environment, install the dependencies, and launch the app:
+Create and activate a virtual environment, install dependencies, and launch the app:
 
 ```powershell
 python -m venv .venv
@@ -25,19 +26,33 @@ pip install -r requirements.txt
 python EvalData.py
 ```
 
-## Build Executable
+## Debugging In VS Code
 
-The repository includes a small helper script for setting up dependencies and building the executable with PyInstaller:
+The repository tracks `.vscode/launch.json` on purpose. It gives the project a shared debug profile that:
+
+- starts `EvalData.py`
+- runs from the workspace root
+- uses the project-local `.venv` interpreter
+
+That keeps debugger behavior aligned with the intended local setup.
+
+## Build And Release
+
+For a local executable build, use the helper script:
 
 ```powershell
 python deploy.py
 ```
 
-You can also build directly from the current environment:
+That script creates or reuses `.venv`, installs runtime dependencies plus PyInstaller, and builds the application.
+
+You can also build directly from an activated environment:
 
 ```powershell
 pyinstaller EvalData.py
 ```
+
+Generated build artifacts are written to `build/` and `dist/` and are intentionally ignored by Git.
 
 ## Project Layout
 
@@ -47,10 +62,10 @@ pyinstaller EvalData.py
 - `data_ops/`: pure dataframe and signal-processing helpers
 - `deploy.py`: environment/bootstrap build helper
 
-## Status
+## Validation Status
 
-There is currently no automated test suite in the repository. Basic validation has been done through module import checks and compile-time smoke checks.
+There is currently no automated test suite in the repository. The current baseline has been checked with module import smoke tests and a compile-time pass.
 
-## Documentation
+## Documentation Approach
 
-The main repository documentation is intentionally kept in Markdown for easy browsing on Git hosting. A later addition of a LaTeX-based technical manual remains a valid option for deeper documentation.
+The repository uses Markdown for the primary documentation so it renders directly on Git hosting. A later LaTeX-based technical manual remains a good option for deeper theory, figures, and formal documentation.
