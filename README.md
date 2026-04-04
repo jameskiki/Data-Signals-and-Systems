@@ -99,6 +99,12 @@ For non-expert users, start here:
 
 There is currently no automated test suite in the repository. The current baseline has been checked with module import smoke tests and a compile-time pass.
 
+## AI Assistance Notice
+
+This repository is entirely AI-generated. The author did not write the code manually, and the codebase, documentation, and analysis behavior should be treated as unreviewed output.
+
+Do not assume correctness, safety, or engineering validity. Before using this tool for real work, review and validate all important behavior manually, especially data parsing, transformations, exports, analysis results, and any engineering conclusions drawn from them.
+
 ## Documentation Approach
 
 The repository uses Markdown for the primary documentation so it renders directly on Git hosting. A later LaTeX-based technical manual remains a good option for deeper theory, figures, and formal documentation.
