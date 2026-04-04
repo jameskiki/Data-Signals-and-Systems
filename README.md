@@ -2,6 +2,8 @@
 
 EvalData is a Python desktop application for loading, preparing, previewing, and analyzing measurement datasets.
 
+Deeper project notes live in `docs/`, starting with `docs/technical-overview.md` and `docs/screenshots.md`.
+
 ## Features
 
 - dataset import and summary views
@@ -54,6 +56,12 @@ pyinstaller EvalData.py
 
 Generated build artifacts are written to `build/` and `dist/` and are intentionally ignored by Git.
 
+## Screenshots
+
+The repository now reserves `docs/images/` for UI screenshots and `docs/screenshots.md` for a capture checklist and image index.
+
+No screenshots are committed yet, but the structure is in place so the GitHub page can grow without changing the repo layout again.
+
 ## Project Layout
 
 - `EvalData.py`: main application window and orchestration
@@ -69,3 +77,8 @@ There is currently no automated test suite in the repository. The current baseli
 ## Documentation Approach
 
 The repository uses Markdown for the primary documentation so it renders directly on Git hosting. A later LaTeX-based technical manual remains a good option for deeper theory, figures, and formal documentation.
+
+Current documentation entry points:
+
+- `docs/technical-overview.md`: architecture and workflow overview
+- `docs/screenshots.md`: screenshot plan and image locations
