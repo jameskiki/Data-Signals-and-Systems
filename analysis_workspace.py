@@ -1,0 +1,852 @@
+"""Interactive analysis workspace for exploring a loaded dataframe."""
+
+import os
+from collections.abc import Callable
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import numpy as np
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+from analysis_workspace_actions import (
+    build_derived_signal_update,
+    build_reset_update,
+    build_signal_filter_update,
+    build_simple_filter_update,
+)
+from analysis_workspace_layout import build_analysis_workspace_ui
+from analysis_workspace_refresh import (
+    refresh_filter_controls,
+    refresh_history,
+    refresh_overview,
+    refresh_plot_controls,
+    refresh_role_widget_styles,
+    refresh_sidebar,
+    set_default_output_names,
+)
+from analysis_workspace_state import (
+    ANALYSIS_WINDOW_GEOMETRY,
+    DERIVED_OPERATIONS,
+    FFT_WINDOW_OPTIONS,
+    PREVIEW_ROW_LIMIT,
+    AnalysisSession,
+    UI_FREQUENCY_ANALYSIS_METHODS,
+)
+from analysis_workspace_views import render_correlation_view, render_dataframe_preview, render_fft_peaks_tree, render_statistics_tree
+from analysis_workspace_views import render_cycle_metrics_tree
+from data_ops.cycles import (
+    CycleAnalysisResult,
+    compute_fixed_length_cycle_analysis,
+    compute_cycle_analysis_from_ranges,
+    detect_rising_edge_cycle_ranges,
+)
+from display_format import apply_numeric_axis_format, format_display_number, format_display_percent
+from evaldata_demo import describe_demo_frequency_expectations
+from evaldata_datasets import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
+
+from data_ops.filtering import resolve_filtered_column_name
+from data_ops.models import SIGNAL_FILTER_OPERATIONS
+from data_ops.spectral import (
+    FrequencySpectrumResult,
+    compute_coherence_spectrum,
+    compute_fft_spectrum,
+    compute_transfer_estimate,
+    compute_welch_psd,
+)
+from data_ops.summary import summarize_dataframe
+from plot_utils import create_plot_figure
+
+
+class AnalysisWorkspace:
+    """Tkinter window for filtering, deriving, plotting, and exporting one dataset."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        dataset_path: str,
+        dataframe: pd.DataFrame,
+        column_roles: dict[str, str] | None = None,
+        dataset_description: str = "",
+        on_close: Callable[["AnalysisWorkspace"], None] | None = None,
+    ) -> None:
+        self.parent = parent
+        self.on_close = on_close
+        self.column_roles = dict(column_roles or {})
+        self.dataset_description = dataset_description
+        self.session = AnalysisSession(
+            source_path=dataset_path,
+            original_frame=dataframe.copy(),
+            working_frame=dataframe.copy(),
+            history=[f"Opened analysis workspace for {os.path.basename(dataset_path)}"],
+        )
+        self.window = tk.Toplevel(parent)
+        self.window.title(f"Analysis Workspace - {os.path.basename(dataset_path)}")
+        self.window.geometry(ANALYSIS_WINDOW_GEOMETRY)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+
+        self.dataset_label_var = tk.StringVar()
+        self.original_shape_var = tk.StringVar()
+        self.working_shape_var = tk.StringVar()
+        self.numeric_columns_var = tk.StringVar()
+        self.role_summary_var = tk.StringVar(value=summarize_column_roles(self.column_roles))
+        self.active_column_var = tk.StringVar()
+
+        self.filter_min_var = tk.StringVar()
+        self.filter_max_var = tk.StringVar()
+        self.keep_missing_var = tk.BooleanVar(value=False)
+        self.filter_output_name_var = tk.StringVar()
+        self.signal_filter_operation_var = tk.StringVar(value=SIGNAL_FILTER_OPERATIONS[0])
+        self.signal_filter_window_var = tk.StringVar(value="5")
+        self.signal_filter_alpha_var = tk.StringVar(value="0.2")
+        self.signal_filter_name_var = tk.StringVar()
+
+        self.derived_operation_var = tk.StringVar(value=DERIVED_OPERATIONS[0])
+        self.derived_source_var = tk.StringVar()
+        self.derived_reference_var = tk.StringVar(value="Index")
+        self.derived_name_var = tk.StringVar()
+        self.derived_window_var = tk.StringVar(value="5")
+
+        self.plot_x_var = tk.StringVar(value="Index")
+        self.plot_y_selection_summary_var = tk.StringVar(value="No numeric channels available")
+        self.plot_subplots_var = tk.BooleanVar(value=True)
+        self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
+        self.fft_reference_var = tk.StringVar(value="Index")
+        self.frequency_compare_var = tk.StringVar(value="")
+        self.fft_sample_spacing_var = tk.StringVar(value="1.0")
+        self.fft_window_var = tk.StringVar(value=FFT_WINDOW_OPTIONS[0])
+        self.fft_detrend_var = tk.BooleanVar(value=True)
+        self.welch_segment_length_var = tk.StringVar(value="256")
+        self.welch_overlap_fraction_var = tk.StringVar(value="0.5")
+        self.fft_summary_var = tk.StringVar(value=self._default_frequency_summary_text())
+        self.frequency_expectation_var = tk.StringVar(value="Select a signal to see built-in hints for demo datasets.")
+        self.cycle_length_var = tk.StringVar(value="100")
+        self.cycle_mode_var = tk.StringVar(value="fixed_length")
+        self.cycle_reference_var = tk.StringVar(value="Index")
+        self.cycle_threshold_var = tk.StringVar(value="0.0")
+        self.cycle_max_cycles_var = tk.StringVar(value="")
+        self.cycle_summary_var = tk.StringVar(value="Analyze equal-length cycles for the active column.")
+
+        self._plot_figure: plt.Figure | None = None
+        self._plot_canvas: FigureCanvasTkAgg | None = None
+        self._plot_toolbar: NavigationToolbar2Tk | None = None
+        self._fft_figure: plt.Figure | None = None
+        self._fft_canvas: FigureCanvasTkAgg | None = None
+        self._fft_toolbar: NavigationToolbar2Tk | None = None
+        self._preview_tree: tk.Widget | None = None
+        self._stats_tree: ttk.Treeview | None = None
+        self._correlation_widget: tk.Widget | None = None
+        self._fft_peaks_tree: ttk.Treeview | None = None
+        self._cycle_figure: plt.Figure | None = None
+        self._cycle_canvas: FigureCanvasTkAgg | None = None
+        self._cycle_toolbar: NavigationToolbar2Tk | None = None
+        self._cycle_metrics_tree: ttk.Treeview | None = None
+        self._latest_cycle_result: CycleAnalysisResult | None = None
+        self.plot_y_selector_button: ttk.Menubutton | None = None
+        self.plot_y_selector_menu: tk.Menu | None = None
+        self.plot_y_selection_vars: dict[str, tk.BooleanVar] = {}
+        self._plot_y_selector_sync_in_progress = False
+
+        build_analysis_workspace_ui(self)
+        self.active_column_var.trace_add("write", self._handle_active_column_changed)
+        self.frequency_analysis_var.trace_add("write", self._handle_frequency_expectation_changed)
+        self.frequency_compare_var.trace_add("write", self._handle_frequency_expectation_changed)
+        self.plot_x_var.trace_add("write", self._handle_role_widget_selection_changed)
+        self.derived_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
+        self.fft_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
+        self.cycle_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
+        self.signal_filter_operation_var.trace_add("write", self._handle_output_defaults_changed)
+        self.derived_operation_var.trace_add("write", self._handle_output_defaults_changed)
+        self._refresh_all_views()
+        self._refresh_live_plot()
+
+    def close(self) -> None:
+        """Destroy the window and release plotting resources."""
+
+        if self._plot_figure is not None:
+            plt.close(self._plot_figure)
+            self._plot_figure = None
+        if self._fft_figure is not None:
+            plt.close(self._fft_figure)
+            self._fft_figure = None
+        if self._cycle_figure is not None:
+            plt.close(self._cycle_figure)
+            self._cycle_figure = None
+        self._fft_toolbar = None
+        self._cycle_toolbar = None
+        self.window.destroy()
+        if self.on_close is not None:
+            self.on_close(self)
+
+    def _refresh_all_views(self) -> None:
+        self.session.last_summary = summarize_dataframe(self.session.working_frame)
+        refresh_sidebar(self)
+        refresh_history(self)
+        refresh_overview(self)
+        self._refresh_preview()
+        refresh_filter_controls(self)
+        self._refresh_statistics()
+        refresh_plot_controls(self)
+        self._refresh_frequency_expectation()
+
+    def _refresh_preview(self) -> None:
+        self._preview_tree = render_dataframe_preview(
+            self.preview_container,
+            self.session.working_frame,
+            PREVIEW_ROW_LIMIT,
+            self.column_roles,
+        )
+
+    def _refresh_statistics(self) -> None:
+        stats_frame = self.session.last_summary.statistics_frame if self.session.last_summary else pd.DataFrame()
+        self._stats_tree = render_statistics_tree(self.stats_container, stats_frame, self.column_roles)
+
+        correlation_frame = self.session.last_summary.correlation_frame if self.session.last_summary else pd.DataFrame()
+        self._correlation_widget = render_correlation_view(self.correlation_container, correlation_frame)
+
+    def _refresh_live_plot(self) -> None:
+        if not self.session.selected_y_columns:
+            self._clear_plot_container()
+            return
+
+        figure = create_plot_figure(
+            [self.session.source_path],
+            {self.session.source_path: self.session.working_frame},
+            self.session.selected_y_columns,
+            self.session.selected_x_column,
+            use_subplots=self.session.use_subplots,
+            column_roles=self.column_roles,
+        )
+        self._render_plot_figure(figure)
+
+    def _apply_filter(self) -> None:
+        column = self.active_column_var.get().strip()
+        if not column:
+            messagebox.showwarning("Warning", "Select an active analysis column")
+            return
+
+        output_column = resolve_filtered_column_name(column, self.filter_output_name_var.get())
+
+        try:
+            update = build_simple_filter_update(
+                self.session.working_frame,
+                active_column=column,
+                output_name=self.filter_output_name_var.get(),
+                minimum_value=self.filter_min_var.get(),
+                maximum_value=self.filter_max_var.get(),
+                keep_missing=self.keep_missing_var.get(),
+            )
+        except Exception as error:
+            messagebox.showerror("Filter Error", str(error))
+            return
+
+        self._replace_working_frame(
+            update.dataframe,
+            update.history_entry,
+            role_overrides={output_column: self.column_roles.get(column, "signal")},
+            focus_column=output_column,
+        )
+
+    def _apply_signal_filter(self) -> None:
+        source_column = self.active_column_var.get().strip()
+        operation = self.signal_filter_operation_var.get().strip()
+        if not source_column:
+            messagebox.showwarning("Warning", "Select an active analysis column")
+            return
+
+        output_column = resolve_filtered_column_name(source_column, self.signal_filter_name_var.get())
+
+        try:
+            update = build_signal_filter_update(
+                self.session.working_frame,
+                source_column=source_column,
+                operation=operation,
+                output_name=self.signal_filter_name_var.get(),
+                window_size=int(self.signal_filter_window_var.get() or "5"),
+                alpha=float(self.signal_filter_alpha_var.get() or "0.2"),
+            )
+        except Exception as error:
+            messagebox.showerror("Signal Filter Error", str(error))
+            return
+
+        self._replace_working_frame(
+            update.dataframe,
+            update.history_entry,
+            role_overrides={output_column: self.column_roles.get(source_column, "signal")},
+            focus_column=output_column,
+        )
+        self.signal_filter_name_var.set("")
+
+    def _apply_derived_signal(self) -> None:
+        source_column = self.active_column_var.get().strip()
+        operation = self.derived_operation_var.get().strip()
+        new_column = self.derived_name_var.get().strip()
+        reference_column = self.derived_reference_var.get().strip() or "Index"
+        if not source_column:
+            messagebox.showwarning("Warning", "Select an active analysis column")
+            return
+
+        try:
+            update = build_derived_signal_update(
+                self.session.working_frame,
+                source_column=source_column,
+                operation=operation,
+                new_column=new_column,
+                reference_column=None if reference_column == "Index" else reference_column,
+                window_size=int(self.derived_window_var.get() or "5"),
+            )
+        except Exception as error:
+            messagebox.showerror("Derived Signal Error", str(error))
+            return
+
+        derived_role = self.column_roles.get(source_column, "signal")
+        if derived_role == "time":
+            derived_role = "signal"
+        self._replace_working_frame(
+            update.dataframe,
+            update.history_entry,
+            role_overrides={new_column: derived_role},
+            focus_column=new_column,
+        )
+        self.derived_name_var.set("")
+
+    def _compute_fft(self) -> None:
+        source_column = self.active_column_var.get().strip()
+        if not source_column:
+            messagebox.showwarning("Warning", "Select an active analysis column")
+            return
+
+        reference_column = self.fft_reference_var.get().strip() or "Index"
+        analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
+        try:
+            common_kwargs = {
+                "dataframe": self.session.working_frame,
+                "source_column": source_column,
+                "reference_column": None if reference_column == "Index" else reference_column,
+                "sample_spacing": float(self.fft_sample_spacing_var.get() or "1.0"),
+                "window": self.fft_window_var.get().strip(),
+                "detrend": self.fft_detrend_var.get(),
+            }
+            if analysis_name == "Welch PSD":
+                result = compute_welch_psd(
+                    **common_kwargs,
+                    segment_length=int(self.welch_segment_length_var.get() or "256"),
+                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
+                )
+            elif analysis_name == "Transfer Estimate":
+                result = compute_transfer_estimate(
+                    **common_kwargs,
+                    comparison_column=self.frequency_compare_var.get().strip(),
+                    segment_length=int(self.welch_segment_length_var.get() or "256"),
+                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
+                )
+            elif analysis_name == "Coherence":
+                result = compute_coherence_spectrum(
+                    **common_kwargs,
+                    comparison_column=self.frequency_compare_var.get().strip(),
+                    segment_length=int(self.welch_segment_length_var.get() or "256"),
+                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
+                )
+            else:
+                result = compute_fft_spectrum(**common_kwargs)
+        except Exception as error:
+            messagebox.showerror("Frequency Analysis Error", str(error))
+            return
+
+        self._render_fft_result(result)
+        self.session.history.append(
+            f"Computed {result.analysis_name} for {source_column} using {reference_column} with {result.window} window"
+        )
+        refresh_history(self)
+
+    def _compute_cycle_analysis(self) -> None:
+        source_column = self.active_column_var.get().strip()
+        if not source_column:
+            messagebox.showwarning("Warning", "Select an active analysis column")
+            return
+
+        try:
+            cycle_length = int(self.cycle_length_var.get().strip() or "0")
+            max_cycles_text = self.cycle_max_cycles_var.get().strip()
+            max_cycles = int(max_cycles_text) if max_cycles_text else None
+            cycle_mode = self.cycle_mode_var.get().strip() or "fixed_length"
+            if cycle_mode == "rising_edge":
+                reference_column = self.cycle_reference_var.get().strip() or "Index"
+                threshold = float(self.cycle_threshold_var.get().strip() or "0.0")
+                resolved_reference = source_column if reference_column == "Index" else reference_column
+                cycle_ranges = detect_rising_edge_cycle_ranges(
+                    self.session.working_frame,
+                    reference_column=resolved_reference,
+                    threshold=threshold,
+                    min_cycle_length=cycle_length,
+                    max_cycles=max_cycles,
+                )
+                result = compute_cycle_analysis_from_ranges(
+                    self.session.working_frame,
+                    source_column=source_column,
+                    cycle_ranges=cycle_ranges,
+                    method="rising_edge",
+                    reference_column=resolved_reference,
+                )
+            else:
+                result = compute_fixed_length_cycle_analysis(
+                    self.session.working_frame,
+                    source_column=source_column,
+                    cycle_length=cycle_length,
+                    max_cycles=max_cycles,
+                )
+        except Exception as error:
+            messagebox.showerror("Cycle Analysis Error", str(error))
+            return
+
+        self._render_cycle_result(result)
+        self.session.history.append(
+            f"Analyzed {result.cycle_count} cycles of length {result.cycle_length} for {source_column}"
+        )
+        refresh_history(self)
+
+    def _update_plot(self) -> None:
+        selected_columns = self._get_selected_plot_y_columns()
+        if not selected_columns:
+            messagebox.showwarning("Warning", "Select at least one Y column")
+            return
+
+        x_column = self.plot_x_var.get().strip() or "Index"
+        self.session.selected_x_column = x_column
+        self.session.selected_y_columns = selected_columns
+        self.session.use_subplots = self.plot_subplots_var.get()
+
+        figure = create_plot_figure(
+            [self.session.source_path],
+            {self.session.source_path: self.session.working_frame},
+            selected_columns,
+            x_column,
+            use_subplots=self.session.use_subplots,
+            column_roles=self.column_roles,
+        )
+        self._render_plot_figure(figure)
+
+    def _render_plot_figure(self, figure: plt.Figure) -> None:
+        self._clear_plot_container()
+
+        self._plot_figure = figure
+        self._plot_canvas = FigureCanvasTkAgg(figure, master=self.plot_container)
+        self._plot_canvas.draw()
+        self._plot_toolbar = NavigationToolbar2Tk(self._plot_canvas, self.plot_container)
+        self._plot_toolbar.update()
+        self._plot_toolbar.pack(side=tk.TOP, fill=tk.X)
+        self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+
+    def _clear_plot_container(self) -> None:
+        if self._plot_figure is not None:
+            plt.close(self._plot_figure)
+            self._plot_figure = None
+        self._plot_canvas = None
+        self._plot_toolbar = None
+        for widget in self.plot_container.winfo_children():
+            widget.destroy()
+
+    def _render_fft_result(self, result: FrequencySpectrumResult) -> None:
+        self._clear_fft_results()
+        self.fft_summary_var.set(self._build_frequency_summary(result))
+
+        self._fft_peaks_tree = render_fft_peaks_tree(
+            self.fft_peaks_container,
+            result.peaks_frame,
+            value_column_label=result.value_column_label,
+        )
+
+        figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
+        frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
+        amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
+        axis.plot(frequencies, amplitudes, linewidth=1.2)
+        axis.set_title(result.plot_title, fontsize=10)
+        axis.set_xlabel("Frequency [Hz]", fontsize=9)
+        axis.set_ylabel(result.y_axis_label, fontsize=9)
+        axis.grid(True, alpha=0.3)
+        axis.margins(x=0.02)
+        apply_numeric_axis_format(axis, format_x=True, format_y=True)
+        figure.tight_layout()
+
+        self._fft_figure = figure
+        self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
+        self._fft_canvas.draw()
+        self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
+        self._fft_toolbar.update()
+        self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
+        self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        self.plot_notebook.select(self.frequency_plot_tab)
+
+    def _clear_fft_results(self, message: str | None = None) -> None:
+        if self._fft_figure is not None:
+            plt.close(self._fft_figure)
+            self._fft_figure = None
+        self._fft_canvas = None
+        self._fft_toolbar = None
+        self._fft_peaks_tree = None
+        for container in (self.frequency_plot_container, self.fft_peaks_container):
+            for widget in container.winfo_children():
+                widget.destroy()
+        if message:
+            ttk.Label(self.frequency_plot_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
+
+    def _render_cycle_result(self, result: CycleAnalysisResult) -> None:
+        self._clear_cycle_results()
+        self._latest_cycle_result = result
+        self.cycle_summary_var.set(
+            " | ".join(
+                [
+                    f"Source: {result.source_column}",
+                    f"Mode: {result.method}",
+                    f"Ref: {result.reference_column}",
+                    f"Cycle length: {result.cycle_length}",
+                    f"Cycles: {result.cycle_count}",
+                    f"Dropped rows: {result.dropped_rows}",
+                ]
+            )
+        )
+
+        self._cycle_metrics_tree = render_cycle_metrics_tree(self.cycle_metrics_container, result.metrics_frame)
+        if self._cycle_metrics_tree is not None:
+            self._cycle_metrics_tree.bind("<<TreeviewSelect>>", self._handle_cycle_metrics_selection_changed)
+        self._render_cycle_plot(result)
+
+    def _render_cycle_plot(self, result: CycleAnalysisResult) -> None:
+        selected_indices = self._get_selected_cycle_indices()
+        if not selected_indices:
+            selected_indices = list(range(result.cycle_count))
+
+        cycle_values = result.cycles_frame.iloc[selected_indices].to_numpy()
+        representative_frame = pd.DataFrame(
+            {
+                "step": result.representative_frame["step"],
+                "mean": cycle_values.mean(axis=0),
+                "std": cycle_values.std(axis=0, ddof=1) if len(selected_indices) > 1 else np.zeros(cycle_values.shape[1]),
+            }
+        )
+        figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.4), dpi=100, sharex=False)
+        step_values = representative_frame["step"].to_numpy()
+        max_plotted_cycles = min(len(selected_indices), 20)
+        for cycle_index in range(max_plotted_cycles):
+            axes[0].plot(step_values, cycle_values[cycle_index], color="#94a3b8", alpha=0.22, linewidth=0.9)
+        mean_values = representative_frame["mean"].to_numpy()
+        std_values = representative_frame["std"].fillna(0).to_numpy()
+        axes[0].fill_between(step_values, mean_values - std_values, mean_values + std_values, color="#14b8a6", alpha=0.18)
+        axes[0].plot(step_values, mean_values, color="#0f766e", linewidth=2.0)
+        if len(selected_indices) >= 4:
+            half = max(1, len(selected_indices) // 2)
+            early_mean = cycle_values[:half].mean(axis=0)
+            late_mean = cycle_values[-half:].mean(axis=0)
+            axes[0].plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
+            axes[0].plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
+            axes[0].legend(fontsize=8, loc="best")
+        axes[0].set_title("Representative cycle", fontsize=10)
+        axes[0].set_xlabel("Sample within cycle", fontsize=9)
+        axes[0].set_ylabel(result.source_column, fontsize=9)
+        axes[0].grid(True, alpha=0.3)
+        apply_numeric_axis_format(axes[0], format_x=True, format_y=True)
+
+        selected_metrics = result.metrics_frame.iloc[selected_indices]
+        axes[1].plot(selected_metrics["cycle"], selected_metrics["mean"], label="mean", linewidth=1.4)
+        axes[1].plot(selected_metrics["cycle"], selected_metrics["rms"], label="rms", linewidth=1.4)
+        axes[1].plot(selected_metrics["cycle"], selected_metrics["peak_to_peak"], label="p2p", linewidth=1.2)
+        axes[1].set_title("Cycle-to-cycle trend", fontsize=10)
+        axes[1].set_xlabel("Cycle", fontsize=9)
+        axes[1].set_ylabel("Metric", fontsize=9)
+        axes[1].grid(True, alpha=0.3)
+        axes[1].legend(fontsize=8, loc="best")
+        apply_numeric_axis_format(axes[1], format_x=True, format_y=True)
+        figure.tight_layout()
+
+        self._cycle_figure = figure
+        self._cycle_canvas = FigureCanvasTkAgg(figure, master=self.cycle_plot_container)
+        self._cycle_canvas.draw()
+        self._cycle_toolbar = NavigationToolbar2Tk(self._cycle_canvas, self.cycle_plot_container)
+        self._cycle_toolbar.update()
+        self._cycle_toolbar.pack(side=tk.TOP, fill=tk.X)
+        self._cycle_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        self.notebook.select(self.cycles_tab)
+        self.plot_notebook.select(self.cycle_plot_tab)
+
+    def _get_selected_cycle_indices(self) -> list[int]:
+        if self._cycle_metrics_tree is None:
+            return []
+        selected_items = self._cycle_metrics_tree.selection()
+        if not selected_items:
+            return []
+        item_to_index = {item_id: index for index, item_id in enumerate(self._cycle_metrics_tree.get_children())}
+        return [item_to_index[item_id] for item_id in selected_items if item_id in item_to_index]
+
+    def _handle_cycle_metrics_selection_changed(self, _event: tk.Event | None = None) -> None:
+        if self._latest_cycle_result is not None:
+            self._render_cycle_plot(self._latest_cycle_result)
+
+    def _select_all_cycles(self) -> None:
+        if self._cycle_metrics_tree is None:
+            return
+        item_ids = self._cycle_metrics_tree.get_children()
+        self._cycle_metrics_tree.selection_set(item_ids)
+        if self._latest_cycle_result is not None:
+            self._render_cycle_plot(self._latest_cycle_result)
+
+    def _clear_selected_cycles(self) -> None:
+        if self._cycle_metrics_tree is None:
+            return
+        self._cycle_metrics_tree.selection_remove(self._cycle_metrics_tree.selection())
+        if self._latest_cycle_result is not None:
+            self._render_cycle_plot(self._latest_cycle_result)
+
+    def _clear_cycle_results(self, message: str | None = None) -> None:
+        if self._cycle_figure is not None:
+            plt.close(self._cycle_figure)
+            self._cycle_figure = None
+        self._cycle_canvas = None
+        self._cycle_toolbar = None
+        self._cycle_metrics_tree = None
+        self._latest_cycle_result = None
+        for container in (self.cycle_plot_container, self.cycle_metrics_container):
+            for widget in container.winfo_children():
+                widget.destroy()
+        if message:
+            ttk.Label(self.cycle_metrics_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
+            ttk.Label(self.cycle_plot_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
+
+    def _reset_working_data(self) -> None:
+        update = build_reset_update(self.session.original_frame)
+        self._replace_working_frame(update.dataframe, update.history_entry)
+
+    def _export_current_view(self) -> None:
+        save_path = filedialog.asksaveasfilename(
+            title="Export current view",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not save_path:
+            return
+
+        self.session.working_frame.to_csv(save_path, sep=";", index=False)
+        self.session.history.append(f"Exported current working dataframe to {os.path.basename(save_path)}")
+        refresh_history(self)
+        messagebox.showinfo("Exported", f"Saved current view to:\n{save_path}")
+
+    def _replace_working_frame(
+        self,
+        dataframe: pd.DataFrame,
+        history_entry: str,
+        role_overrides: dict[str, str] | None = None,
+        focus_column: str | None = None,
+    ) -> None:
+        self.session.working_frame = dataframe.copy()
+        self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
+        self.session.working_revision += 1
+        self.session.history.append(history_entry)
+        self.fft_summary_var.set(self._default_frequency_summary_text())
+        self._clear_fft_results("Recompute the frequency analysis after data changes.")
+        self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
+        self._clear_cycle_results("Recompute cycle analysis after data changes.")
+        self._refresh_all_views()
+        if focus_column and focus_column in self.session.working_frame.columns:
+            self.active_column_var.set(focus_column)
+
+    def _set_default_output_names(self) -> None:
+        set_default_output_names(self)
+
+    def _handle_active_column_changed(self, *_args: object) -> None:
+        self.filter_output_name_var.set("")
+        self.signal_filter_name_var.set("")
+        self.derived_name_var.set("")
+        self.fft_summary_var.set(self._default_frequency_summary_text())
+        self._clear_fft_results("Compute the frequency analysis for the currently active column.")
+        self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
+        self._clear_cycle_results("Compute cycle analysis for the currently active column.")
+        refresh_filter_controls(self)
+        refresh_plot_controls(self)
+        self._set_default_output_names()
+        self._refresh_frequency_expectation()
+        self._refresh_role_widget_styles()
+
+    def _handle_frequency_expectation_changed(self, *_args: object) -> None:
+        self.fft_summary_var.set(self._default_frequency_summary_text())
+        self._refresh_frequency_method_controls()
+        self._refresh_frequency_expectation()
+        self._refresh_role_widget_styles()
+
+    def _handle_output_defaults_changed(self, *_args: object) -> None:
+        self._set_default_output_names()
+
+    def _handle_role_widget_selection_changed(self, *_args: object) -> None:
+        self._refresh_role_widget_styles()
+
+    def _refresh_role_widget_styles(self) -> None:
+        refresh_role_widget_styles(self)
+        self._refresh_active_column_badges()
+
+    def _refresh_frequency_method_controls(self) -> None:
+        analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
+        uses_comparison = analysis_name in {"Transfer Estimate", "Coherence"}
+        uses_welch_settings = analysis_name in {"Welch PSD", "Transfer Estimate", "Coherence"}
+
+        for widget_name in ("frequency_compare_label", "frequency_compare_combo"):
+            widget = getattr(self, widget_name, None)
+            if widget is None:
+                continue
+            if uses_comparison:
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+        for widget_name in (
+            "welch_segment_length_label",
+            "welch_segment_length_entry",
+            "welch_overlap_fraction_label",
+            "welch_overlap_fraction_entry",
+        ):
+            widget = getattr(self, widget_name, None)
+            if widget is None:
+                continue
+            if uses_welch_settings:
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+        if hasattr(self, "frequency_compare_combo") and self.frequency_compare_combo is not None:
+            if uses_comparison:
+                self.frequency_compare_combo.state(["!disabled"])
+            else:
+                self.frequency_compare_combo.state(["disabled"])
+
+    def _default_frequency_summary_text(self) -> str:
+        analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
+        if analysis_name == "Welch PSD":
+            return "Ready to estimate a power spectral density for the selected signal."
+        return "Ready to inspect the dominant frequencies in the selected signal."
+
+    def _refresh_active_column_badges(self) -> None:
+        active_column = self.active_column_var.get().strip()
+        role_name = get_column_role(self.column_roles, active_column) if active_column else "metadata"
+        background, foreground = get_column_role_cell_colors(role_name)
+        for label_name in (
+            "filter_active_column_label",
+            "signal_filter_active_column_label",
+            "derived_active_column_label",
+            "frequency_active_column_label",
+            "cycles_active_column_label",
+        ):
+            label = getattr(self, label_name, None)
+            if label is not None:
+                label.configure(bg=background, fg=foreground)
+
+    def _set_plot_y_column_options(self, numeric_columns: list[str], selected_columns: list[str]) -> None:
+        if self.plot_y_selector_menu is None or self.plot_y_selector_button is None:
+            return
+
+        self.plot_y_selection_vars = {}
+        self.plot_y_selector_menu.delete(0, tk.END)
+        if not numeric_columns:
+            self._clear_plot_y_column_selector()
+            return
+
+        self.plot_y_selector_menu.add_command(label="Select all", command=self._select_all_plot_y_columns)
+        self.plot_y_selector_menu.add_command(label="Clear selection", command=self._clear_selected_plot_y_columns)
+        self.plot_y_selector_menu.add_separator()
+
+        self._plot_y_selector_sync_in_progress = True
+        for column_name in numeric_columns:
+            variable = tk.BooleanVar(value=column_name in selected_columns)
+            variable.trace_add("write", self._handle_plot_y_column_selector_changed)
+            self.plot_y_selection_vars[column_name] = variable
+            background, foreground = self._get_plot_y_selector_colors(column_name)
+            self.plot_y_selector_menu.add_checkbutton(
+                label=column_name,
+                variable=variable,
+                onvalue=True,
+                offvalue=False,
+                background=background,
+                foreground=foreground,
+                activebackground=background,
+                activeforeground=foreground,
+                selectcolor=background,
+            )
+        self._plot_y_selector_sync_in_progress = False
+        self.plot_y_selector_button.state(["!disabled"])
+        self._update_plot_y_column_summary()
+
+    def _clear_plot_y_column_selector(self) -> None:
+        self.plot_y_selection_vars = {}
+        if self.plot_y_selector_menu is not None:
+            self.plot_y_selector_menu.delete(0, tk.END)
+        if self.plot_y_selector_button is not None:
+            self.plot_y_selector_button.state(["disabled"])
+        self.plot_y_selection_summary_var.set("No numeric channels available")
+
+    def _handle_plot_y_column_selector_changed(self, *_args: object) -> None:
+        self._update_plot_y_column_summary()
+        if not self._plot_y_selector_sync_in_progress:
+            self.session.selected_y_columns = self._get_selected_plot_y_columns()
+
+    def _update_plot_y_column_summary(self) -> None:
+        selected_columns = self._get_selected_plot_y_columns()
+        if not self.plot_y_selection_vars:
+            self.plot_y_selection_summary_var.set("No numeric channels available")
+            return
+        if not selected_columns:
+            self.plot_y_selection_summary_var.set("Choose channels")
+            return
+        if len(selected_columns) <= 2:
+            self.plot_y_selection_summary_var.set(", ".join(selected_columns))
+            return
+        shown_columns = ", ".join(selected_columns[:2])
+        self.plot_y_selection_summary_var.set(f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}")
+
+    def _select_all_plot_y_columns(self) -> None:
+        self._plot_y_selector_sync_in_progress = True
+        for variable in self.plot_y_selection_vars.values():
+            variable.set(True)
+        self._plot_y_selector_sync_in_progress = False
+        self.session.selected_y_columns = self._get_selected_plot_y_columns()
+        self._update_plot_y_column_summary()
+
+    def _clear_selected_plot_y_columns(self) -> None:
+        self._plot_y_selector_sync_in_progress = True
+        for variable in self.plot_y_selection_vars.values():
+            variable.set(False)
+        self._plot_y_selector_sync_in_progress = False
+        self.session.selected_y_columns = self._get_selected_plot_y_columns()
+        self._update_plot_y_column_summary()
+
+    def _get_selected_plot_y_columns(self) -> list[str]:
+        return [column for column, variable in self.plot_y_selection_vars.items() if variable.get()]
+
+    def _get_plot_y_selector_colors(self, column_name: str) -> tuple[str, str]:
+        return get_column_role_cell_colors(self.column_roles.get(column_name, "metadata"))
+
+    def _refresh_frequency_expectation(self) -> None:
+        active_column = self.active_column_var.get().strip()
+        if not active_column:
+            self.frequency_expectation_var.set("Select a signal to see built-in hints for demo datasets.")
+            return
+        self.frequency_expectation_var.set(
+            describe_demo_frequency_expectations(
+                self.session.working_frame,
+                active_column,
+                self.frequency_analysis_var.get(),
+                self.frequency_compare_var.get(),
+            )
+        )
+
+    @staticmethod
+    def _build_frequency_summary(result: FrequencySpectrumResult) -> str:
+        summary_parts = [
+            f"n={result.sample_count}",
+            f"dt={format_display_number(result.sample_spacing)} s",
+            f"fs={format_display_number(result.sampling_frequency)} Hz",
+            f"dominant={format_display_number(result.dominant_frequency)} Hz",
+            f"{result.value_column_label.lower()}={format_display_number(result.dominant_amplitude)}",
+            result.spacing_source_text,
+        ]
+        if result.comparison_column:
+            summary_parts.append(f"vs={result.comparison_column}")
+        if result.uniformity_ratio > 0.05:
+            summary_parts.append(f"nonuniformity~{format_display_percent(result.uniformity_ratio)}")
+        return " | ".join(summary_parts)

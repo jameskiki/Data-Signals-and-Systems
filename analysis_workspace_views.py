@@ -1,0 +1,385 @@
+"""Reusable Tk rendering helpers for the analysis workspace."""
+
+import math
+import tkinter as tk
+from tkinter import font as tkfont, ttk
+
+import pandas as pd
+from display_format import format_display_value
+from evaldata_datasets import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+
+from analysis_workspace_state import (
+    CORRELATION_DIAGONAL_COLOR,
+    CORRELATION_HEADER_COLOR,
+    CORRELATION_NEGATIVE_THRESHOLD,
+    CORRELATION_POSITIVE_THRESHOLD,
+    CORRELATION_STRONG_NEGATIVE_COLOR,
+    CORRELATION_STRONG_POSITIVE_COLOR,
+    STATISTICS_COLUMNS,
+    STATISTICS_COLUMN_LABELS,
+)
+
+
+def render_dataframe_preview(
+    container: ttk.Frame,
+    dataframe: pd.DataFrame,
+    row_limit: int,
+    column_roles: dict[str, str] | None = None,
+) -> tk.Canvas:
+    """Render a scrollable, role-colored preview of the first rows of the dataframe."""
+
+    _clear_container(container)
+
+    preview_frame = dataframe.head(row_limit)
+    columns = [str(column) for column in preview_frame.columns]
+    resolved_roles = column_roles or {}
+
+    outer_frame = ttk.Frame(container)
+    outer_frame.pack(fill=tk.BOTH, expand=True)
+    outer_frame.rowconfigure(0, weight=1)
+    outer_frame.columnconfigure(0, weight=1)
+
+    canvas = tk.Canvas(outer_frame, highlightthickness=0, borderwidth=0)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    vertical_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
+    vertical_scrollbar.grid(row=0, column=1, sticky="ns")
+    horizontal_scrollbar = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=canvas.xview)
+    horizontal_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+    canvas.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
+
+    grid_frame = tk.Frame(canvas)
+    window_id = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+
+    _build_preview_cell(grid_frame, 0, 0, "#", "#eef2f6", "#444444", bold=True, anchor="center")
+    for column_index, column_name in enumerate(columns, start=1):
+        role_name = get_column_role(resolved_roles, column_name)
+        background, foreground = get_column_role_colors(role_name)
+        header_text = f"{column_name}\n[{get_column_role_label(resolved_roles, column_name)}]"
+        _build_preview_cell(grid_frame, 0, column_index, header_text, background, foreground, bold=True, anchor="w")
+
+    for row_index, row in enumerate(preview_frame.iterrows(), start=1):
+        _, row_values = row
+        _build_preview_cell(grid_frame, row_index, 0, str(row_index - 1), "#eef2f6", "#444444", anchor="e")
+        for column_index, column_name in enumerate(preview_frame.columns, start=1):
+            role_name = get_column_role(resolved_roles, str(column_name))
+            background, foreground = get_column_role_cell_colors(role_name)
+            _build_preview_cell(
+                grid_frame,
+                row_index,
+                column_index,
+                _format_preview_value(row_values[column_name]),
+                background,
+                foreground,
+                anchor="w",
+            )
+
+    def _sync_scroll_region(_event: tk.Event | None = None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _sync_window_size(event: tk.Event) -> None:
+        canvas.itemconfigure(window_id, height=max(event.height, grid_frame.winfo_reqheight()))
+
+    grid_frame.bind("<Configure>", _sync_scroll_region)
+    canvas.bind("<Configure>", _sync_window_size)
+    _sync_scroll_region()
+    return canvas
+
+
+def render_statistics_tree(
+    container: ttk.Frame,
+    stats_frame: pd.DataFrame,
+    column_roles: dict[str, str] | None = None,
+) -> ttk.Treeview:
+    """Render a compact engineering statistics tree."""
+
+    _clear_container(container)
+
+    tree_font = tkfont.nametofont("TkDefaultFont")
+    tree = ttk.Treeview(container, columns=["column", *STATISTICS_COLUMNS], show="headings")
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    tree.heading("column", text="column")
+    column_width = _measure_tree_column_width(
+        tree_font,
+        "column",
+        [str(row_name) for row_name in stats_frame.index],
+        minimum=70,
+        maximum=180,
+    )
+    tree.column("column", width=column_width, minwidth=column_width, anchor="w", stretch=False)
+    for column in STATISTICS_COLUMNS:
+        label = STATISTICS_COLUMN_LABELS.get(column, column)
+        values = [_format_stat_value(value) for value in stats_frame.get(column, pd.Series(dtype=object)).tolist()]
+        width = _measure_tree_column_width(tree_font, label, values, minimum=44, maximum=90)
+        tree.heading(column, text=label)
+        tree.column(column, width=width, minwidth=width, anchor="center", stretch=False)
+
+    resolved_roles = column_roles or {}
+    for role_name, (background, foreground) in {
+        role: get_column_role_colors(role)
+        for role in {get_column_role(resolved_roles, str(row_name)) for row_name in stats_frame.index}
+    }.items():
+        tree.tag_configure(role_name, background=background, foreground=foreground)
+
+    for row_name, row_values in stats_frame.iterrows():
+        formatted_values = [_format_stat_value(row_values[column]) for column in STATISTICS_COLUMNS]
+        role_name = get_column_role(resolved_roles, str(row_name))
+        tree.insert("", tk.END, values=[row_name, *formatted_values], tags=(role_name,))
+
+    stats_scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+    stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree.config(yscrollcommand=stats_scrollbar.set)
+    return tree
+
+
+def render_correlation_view(container: ttk.Frame, correlation_frame: pd.DataFrame) -> tk.Canvas | None:
+    """Render the correlation matrix as a scrollable, color-coded grid."""
+
+    _clear_container(container)
+
+    if correlation_frame.empty:
+        ttk.Label(
+            container,
+            text="At least two numeric columns are required for correlations.",
+            justify=tk.LEFT,
+        ).pack(anchor="w")
+        return None
+
+    columns = [str(column) for column in correlation_frame.columns]
+    row_labels = [f"{row_index}. {row_name}" for row_index, row_name in enumerate(correlation_frame.index, start=1)]
+    rounded_frame = correlation_frame.round(3)
+    outer_frame = ttk.Frame(container)
+    outer_frame.pack(fill=tk.BOTH, expand=True)
+    canvas = tk.Canvas(outer_frame, highlightthickness=0, borderwidth=0)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    vertical_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
+    vertical_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    horizontal_scrollbar = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=canvas.xview)
+    horizontal_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+    canvas.config(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
+
+    grid_frame = ttk.Frame(canvas)
+    window_id = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+    header_font = tkfont.nametofont("TkDefaultFont").copy()
+    header_font.configure(weight="bold")
+
+    _build_correlation_header_cell(grid_frame, 0, 0, "#", header_font)
+    for column_index, _column in enumerate(columns, start=1):
+        _build_correlation_header_cell(grid_frame, 0, column_index, str(column_index), header_font)
+
+    for row_index, row_label in enumerate(row_labels, start=1):
+        _build_correlation_header_cell(grid_frame, row_index, 0, row_label, header_font, anchor="w")
+        for column_index, column in enumerate(columns, start=1):
+            value = rounded_frame.iloc[row_index - 1, column_index - 1]
+            display_value = "" if (column_index - 1) > (row_index - 1) or pd.isna(value) else _format_correlation_value(value)
+            background, foreground = _get_correlation_cell_colors(column_index - 1, row_index - 1, value)
+            label = tk.Label(
+                grid_frame,
+                text=display_value,
+                bg=background,
+                fg=foreground,
+                borderwidth=1,
+                relief="solid",
+                padx=8,
+                pady=5,
+                width=max(7, math.ceil(len(str(column)) * 0.85)),
+                anchor="e",
+            )
+            label.grid(row=row_index, column=column_index, sticky="nsew")
+
+    def _sync_scroll_region(_event: tk.Event | None = None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _sync_window_size(event: tk.Event) -> None:
+        canvas.itemconfigure(window_id, height=max(event.height, grid_frame.winfo_reqheight()))
+
+    grid_frame.bind("<Configure>", _sync_scroll_region)
+    canvas.bind("<Configure>", _sync_window_size)
+    _sync_scroll_region()
+    return canvas
+
+
+def render_fft_peaks_tree(container: ttk.Frame, peaks_frame: pd.DataFrame, value_column_label: str = "Amp") -> ttk.Treeview | None:
+    """Render a compact table of dominant spectral peaks."""
+
+    _clear_container(container)
+
+    if peaks_frame.empty:
+        ttk.Label(container, text="No FFT peaks available.", justify=tk.LEFT).pack(anchor="w")
+        return None
+
+    tree = ttk.Treeview(container, columns=["rank", "frequency_hz", "amplitude"], show="headings")
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    tree.heading("rank", text="#")
+    tree.heading("frequency_hz", text="Hz")
+    tree.heading("amplitude", text=value_column_label)
+    tree.column("rank", width=45, minwidth=45, anchor="center", stretch=False)
+    tree.column("frequency_hz", width=90, minwidth=90, anchor="e", stretch=False)
+    tree.column("amplitude", width=100, minwidth=100, anchor="e", stretch=False)
+
+    for row in peaks_frame.itertuples(index=False):
+        tree.insert(
+            "",
+            tk.END,
+            values=(int(row.rank), _format_stat_value(row.frequency_hz), _format_stat_value(row.amplitude)),
+        )
+
+    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree.config(yscrollcommand=scrollbar.set)
+    return tree
+
+
+def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame) -> ttk.Treeview | None:
+    """Render a compact per-cycle metrics table."""
+
+    _clear_container(container)
+
+    if metrics_frame.empty:
+        ttk.Label(container, text="No cycle metrics available.", justify=tk.LEFT).pack(anchor="w")
+        return None
+
+    columns = ["cycle", "start", "end", "length", "mean", "std", "min", "max", "rms", "peak_to_peak"]
+    labels = {
+        "cycle": "#",
+        "start": "start",
+        "end": "end",
+        "length": "len",
+        "mean": "mean",
+        "std": "sd",
+        "min": "min",
+        "max": "max",
+        "rms": "rms",
+        "peak_to_peak": "p2p",
+    }
+
+    tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="extended")
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    tree.heading("cycle", text=labels["cycle"])
+    tree.column("cycle", width=45, minwidth=45, anchor="center", stretch=False)
+    for column_name in columns[1:4]:
+        tree.heading(column_name, text=labels[column_name])
+        tree.column(column_name, width=68, minwidth=60, anchor="e", stretch=False)
+    for column_name in columns[4:]:
+        tree.heading(column_name, text=labels[column_name])
+        tree.column(column_name, width=82, minwidth=72, anchor="e", stretch=False)
+
+    for row in metrics_frame.itertuples(index=False):
+        tree.insert(
+            "",
+            tk.END,
+            values=(
+                int(row.cycle),
+                int(row.start),
+                int(row.end),
+                int(row.length),
+                _format_stat_value(row.mean),
+                _format_stat_value(row.std),
+                _format_stat_value(row.min),
+                _format_stat_value(row.max),
+                _format_stat_value(row.rms),
+                _format_stat_value(row.peak_to_peak),
+            ),
+        )
+
+    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree.config(yscrollcommand=scrollbar.set)
+    return tree
+
+
+def _clear_container(container: ttk.Frame) -> None:
+    for widget in container.winfo_children():
+        widget.destroy()
+
+
+def _build_preview_cell(
+    grid_frame: tk.Frame,
+    row_index: int,
+    column_index: int,
+    text: str,
+    background: str,
+    foreground: str,
+    bold: bool = False,
+    anchor: str = "w",
+) -> None:
+    font = ("TkDefaultFont", 9, "bold") if bold else ("TkDefaultFont", 9)
+    label = tk.Label(
+        grid_frame,
+        text=text,
+        bg=background,
+        fg=foreground,
+        borderwidth=1,
+        relief="solid",
+        padx=6,
+        pady=4,
+        justify=tk.LEFT,
+        anchor=anchor,
+        font=font,
+        wraplength=180,
+    )
+    label.grid(row=row_index, column=column_index, sticky="nsew")
+
+
+def _measure_tree_column_width(
+    tree_font: tkfont.Font,
+    header: str,
+    values: list[str],
+    minimum: int,
+    maximum: int,
+) -> int:
+    measured_width = tree_font.measure(header)
+    for value in values:
+        measured_width = max(measured_width, tree_font.measure(value))
+    return max(minimum, min(maximum, measured_width + 16))
+
+
+def _build_correlation_header_cell(
+    grid_frame: ttk.Frame,
+    row_index: int,
+    column_index: int,
+    text: str,
+    font: tkfont.Font,
+    anchor: str = "center",
+) -> None:
+    label = tk.Label(
+        grid_frame,
+        text=text,
+        bg="#eef2f6",
+        fg=CORRELATION_HEADER_COLOR,
+        font=font,
+        borderwidth=1,
+        relief="solid",
+        padx=8,
+        pady=5,
+        anchor=anchor,
+    )
+    label.grid(row=row_index, column=column_index, sticky="nsew")
+
+
+def _get_correlation_cell_colors(column_index: int, row_index: int, value: object) -> tuple[str, str]:
+    if column_index > row_index or pd.isna(value):
+        return "#f7f7f7", "#aaaaaa"
+
+    numeric_value = float(value)
+    if column_index == row_index:
+        return "#dbeafe", CORRELATION_DIAGONAL_COLOR
+    if numeric_value >= CORRELATION_POSITIVE_THRESHOLD:
+        return "#d9f2d9", CORRELATION_STRONG_POSITIVE_COLOR
+    if numeric_value <= CORRELATION_NEGATIVE_THRESHOLD:
+        return "#f8d7da", CORRELATION_STRONG_NEGATIVE_COLOR
+    if numeric_value >= 0:
+        return "#eef7ee", "#2f4f2f"
+    return "#fbefef", "#6d2e2e"
+
+
+def _format_correlation_value(value: object) -> str:
+    return format_display_value(value)
+
+
+def _format_preview_value(value: object) -> str:
+    return format_display_value(value)
+
+
+def _format_stat_value(value: object) -> str:
+    return format_display_value(value)

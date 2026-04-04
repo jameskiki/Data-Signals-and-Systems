@@ -1,0 +1,35 @@
+ToDo
+
+Preparation
+- verify live UI behavior for overview state restore
+- simplify plotting / UI logic where useful
+- improve demo signal coverage
+- defer for later: add a LaTeX-based technical manual or deeper documentation alongside a simple Markdown README
+- defer for later: remove or reduce per-dataset preview state persistence in the main window if it still feels heavy
+- defer for later: simplify analysis workspace frequency tools by demoting saved results and advanced methods behind a lighter workflow
+- defer for later: move overview plot controls into their own tab or collapsible section while keeping the plot visible
+- defer for later: tabulate or further compact the output and channel controls in the preparation UI
+
+Analysis Workspace
+- finish FFT workflow cleanup
+- add plot / subplot settings dialog
+- support plotting into an existing figure or subplot
+
+Cycle Analysis
+- add a dedicated Cycles tab in the analysis workspace
+- detect or define cycles and select which to analyze
+- compare cycle-to-cycle metrics and trends
+- show representative cycle, spread, and drift over time
+
+System Analysis
+- add transfer function / frequency response workflow
+- add coherence and input-output analysis
+- add system identification and model comparison
+
+Model Builder
+- build datasets for modeling
+- focus on nonlinear models
+
+
+Questiosn
+- why is dat_ops the only folder you ever created? why no other structuring?
