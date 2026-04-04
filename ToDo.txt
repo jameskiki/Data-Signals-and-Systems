@@ -10,6 +10,12 @@ Preparation
 - defer for later: move overview plot controls into their own tab or collapsible section while keeping the plot visible
 - defer for later: tabulate or further compact the output and channel controls in the preparation UI
 
+Documentation
+- add actual screenshots for the main workflow and analysis workspace
+- defer for later: add a first-task walkthrough for non-expert users using one concrete example workflow
+- validate the user guide wording with a non-expert user and tighten unclear steps
+- expand Mermaid diagrams where they improve orientation without cluttering the docs
+
 Analysis Workspace
 - finish FFT workflow cleanup
 - add plot / subplot settings dialog
@@ -31,5 +37,5 @@ Model Builder
 - focus on nonlinear models
 
 
-Questiosn
-- why is dat_ops the only folder you ever created? why no other structuring?
+Questions
+- why is data_ops the only folder you ever created? why no other structuring?
