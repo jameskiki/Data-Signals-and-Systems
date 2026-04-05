@@ -3,7 +3,8 @@
 import tkinter as tk
 from tkinter import ttk
 
-from evaldata_demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
+from documentation_links import DOCUMENTATION_LINKS
+from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
 
 def build_main_ui(app, preview_row_limit: int) -> None:
@@ -36,10 +37,8 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar.add_cascade(label="Files", menu=file_menu)
 
     preparation_menu = tk.Menu(menu_bar, tearoff=0)
-    preparation_advanced_menu = tk.Menu(preparation_menu, tearoff=0)
     preparation_menu.add_command(label="Create Prepared Dataset", command=app.create_prepared_dataset)
-    preparation_advanced_menu.add_command(label="Split Into Subframes", command=app.split_selected_dataset)
-    preparation_menu.add_cascade(label="Advanced", menu=preparation_advanced_menu)
+    preparation_menu.add_command(label="Split Into Subframes", command=app.split_selected_dataset)
     menu_bar.add_cascade(label="Preparation", menu=preparation_menu)
 
     visualization_menu = tk.Menu(menu_bar, tearoff=0)
@@ -50,13 +49,21 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     analysis_menu.add_command(label="Open Analysis Workspace", command=app.open_analysis_workspace)
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
 
+    help_menu = tk.Menu(menu_bar, tearoff=0)
+    for documentation_link in DOCUMENTATION_LINKS:
+        help_menu.add_command(
+            label=documentation_link.label,
+            command=lambda relative_path=documentation_link.relative_path: app.open_documentation(relative_path),
+        )
+    menu_bar.add_cascade(label="Help", menu=help_menu)
+
     app.root.config(menu=menu_bar)
 
     main_pane = ttk.Panedwindow(app.root, orient=tk.VERTICAL)
     main_pane.pack(fill=tk.BOTH, expand=True)
 
     preparation_panel = ttk.LabelFrame(main_pane, text="Dataset Preparation", padding=5)
-    dataset_panel = ttk.LabelFrame(main_pane, text="Datasets", padding=5)
+    dataset_panel = ttk.LabelFrame(main_pane, text="Loaded Datasets", padding=5)
     main_pane.add(preparation_panel, weight=6)
     main_pane.add(dataset_panel, weight=1)
 
@@ -69,7 +76,7 @@ def build_dataset_panel(app, parent: ttk.LabelFrame) -> None:
 
     ttk.Label(
         parent,
-        text="Loaded and prepared datasets with their current analysis context.",
+        text="Loaded source datasets and prepared datasets with their current analysis context.",
         wraplength=1100,
         justify=tk.LEFT,
     ).pack(anchor="w", padx=5, pady=(5, 8))
@@ -117,56 +124,60 @@ def build_dataset_panel(app, parent: ttk.LabelFrame) -> None:
 
 
 def build_preparation_panel(app, parent: ttk.LabelFrame, preview_row_limit: int) -> None:
-    """Build the upper preparation notebook panel."""
+    """Build the upper preparation workspace panel."""
 
-    notebook = ttk.Notebook(parent)
-    notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    workspace = ttk.Frame(parent, padding=8)
+    workspace.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    workspace.columnconfigure(0, weight=3)
+    workspace.columnconfigure(1, weight=5)
+    workspace.rowconfigure(0, weight=0)
+    workspace.rowconfigure(1, weight=1)
 
-    info_tab = ttk.Frame(notebook)
-    preview_tab = ttk.Frame(notebook)
-    notebook.add(info_tab, text="Info")
-    notebook.add(preview_tab, text="Preview")
-
-    build_info_tab(app, info_tab)
-
-    ttk.Label(
-        preview_tab,
-        text=f"Showing the first {preview_row_limit} rows of the selected dataset.",
-    ).pack(anchor="w", padx=5, pady=(5, 0))
-    app._preview_table_container = ttk.Frame(preview_tab)
-    app._preview_table_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    build_info_tab(app, workspace)
+    build_preview_views_notebook(app, workspace, preview_row_limit)
 
 
 def build_info_tab(app, parent: ttk.Frame) -> None:
-    """Build the dataset context, controls, and preview plot area."""
+    """Build the dataset context and preparation controls area."""
 
-    info_frame = ttk.Frame(parent, padding=10)
-    info_frame.pack(fill=tk.BOTH, expand=True)
-    info_frame.columnconfigure(0, weight=3)
-    info_frame.columnconfigure(1, weight=5)
-    info_frame.rowconfigure(0, weight=0)
-    info_frame.rowconfigure(1, weight=1)
-    info_frame.rowconfigure(2, weight=0)
-
-    context_frame = ttk.LabelFrame(info_frame, text="Selected Dataset")
-    context_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=(0, 5))
+    context_frame = ttk.LabelFrame(parent, text="Selected Dataset")
+    context_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=(0, 4))
     ttk.Label(context_frame, textvariable=app.selected_dataset_var, wraplength=360).pack(anchor="w", padx=5, pady=(5, 2))
     ttk.Label(context_frame, textvariable=app.dataset_shape_var, wraplength=360).pack(anchor="w", padx=5, pady=2)
     ttk.Label(context_frame, textvariable=app.dataset_source_var, wraplength=360).pack(anchor="w", padx=5, pady=2)
     ttk.Label(context_frame, textvariable=app.dataset_note_var, wraplength=360).pack(anchor="w", padx=5, pady=(2, 5))
 
-    manipulations_frame = ttk.LabelFrame(info_frame, text="Manipulations")
-    manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=5)
+    manipulations_frame = ttk.LabelFrame(parent, text="Preparation")
+    manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=(4, 0))
     build_manipulations_frame(app, manipulations_frame)
 
-    controls_frame = ttk.LabelFrame(info_frame, text="Overview Plot Controls")
-    controls_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 5), pady=(5, 0))
-    controls_frame.columnconfigure(0, weight=1)
+def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int) -> None:
+    """Build the right-side notebook for plot and table previews."""
 
-    preview_plot_frame = ttk.LabelFrame(info_frame, text="Overview Plot")
-    preview_plot_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(5, 0))
-    signal_list_frame = ttk.Frame(controls_frame)
-    signal_list_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=(5, 2))
+    preview_frame = ttk.LabelFrame(parent, text="Preview")
+    preview_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(5, 0))
+    preview_frame.columnconfigure(0, weight=1)
+    preview_frame.rowconfigure(0, weight=1)
+
+    preview_notebook = ttk.Notebook(preview_frame)
+    preview_notebook.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+    plot_tab = ttk.Frame(preview_notebook)
+    table_tab = ttk.Frame(preview_notebook)
+    preview_notebook.add(plot_tab, text="Plot")
+    preview_notebook.add(table_tab, text=f"Table ({preview_row_limit} rows)")
+
+    build_preview_plot_tab(app, plot_tab)
+    build_preview_table_tab(app, table_tab, preview_row_limit)
+
+
+def build_preview_plot_tab(app, parent: ttk.Frame) -> None:
+    """Build the overview plot preview tab."""
+
+    preview_plot_frame = ttk.Frame(parent)
+    preview_plot_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    signal_list_frame = ttk.Frame(preview_plot_frame)
+    signal_list_frame.pack(fill=tk.X, padx=5, pady=(5, 2))
     signal_list_frame.columnconfigure(0, weight=1)
     ttk.Label(signal_list_frame, text="Signals").grid(row=0, column=0, sticky="w", pady=(0, 2))
     selector_row = ttk.Frame(signal_list_frame)
@@ -191,8 +202,8 @@ def build_info_tab(app, parent: ttk.Frame) -> None:
         padx=(6, 0),
     )
 
-    range_controls_frame = ttk.Frame(controls_frame)
-    range_controls_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=(2, 2))
+    range_controls_frame = ttk.Frame(preview_plot_frame)
+    range_controls_frame.pack(fill=tk.X, padx=5, pady=(2, 4))
     ttk.Label(range_controls_frame, text="Signals are updated immediately when selected.").grid(
         row=0,
         column=0,
@@ -200,102 +211,82 @@ def build_info_tab(app, parent: ttk.Frame) -> None:
         pady=2,
     )
 
-    preview_slider_frame = ttk.Frame(controls_frame)
-    preview_slider_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=(0, 5))
-    preview_slider_frame.columnconfigure(1, weight=1)
-    ttk.Label(preview_slider_frame, textvariable=app.preview_plot_range_summary_var).grid(
-        row=0,
-        column=0,
-        columnspan=2,
-        sticky="w",
-        pady=(0, 4),
-    )
-    ttk.Label(preview_slider_frame, text="Plot start").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=2)
-    app._preview_plot_start_scale = tk.Scale(
-        preview_slider_frame,
-        orient=tk.HORIZONTAL,
-        showvalue=True,
-        variable=app.preview_plot_start_scale_var,
-        command=app._handle_preview_plot_start_slider_changed,
-    )
-    app._preview_plot_start_scale.grid(row=1, column=1, sticky="ew", pady=2)
-    ttk.Label(preview_slider_frame, text="Plot end").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=2)
-    app._preview_plot_end_scale = tk.Scale(
-        preview_slider_frame,
-        orient=tk.HORIZONTAL,
-        showvalue=True,
-        variable=app.preview_plot_end_scale_var,
-        command=app._handle_preview_plot_end_slider_changed,
-    )
-    app._preview_plot_end_scale.grid(row=2, column=1, sticky="ew", pady=2)
-
     app._preview_plot_container = ttk.Frame(preview_plot_frame)
     app._preview_plot_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+
+def build_preview_table_tab(app, parent: ttk.Frame, preview_row_limit: int) -> None:
+    """Build the scrollable preview table tab."""
+
+    container = ttk.Frame(parent, padding=5)
+    container.pack(fill=tk.BOTH, expand=True)
+    container.columnconfigure(0, weight=1)
+    container.rowconfigure(1, weight=1)
+
+    ttk.Label(
+        container,
+        text=f"Showing the first {preview_row_limit} rows of the selected dataset. Scroll vertically and horizontally in this tab to inspect it.",
+        justify=tk.LEFT,
+        wraplength=640,
+    ).grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
+
+    app._preview_table_container = ttk.Frame(container)
+    app._preview_table_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=(0, 5))
+    app._preview_table_container.columnconfigure(0, weight=1)
+    app._preview_table_container.rowconfigure(0, weight=1)
 
 
 def build_manipulations_frame(app, parent: ttk.LabelFrame) -> None:
     """Build the combined dataset manipulation controls."""
 
-    notebook = ttk.Notebook(parent)
-    notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-    prepare_tab = ttk.Frame(notebook)
-    roles_tab = ttk.Frame(notebook)
-    advanced_tab = ttk.Frame(notebook)
-    notebook.add(prepare_tab, text="Prepare")
-    notebook.add(roles_tab, text="Roles")
-    notebook.add(advanced_tab, text="Advanced")
-
-    build_prepare_tab(app, prepare_tab)
-    build_role_controls_tab(app, roles_tab)
-    build_advanced_tab(app, advanced_tab)
+    container = ttk.Frame(parent)
+    container.pack(fill=tk.BOTH, expand=True, padx=5, pady=(1, 4))
+    build_prepare_tab(app, container)
 
 
 def build_prepare_tab(app, parent: ttk.Frame) -> None:
     """Build the main dataset preparation workflow tab."""
 
-    container = ttk.Frame(parent, padding=8)
+    container = ttk.Frame(parent, padding=(1, 1, 1, 1))
     container.pack(fill=tk.BOTH, expand=True)
     container.columnconfigure(0, weight=1)
 
     ttk.Label(
         container,
-        text="The current overview plot range is the output range. Optionally limit the channels, then create a prepared dataset.",
+        text="The preview on the right is only a visual aid. Create a prepared dataset from the full selected dataset, and optionally limit the channels.",
         wraplength=420,
         justify=tk.LEFT,
-    ).grid(row=0, column=0, sticky="w", padx=5, pady=(5, 8))
+    ).grid(row=0, column=0, sticky="w", padx=2, pady=(0, 6))
 
     output_frame = ttk.LabelFrame(container, text="Output")
-    output_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=(0, 8))
+    output_frame.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 6))
     build_dataset_creation_tab(app, output_frame)
 
     column_frame = ttk.LabelFrame(container, text="Channels")
-    column_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=(0, 5))
+    column_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=(0, 5))
     build_column_controls(app, column_frame)
+
+    roles_frame = ttk.LabelFrame(container, text="Roles")
+    roles_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=(6, 5))
+    build_role_controls_tab(app, roles_frame)
 
 
 def build_dataset_creation_tab(app, parent: ttk.Frame) -> None:
     """Build the dataset naming and creation controls."""
 
-    frame = ttk.Frame(parent, padding=8)
+    frame = ttk.Frame(parent, padding=5)
     frame.pack(fill=tk.BOTH, expand=True)
     frame.columnconfigure(1, weight=1)
-    ttk.Label(
-        frame,
-        textvariable=app.preview_plot_range_summary_var,
-        wraplength=420,
-        justify=tk.LEFT,
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 6))
-    ttk.Label(frame, text="Dataset name").grid(row=1, column=0, sticky="w", padx=5, pady=(5, 2))
+    ttk.Label(frame, text="Dataset name").grid(row=0, column=0, sticky="w", padx=5, pady=(0, 2))
     ttk.Entry(frame, textvariable=app.column_output_name_var).grid(
-        row=1,
+        row=0,
         column=1,
         sticky="ew",
         padx=5,
-        pady=(5, 2),
+        pady=(0, 2),
     )
     ttk.Button(frame, text="Create Dataset", command=app.create_prepared_dataset).grid(
-        row=2,
+        row=1,
         column=0,
         columnspan=2,
         sticky="ew",
@@ -307,18 +298,24 @@ def build_dataset_creation_tab(app, parent: ttk.Frame) -> None:
 def build_role_controls_tab(app, parent: ttk.Frame) -> None:
     """Build the column role assignment controls."""
 
-    role_frame = ttk.Frame(parent, padding=8)
+    role_frame = ttk.Frame(parent, padding=5)
     role_frame.pack(fill=tk.BOTH, expand=True)
     role_frame.columnconfigure(1, weight=1)
-    ttk.Label(role_frame, text="Column").grid(row=0, column=0, sticky="w", padx=5, pady=(5, 2))
+    ttk.Label(
+        role_frame,
+        text="Use roles after the basic dataset choice is clear so plotting and analysis defaults stay sensible.",
+        wraplength=420,
+        justify=tk.LEFT,
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 6))
+    ttk.Label(role_frame, text="Column").grid(row=1, column=0, sticky="w", padx=5, pady=(0, 2))
     app.role_editor_column_combo = ttk.Combobox(role_frame, textvariable=app.role_editor_column_var, state="readonly")
-    app.role_editor_column_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=(5, 2))
-    ttk.Label(role_frame, text="Role").grid(row=1, column=0, sticky="w", padx=5, pady=2)
+    app.role_editor_column_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=(0, 2))
+    ttk.Label(role_frame, text="Role").grid(row=2, column=0, sticky="w", padx=5, pady=2)
     app.role_editor_value_combo = ttk.Combobox(role_frame, textvariable=app.role_editor_value_var, state="readonly")
-    app.role_editor_value_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    app.role_editor_value_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
 
     role_button_row = ttk.Frame(role_frame)
-    role_button_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=(6, 5))
+    role_button_row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=(6, 5))
     role_button_row.columnconfigure(0, weight=1)
     role_button_row.columnconfigure(1, weight=1)
     ttk.Button(role_button_row, text="Apply Role", command=app.apply_selected_column_role).grid(
@@ -343,7 +340,7 @@ def build_column_controls(app, parent: ttk.LabelFrame) -> None:
     controls.columnconfigure(1, weight=1)
     controls.columnconfigure(2, weight=0)
 
-    ttk.Label(controls, text="Columns").grid(row=0, column=0, sticky="nw", padx=5, pady=5)
+    ttk.Label(controls, text="Columns").grid(row=0, column=0, sticky="nw", padx=5, pady=(0, 5))
 
     selector_frame = ttk.Frame(controls)
     selector_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=5, pady=5)
@@ -370,54 +367,3 @@ def build_column_controls(app, parent: ttk.LabelFrame) -> None:
         justify=tk.LEFT,
         wraplength=420,
     ).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=5)
-
-
-def build_advanced_tab(app, parent: ttk.Frame) -> None:
-    """Build secondary preparation tools that are not part of the common workflow."""
-
-    container = ttk.Frame(parent, padding=8)
-    container.pack(fill=tk.BOTH, expand=True)
-    container.columnconfigure(0, weight=1)
-
-    split_frame = ttk.LabelFrame(container, text="Split Into Subframes")
-    split_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-    split_frame.columnconfigure(1, weight=1)
-    split_frame.rowconfigure(1, weight=1)
-
-    ttk.Label(
-        split_frame,
-        text="Create multiple datasets from explicit row ranges. Enter one range per line as start:end.",
-        wraplength=420,
-        justify=tk.LEFT,
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 8))
-
-    ttk.Label(split_frame, text="Prefix").grid(row=1, column=0, sticky="nw", padx=5, pady=(0, 5))
-    ttk.Entry(split_frame, textvariable=app.split_prefix_var).grid(row=1, column=1, sticky="ew", padx=5, pady=(0, 5))
-
-    ttk.Label(split_frame, text="Ranges").grid(row=2, column=0, sticky="nw", padx=5, pady=5)
-    text_frame = ttk.Frame(split_frame)
-    text_frame.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
-    text_frame.rowconfigure(0, weight=1)
-    text_frame.columnconfigure(0, weight=1)
-
-    app._split_ranges_text = tk.Text(text_frame, height=8, wrap="word")
-    app._split_ranges_text.grid(row=0, column=0, sticky="nsew")
-    split_scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=app._split_ranges_text.yview)
-    split_scrollbar.grid(row=0, column=1, sticky="ns")
-    app._split_ranges_text.configure(yscrollcommand=split_scrollbar.set)
-
-    ttk.Label(
-        split_frame,
-        text="Examples: 0:1000, 1000:2000, 2000:3500",
-        wraplength=420,
-        justify=tk.LEFT,
-    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 6))
-
-    ttk.Button(split_frame, text="Split Dataset", command=app.split_selected_dataset).grid(
-        row=4,
-        column=0,
-        columnspan=2,
-        sticky="ew",
-        padx=5,
-        pady=(0, 5),
-    )

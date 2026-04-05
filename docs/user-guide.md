@@ -2,12 +2,9 @@
 
 ## Purpose
 
-EvalData helps you move from raw measurement tables to prepared datasets and focused analysis views.
+EvalData helps you move from raw measurement tables to prepared datasets and then into a focused analysis view.
 
-In plain terms:
-
-- the main window is for getting the data ready
-- the analysis workspace is for looking deeper into one prepared dataset
+In short: use the main window to get the data ready, then use the analysis workspace to inspect one selected dataset in detail.
 
 The normal workflow is:
 
@@ -15,29 +12,81 @@ The normal workflow is:
 flowchart TB
     A[Load source file or demo dataset] --> B[Inspect preview table and overview plot]
     B --> C[Confirm or correct column roles]
-    C --> D[Adjust visible output range]
+    C --> D[Optionally choose channels to keep]
     D --> E[Create prepared dataset]
     E --> F[Open analysis workspace]
     F --> G[Analyze, plot, and export current view]
+
+    classDef source fill:#dbeafe,stroke:#1d4ed8,color:#0f172a,stroke-width:1.5px;
+    classDef inspect fill:#fef3c7,stroke:#b45309,color:#0f172a,stroke-width:1.5px;
+    classDef prepare fill:#dcfce7,stroke:#15803d,color:#0f172a,stroke-width:1.5px;
+    classDef analysis fill:#fee2e2,stroke:#dc2626,color:#0f172a,stroke-width:1.5px;
+
+    class A source;
+    class B,C inspect;
+    class D,E prepare;
+    class F,G analysis;
 ```
 
 ## Main Concepts
 
-- A dataset is one loaded table in the main window.
-- A prepared dataset is a new dataset made from the currently selected source dataset.
-- Column roles tell the app what each column is for, such as time, input, output, signal, or metadata.
-- The overview plot range is the row range that will be used when you create a prepared dataset.
-- The analysis workspace works on one selected dataset at a time.
+A dataset is one loaded table in the main window. A prepared dataset is a new in-app working copy derived from one selected source dataset. Column roles are lightweight semantic labels that help the app choose better defaults. The overview plot is an inspection view only, while the analysis workspace is the place for detailed work on one dataset at a time.
+
+## Column Roles
+
+| Role | Meaning | Typical columns | Used for |
+| --- | --- | --- | --- |
+| `time` | Reference axis for ordered samples | `time_s`, timestamp | Preferred plot X axis and frequency reference |
+| `input` | Excitation, command, or forcing channel | actuator, drive, setpoint | Input-output comparisons |
+| `output` | Measured response channel | measured displacement, pressure, response | Main response analysis |
+| `signal` | Numeric analysis channel without a stronger semantic class | filtered copy, auxiliary sensor | General plotting and transformations |
+| `metadata` | Context or labels rather than primary signals | ID, marker, label, temperature | Context, grouping, sanity checks |
+
+Example: if `time_s` is marked as `time` and `measured_signal` is marked as `output`, plots and frequency analysis usually start with better defaults.
+
+## Example Figures
+
+<p align="center">
+    <img src="images/algorithms/fft_clean_signal.png" alt="Spectral demo figure with time-domain signal and FFT amplitude spectrum" width="64%">
+</p>
+
+Known spectral demo: the figure above is useful as a control case because the strongest expected FFT peaks are near 1.0 Hz, 7.5 Hz, and 18.0 Hz.
+
+<p align="center">
+    <img src="images/algorithms/window_leakage_comparison.png" alt="Window leakage comparison using the same short demo excerpt" width="64%">
+</p>
+
+Same demo excerpt, different window choice: rectangular vs Hann.
+
+If you want the formal background for the spectral views shown here, see [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
 ## Main Window Vs Analysis Workspace
 
 ```mermaid
 flowchart TB
     Start[What do you need to do?] --> Decide{Prepare data or analyze data?}
-    Decide -->|Prepare data| Main[Main window\nLoad files\nCheck preview\nSet roles\nChoose output range\nCreate prepared dataset]
+    Decide -->|Prepare data| Main[Main window\nLoad files\nCheck preview\nSet roles\nChoose channels\nCreate prepared dataset]
     Decide -->|Analyze data| Workspace[Analysis workspace\nFilter signals\nCreate derived columns\nRun frequency analysis\nInspect statistics\nExport current view]
     Main --> Next[Open analysis workspace when the dataset is ready]
+
+    classDef question fill:#fef3c7,stroke:#b45309,color:#0f172a,stroke-width:1.5px;
+    classDef prepare fill:#dcfce7,stroke:#15803d,color:#0f172a,stroke-width:1.5px;
+    classDef analysis fill:#fee2e2,stroke:#dc2626,color:#0f172a,stroke-width:1.5px;
+
+    class Start,Decide question;
+    class Main,Next prepare;
+    class Workspace analysis;
 ```
+
+## The Two Windows
+
+The main window is for structural work: load files, inspect them, assign roles, choose which columns to carry forward, and create prepared datasets. If one source file contains several useful row windows, `Preparation -> Split Into Subframes` is the main-window tool for breaking it apart before analysis.
+
+The analysis workspace is for detailed work on one selected dataset. The sidebar sets the active context, `Preview` lets you verify the current working dataframe, `Filter` and `Derived Signals` change that working copy, `Frequency` and `Cycles` inspect behavior, and `Statistics` summarizes the result.
+
+Where a deeper method note exists, the practical workflow should link to it. For frequency analysis, the current formal note is [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
+
+Most of the visible options fall into a few groups: dataset name, channel selection, and role assignment in the main window; then active analysis column, plot axes, filter or derived-signal method, frequency method, and cycle mode in the analysis workspace. If the app seems to pick the wrong default, one of those settings is usually the reason.
 
 ## Step 1: Load Data
 
@@ -59,47 +108,45 @@ Use:
 - `Info` for dataset summary and lineage information
 - `Preview` for the preview table and overview plot
 
-At this stage, you are checking whether:
-
-- the row count and columns look reasonable
-- the likely time and signal columns are visible
-- the overview plot shows the expected portion of the data
+Check three things: the row and column count look reasonable, the likely time and signal columns are visible, and the overview plot broadly matches what you expect from the source data.
 
 ## Step 3: Confirm Column Roles
 
-Open the `Roles` tab in the main window.
+In the main window, use the `Roles` section below the core preparation controls.
 
-Use it to assign or correct roles such as:
+Use the role table above as the working meaning of each label.
 
-- `time`
-- `input`
-- `output`
-- `signal`
-- `metadata`
+What changes when roles are correct:
 
-Why this matters:
-
-- plots choose better defaults when time and signal roles are correct
-- the analysis workspace can select more sensible default columns
-- summaries become easier to read
+- Better default X axis: `time_s` is preferred over `Index`.
+- Better active analysis default: an `output` or `signal` column is favored.
+- Better comparison choices: `input` can be paired against `output`.
+- Better visual grouping: preview and role-aware controls become easier to scan.
 
 If the current role guesses are poor, use `Reinfer Roles` and then correct anything important manually.
 
-## Step 4: Choose The Output Range
+## Step 4: Choose The Output Columns
 
-Open the `Prepare` tab.
+Use the main preparation section in the left-side controls.
 
-The main rule is simple:
+The current prepared-dataset workflow is simple:
 
-- what you currently see in the overview plot range is what becomes the prepared dataset output range
-
-You can also optionally limit which channels are kept in the prepared dataset.
+- enter an optional dataset name
+- optionally choose which channels to keep
+- click `Create Dataset` to create a new in-app dataset entry
 
 If you do not select any channel subset, all columns are kept.
 
+Important:
+
+- Row trimming is not part of prepared dataset creation.
+- Column trimming is optional via channel selection.
+- The overview plot is for inspection only.
+- For row-based segmentation, use `Preparation -> Split Into Subframes`.
+
 ## Step 5: Create A Prepared Dataset
 
-Still in `Prepare`:
+Still in the preparation controls:
 
 1. enter a dataset name if you want something more descriptive than the default
 2. leave or adjust the selected channels
@@ -107,13 +154,7 @@ Still in `Prepare`:
 
 This creates a new dataset entry inside the app.
 
-Think of it as creating a cleaned working copy inside the application.
-
-Important:
-
-- it is not automatically written as a new CSV file
-- it keeps lineage information pointing back to the original dataset
-- it preserves relevant column-role information where possible
+It becomes a separately selectable dataset entry in the list. No new file is written automatically, lineage back to the source dataset is retained, and relevant role information is projected into the prepared copy where possible.
 
 ## Step 6: Use The Advanced Split Workflow If Needed
 
@@ -121,11 +162,7 @@ If one dataset contains repeated cycles or segments, open the `Advanced` tab.
 
 Use `Split Into Subframes` when you already know the row ranges that should become separate dataset entries.
 
-This is useful when:
-
-- one file contains several repeated runs
-- you want one dataset per cycle or segment
-- structural splitting is easier than analysis-time filtering
+Use it when one file contains repeated runs, when you want one dataset per segment or cycle, or when you already know the row boundaries and want the split to be explicit and reproducible.
 
 ## Step 7: Open The Analysis Workspace
 
@@ -135,16 +172,7 @@ Select exactly one dataset, then use:
 
 The analysis workspace is for detailed work on one dataset at a time.
 
-If the main window answers "what part of the data do I want?", the analysis workspace answers "what does this data mean?"
-
-Main areas:
-
-- `Preview`: inspect the current working dataframe
-- `Filter`: apply simple masking or signal-processing filters
-- `Derived Signals`: create derived columns from the active signal
-- `Frequency`: run FFT amplitude or Welch PSD
-- `Cycles`: cycle-focused analysis tools
-- `Statistics`: statistics and correlations
+The `Preview` tab shows the current working dataframe. `Filter` and `Derived Signals` change that working copy. `Frequency` runs FFT amplitude or Welch PSD. `Cycles` focuses on repeated segments. `Statistics` summarizes the current state with statistics and correlation views.
 
 ## Step 8: Choose The Right Analysis Tool
 
@@ -156,6 +184,12 @@ Then choose the appropriate tab:
 - `Derived Signals` when you want new columns based on an existing signal
 - `Frequency` when you want to find repeating patterns or strong frequency content
 - `Statistics` when you want distributions, summary values, or correlations
+
+Example: if you mainly want to know whether a signal repeats strongly, go straight to `Frequency`. If you first need to smooth or clean the signal, start in `Filter` and then return to `Frequency`.
+
+For the short method reference behind `Filter`, `Derived Signals`, `Frequency`, `Cycles`, and `Statistics`, see [analysis-methods.md](analysis-methods.md).
+
+For the current technical note behind `FFT Amplitude` and `Welch PSD`, see [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
 For a fuller task-to-tool mapping, see `which-tool-when.md`.
 
@@ -176,7 +210,7 @@ If you are unsure what to do, use this minimal routine:
 1. load one dataset
 2. confirm the preview looks right
 3. set the time and main signal roles correctly
-4. trim the overview plot range if needed
+4. keep all columns or choose only the channels you want to carry forward
 5. create a prepared dataset
 6. open the prepared dataset in the analysis workspace
 7. start with `Frequency` or `Statistics`
@@ -188,7 +222,7 @@ Stay in the main window when the task is structural:
 - load data
 - rename or isolate the data you want to work with
 - fix roles
-- choose the output range
+- choose which columns to carry into a prepared dataset
 - split one source dataset into several derived datasets
 
 Move to the analysis workspace when the task becomes analytical:

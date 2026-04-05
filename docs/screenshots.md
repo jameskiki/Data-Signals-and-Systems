@@ -5,8 +5,8 @@ This repository now reserves `docs/images/` for screenshots that show the curren
 ## Suggested Captures
 
 - main window with a loaded dataset
-- preparation view showing the overview plot and output range
-- roles tab with semantic column assignments
+- preparation view showing the left-side preparation controls and the right-side preview tabs
+- preparation view with the `Table` preview tab open and scrollbars visible
 - analysis workspace overview
 - frequency tab with FFT or Welch PSD result
 - cycle-analysis related view once that workflow is more complete
@@ -17,7 +17,7 @@ Use stable descriptive names such as:
 
 - `main-window.png`
 - `prepare-view.png`
-- `roles-view.png`
+- `preview-table-tab.png`
 - `analysis-workspace.png`
 - `frequency-tab.png`
 

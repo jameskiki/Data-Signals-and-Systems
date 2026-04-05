@@ -3,12 +3,23 @@
 import tkinter as tk
 from tkinter import ttk
 
-from analysis_workspace_state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
+from documentation_links import DOCUMENTATION_LINKS
+from .state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
 
 
 def build_analysis_workspace_ui(workspace) -> None:
     """Build the full analysis workspace UI."""
+
+    menu_bar = tk.Menu(workspace.window)
+    help_menu = tk.Menu(menu_bar, tearoff=0)
+    for documentation_link in DOCUMENTATION_LINKS:
+        help_menu.add_command(
+            label=documentation_link.label,
+            command=lambda relative_path=documentation_link.relative_path: workspace.open_documentation(relative_path),
+        )
+    menu_bar.add_cascade(label="Help", menu=help_menu)
+    workspace.window.config(menu=menu_bar)
 
     main_pane = ttk.Panedwindow(workspace.window, orient=tk.HORIZONTAL)
     main_pane.pack(fill=tk.BOTH, expand=True)

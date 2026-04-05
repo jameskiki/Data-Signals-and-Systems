@@ -2,9 +2,10 @@
 
 import os
 
-from analysis_workspace_actions import resolve_default_output_names
-from evaldata_datasets import (
+from .actions import resolve_default_output_names
+from main_window.datasets import (
     apply_role_combobox_style,
+    get_column_role,
     get_preferred_role_column,
     summarize_column_roles,
 )
@@ -112,8 +113,17 @@ def refresh_plot_controls(workspace) -> None:
     selected_columns = [column for column in workspace.session.selected_y_columns if column in numeric_column_names]
     if not selected_columns and numeric_column_names:
         preferred_active = workspace.active_column_var.get() if workspace.active_column_var.get() in numeric_column_names else None
-        preferred_compare = workspace.frequency_compare_var.get() if workspace.frequency_compare_var.get() in numeric_column_names else None
-        selected_columns = [column for column in [preferred_active, preferred_compare] if column]
+        selected_columns = [preferred_active] if preferred_active else []
+        active_role = get_column_role(workspace.column_roles, preferred_active) if preferred_active else "metadata"
+        companion_columns = [column for column in numeric_column_names if column != preferred_active]
+        companion_role_order = ("output", "signal", "input") if active_role == "input" else ("input", "signal", "output")
+        preferred_companion = get_preferred_role_column(
+            workspace.column_roles,
+            *companion_role_order,
+            available_columns=companion_columns,
+        )
+        if preferred_companion and preferred_companion not in selected_columns:
+            selected_columns.append(preferred_companion)
         if not selected_columns:
             selected_columns = numeric_column_names[: min(2, len(numeric_column_names))]
     workspace._set_plot_y_column_options(numeric_column_names, selected_columns)

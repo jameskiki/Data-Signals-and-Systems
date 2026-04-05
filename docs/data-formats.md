@@ -1,61 +1,25 @@
 # Data Formats And Exports
 
-## Supported Input Types
+This is a short reference page. The normal workflow is described in [user-guide.md](user-guide.md), and troubleshooting lives in [faq.md](faq.md).
 
-The file-open dialog accepts:
+## Inputs
 
-- `.txt`
-- `.csv`
-- `.log`
+The file-open dialog accepts `.txt`, `.csv`, and `.log` files.
 
-The parser tries to detect:
+The parser tries to detect the field separator, decimal marker, and likely datetime-like columns. It works best when the file has a real header row and each row represents one sample or measurement step.
 
-- field separator
-- decimal marker
-- datetime-like columns based on names such as time, date, or timestamp
-
-## What The App Expects
-
-The app works best when:
-
-- the first real header row contains column names
-- each row represents one sample or measurement step
-- one column can act as time or sample index if needed
-- numeric signal columns are stored consistently
-
-## Notes About Delimiters
-
-The parser supports different separators and decimal markers by detection rather than by a fixed import wizard.
-
-That is useful for mixed logging formats, but it also means badly formed files may need cleanup before loading.
+Example: if a file uses semicolons as separators and commas as decimal markers, the parser may still load it correctly, but badly formed files often need cleanup first.
 
 ## Prepared Datasets
 
-When you create a prepared dataset:
+Creating a prepared dataset makes a new in-app dataset entry. It copies the selected source dataset and can optionally keep only a chosen column subset. It does not automatically write a new file to disk.
 
-- the app slices the selected source dataset by the current overview range
-- it optionally keeps only the chosen columns
-- it creates a new dataset entry inside the application
-- it does not automatically write a new file to disk
+If you need row-based separation, use `Preparation -> Split Into Subframes`.
 
-## Exported Files
+## Exports
 
-### Merge Output
+- merge saves a merged dataset to CSV
+- `Files -> Export Clean Data` writes cleaned versions of all loaded datasets
+- `Export Current View` in the analysis workspace writes the current working dataframe to CSV
 
-The merge workflow saves a merged dataset to a CSV file.
-
-### Export Clean Data
-
-`Files -> Export Clean Data` exports cleaned versions of all loaded datasets to a selected directory.
-
-These cleaned versions are based on dropping missing values.
-
-### Export Current View
-
-Inside the analysis workspace, `Export Current View` writes the current working dataframe to a CSV file.
-
-## Practical Advice
-
-- If you need a durable file from a prepared dataset, open it in the analysis workspace and export the current view.
-- If your file does not import correctly, first inspect delimiter and decimal-marker conventions in the source file.
-- If time is not recognized automatically, assign the time role manually in the main window.
+If you need a durable file from a prepared dataset, the practical path is to open it in the analysis workspace and export the current view.

@@ -10,14 +10,15 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from analysis_workspace_actions import (
+from documentation_links import open_documentation_path
+from .actions import (
     build_derived_signal_update,
     build_reset_update,
     build_signal_filter_update,
     build_simple_filter_update,
 )
-from analysis_workspace_layout import build_analysis_workspace_ui
-from analysis_workspace_refresh import (
+from .layout import build_analysis_workspace_ui
+from .refresh import (
     refresh_filter_controls,
     refresh_history,
     refresh_overview,
@@ -26,7 +27,7 @@ from analysis_workspace_refresh import (
     refresh_sidebar,
     set_default_output_names,
 )
-from analysis_workspace_state import (
+from .state import (
     ANALYSIS_WINDOW_GEOMETRY,
     DERIVED_OPERATIONS,
     FFT_WINDOW_OPTIONS,
@@ -34,8 +35,8 @@ from analysis_workspace_state import (
     AnalysisSession,
     UI_FREQUENCY_ANALYSIS_METHODS,
 )
-from analysis_workspace_views import render_correlation_view, render_dataframe_preview, render_fft_peaks_tree, render_statistics_tree
-from analysis_workspace_views import render_cycle_metrics_tree
+from .views import render_correlation_view, render_dataframe_preview, render_fft_peaks_tree, render_statistics_tree
+from .views import render_cycle_metrics_tree
 from data_ops.cycles import (
     CycleAnalysisResult,
     compute_fixed_length_cycle_analysis,
@@ -43,8 +44,8 @@ from data_ops.cycles import (
     detect_rising_edge_cycle_ranges,
 )
 from display_format import apply_numeric_axis_format, format_display_number, format_display_percent
-from evaldata_demo import describe_demo_frequency_expectations
-from evaldata_datasets import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
+from main_window.demo import describe_demo_frequency_expectations, get_demo_frequency_guides
+from main_window.datasets import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
 
 from data_ops.filtering import resolve_filtered_column_name
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
@@ -466,6 +467,22 @@ class AnalysisWorkspace:
         axis.set_ylabel(result.y_axis_label, fontsize=9)
         axis.grid(True, alpha=0.3)
         axis.margins(x=0.02)
+        expected_guides = get_demo_frequency_guides(self.session.working_frame, result.source_column, result.analysis_name)
+        for guide_index, (frequency_hz, label) in enumerate(expected_guides):
+            if frequency_hz <= 0 or frequency_hz > float(frequencies[-1] if frequencies.size else 0.0):
+                continue
+            axis.axvline(frequency_hz, color="#b45309", linestyle="--", linewidth=0.9, alpha=0.35)
+            axis.text(
+                frequency_hz,
+                0.96 - 0.08 * (guide_index % 2),
+                label,
+                transform=axis.get_xaxis_transform(),
+                rotation=90,
+                va="top",
+                ha="right",
+                fontsize=7,
+                color="#b45309",
+            )
         apply_numeric_axis_format(axis, format_x=True, format_y=True)
         figure.tight_layout()
 
@@ -629,6 +646,12 @@ class AnalysisWorkspace:
         self.session.history.append(f"Exported current working dataframe to {os.path.basename(save_path)}")
         refresh_history(self)
         messagebox.showinfo("Exported", f"Saved current view to:\n{save_path}")
+
+    def open_documentation(self, relative_path: str) -> None:
+        try:
+            open_documentation_path(relative_path)
+        except Exception as error:
+            messagebox.showerror("Documentation Error", str(error))
 
     def _replace_working_frame(
         self,

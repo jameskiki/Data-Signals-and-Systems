@@ -4,12 +4,11 @@ import tkinter as tk
 from tkinter import ttk
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 
-from data_ops.frame_ops import normalize_index_range
 from display_format import apply_numeric_axis_format, format_display_value
-from evaldata_datasets import (
+from .datasets import (
     get_column_role,
     get_column_role_cell_colors,
     get_column_role_colors,
@@ -37,13 +36,6 @@ def refresh_preview_plot(
         clear_preview_plot(app, "No numeric non-time columns available for overview plot.")
         return
 
-    try:
-        plot_start_index, plot_end_index = get_preview_plot_range(app, len(dataframe))
-    except ValueError as error:
-        clear_preview_plot(app, str(error))
-        return
-
-    sync_preview_plot_scales_from_entries(app, len(dataframe))
     clear_preview_plot(app)
     figure, axis = plt.subplots(figsize=figure_size, dpi=100)
     preview_frame = dataframe.loc[:, preview_columns]
@@ -63,7 +55,6 @@ def refresh_preview_plot(
     axis.set_xlabel("Index", fontsize=9)
     axis.set_ylabel("Value", fontsize=9)
     axis.grid(True, alpha=0.28, color="#6b7280")
-    axis.set_xlim(plot_start_index - 0.5, plot_end_index - 0.5)
     axis.margins(x=0.02)
     apply_numeric_axis_format(axis, format_x=True, format_y=True)
     if axis.lines:
@@ -73,6 +64,9 @@ def refresh_preview_plot(
     app._preview_plot_figure = figure
     app._preview_plot_canvas = FigureCanvasTkAgg(figure, master=app._preview_plot_container)
     app._preview_plot_canvas.draw()
+    app._preview_plot_toolbar = NavigationToolbar2Tk(app._preview_plot_canvas, app._preview_plot_container)
+    app._preview_plot_toolbar.update()
+    app._preview_plot_toolbar.pack(side=tk.TOP, fill=tk.X)
     app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
 
@@ -82,24 +76,20 @@ def refresh_preview_plot_signal_controls(
     max_columns: int,
     column_roles: dict[str, str] | None = None,
 ) -> None:
-    """Refresh selectable preview plot channels and range controls."""
+    """Refresh selectable preview plot channels."""
 
     if not hasattr(app, "_set_preview_plot_signal_options"):
         return
 
     resolved_roles = column_roles or {}
     available_columns = get_preview_plot_columns(dataframe, resolved_roles)
+    selected_columns = _get_preserved_preview_plot_columns(app, available_columns)
     app._set_preview_plot_signal_options(
         available_columns,
         resolved_roles,
         max_columns,
+        selected_columns=selected_columns[:max_columns],
     )
-
-    app.preview_plot_start_var.set("0")
-    app.preview_plot_end_var.set(str(len(dataframe)))
-    configure_preview_plot_scales(app, len(dataframe))
-    sync_preview_plot_scales_from_entries(app, len(dataframe))
-    app._update_range_summaries()
 
 
 def refresh_selected_dataset_preview_plot(app, figure_size: tuple[float, float], max_columns: int) -> None:
@@ -118,132 +108,10 @@ def refresh_selected_dataset_preview_plot(app, figure_size: tuple[float, float],
     )
 
 
-def reset_preview_plot_controls(app, figure_size: tuple[float, float], max_columns: int) -> None:
-    """Reset preview plot channels and range controls to the whole dataset."""
-
-    selected_path = app._get_single_selected_file_path()
-    if selected_path is None:
-        return
-    dataframe = app.data_frames[selected_path]
-    column_roles = _get_selected_dataset_roles(app, selected_path)
-    refresh_preview_plot_signal_controls(app, dataframe, max_columns, column_roles)
-    app._update_range_summaries()
-    refresh_preview_plot(app, dataframe, figure_size, max_columns, column_roles)
-
-
 def handle_preview_plot_control_changed(app, figure_size: tuple[float, float], max_columns: int) -> None:
-    """Handle entry/listbox changes for preview plot controls."""
+    """Handle selection changes for preview plot controls."""
 
-    selected_path = app._get_single_selected_file_path()
-    if selected_path is not None:
-        row_count = len(app.data_frames[selected_path])
-        sync_preview_plot_scales_from_entries(app, row_count)
-        app._update_range_summaries()
     refresh_selected_dataset_preview_plot(app, figure_size, max_columns)
-
-
-def handle_preview_plot_start_slider_changed(app, value: str, figure_size: tuple[float, float], max_columns: int) -> None:
-    """Handle changes to the preview plot start slider."""
-
-    if app._preview_plot_scale_sync_in_progress:
-        return
-
-    selected_path = app._get_single_selected_file_path()
-    if selected_path is None:
-        return
-
-    row_count = len(app.data_frames[selected_path])
-    start_index = int(round(float(value)))
-    current_end = int(app.preview_plot_end_var.get().strip() or str(row_count))
-    if start_index >= current_end:
-        current_end = min(row_count, start_index + 1)
-        app._preview_plot_scale_sync_in_progress = True
-        app.preview_plot_end_scale_var.set(current_end)
-        app._preview_plot_scale_sync_in_progress = False
-
-    app._preview_plot_scale_sync_in_progress = True
-    app.preview_plot_start_scale_var.set(start_index)
-    app._preview_plot_scale_sync_in_progress = False
-    app.preview_plot_start_var.set(str(start_index))
-    app.preview_plot_end_var.set(str(current_end))
-    app._update_range_summaries()
-    refresh_preview_plot(
-        app,
-        app.data_frames[selected_path],
-        figure_size,
-        max_columns,
-        _get_selected_dataset_roles(app, selected_path),
-    )
-
-
-def handle_preview_plot_end_slider_changed(app, value: str, figure_size: tuple[float, float], max_columns: int) -> None:
-    """Handle changes to the preview plot end slider."""
-
-    if app._preview_plot_scale_sync_in_progress:
-        return
-
-    selected_path = app._get_single_selected_file_path()
-    if selected_path is None:
-        return
-
-    row_count = len(app.data_frames[selected_path])
-    end_index = int(round(float(value)))
-    current_start = int(app.preview_plot_start_var.get().strip() or "0")
-    if end_index <= current_start:
-        current_start = max(0, end_index - 1)
-        app._preview_plot_scale_sync_in_progress = True
-        app.preview_plot_start_scale_var.set(current_start)
-        app._preview_plot_scale_sync_in_progress = False
-
-    end_index = max(1, min(row_count, end_index))
-    app._preview_plot_scale_sync_in_progress = True
-    app.preview_plot_end_scale_var.set(end_index)
-    app._preview_plot_scale_sync_in_progress = False
-    app.preview_plot_start_var.set(str(current_start))
-    app.preview_plot_end_var.set(str(end_index))
-    app._update_range_summaries()
-    refresh_preview_plot(
-        app,
-        app.data_frames[selected_path],
-        figure_size,
-        max_columns,
-        _get_selected_dataset_roles(app, selected_path),
-    )
-
-
-def configure_preview_plot_scales(app, row_count: int) -> None:
-    """Configure preview plot slider bounds for the current dataset size."""
-
-    maximum_index = max(1, row_count)
-    if app._preview_plot_start_scale is not None:
-        app._preview_plot_start_scale.configure(from_=0, to=max(0, maximum_index - 1), resolution=1)
-    if app._preview_plot_end_scale is not None:
-        app._preview_plot_end_scale.configure(from_=1, to=maximum_index, resolution=1)
-
-
-def sync_preview_plot_scales_from_entries(app, row_count: int) -> None:
-    """Synchronize preview plot sliders from the entry fields when valid."""
-
-    configure_preview_plot_scales(app, row_count)
-    try:
-        start_index, end_index = get_preview_plot_range(app, row_count)
-    except ValueError:
-        return
-
-    app._preview_plot_scale_sync_in_progress = True
-    app.preview_plot_start_scale_var.set(start_index)
-    app.preview_plot_end_scale_var.set(end_index)
-    app._preview_plot_scale_sync_in_progress = False
-
-
-def get_preview_plot_range(app, row_count: int) -> tuple[int, int]:
-    """Parse and validate the currently selected preview plot row range."""
-
-    start_text = app.preview_plot_start_var.get().strip() or "0"
-    end_text = app.preview_plot_end_var.get().strip() or str(row_count)
-    start_index = int(start_text)
-    end_index = int(end_text)
-    return normalize_index_range(row_count, start_index, end_index)
 
 
 def get_selected_preview_plot_columns(
@@ -265,6 +133,15 @@ def get_selected_preview_plot_columns(
     return [column for column in selected_columns if column in available_columns]
 
 
+def _get_preserved_preview_plot_columns(app, available_columns: list[str]) -> list[str]:
+    if not hasattr(app, "_get_selected_preview_plot_columns_from_selector"):
+        return available_columns
+
+    selected_columns = app._get_selected_preview_plot_columns_from_selector()
+    preserved_columns = [column for column in selected_columns if column in available_columns]
+    return preserved_columns or available_columns
+
+
 def clear_preview_plot(app, message: str | None = None) -> None:
     """Clear the preview plot area and optionally show a message."""
 
@@ -272,6 +149,7 @@ def clear_preview_plot(app, message: str | None = None) -> None:
         plt.close(app._preview_plot_figure)
         app._preview_plot_figure = None
     app._preview_plot_canvas = None
+    app._preview_plot_toolbar = None
     if app._preview_plot_container is None:
         return
     for widget in app._preview_plot_container.winfo_children():

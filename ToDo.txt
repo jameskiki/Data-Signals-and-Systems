@@ -19,6 +19,7 @@ Documentation
 Analysis Workspace
 - finish FFT workflow cleanup
 - add plot / subplot settings dialog
+- unify plot rendering/styling so line widths, font sizes, and line styles can be controlled globally
 - support plotting into an existing figure or subplot
 
 Cycle Analysis
@@ -39,3 +40,6 @@ Model Builder
 
 Questions
 - why is data_ops the only folder you ever created? why no other structuring?
+- answer: data_ops was the first clean extraction because it holds mostly pure reusable data/signal logic with low UI coupling, so it was the safest part to modularize early.
+- answer: the rest of the codebase was already being split by concern without many new folders yet: evaldata_* modules now separate main-window responsibilities, and analysis_workspace_* modules separate analysis layout/state/refresh/views/actions.
+- answer: in other words, the project did get more structure, just mostly through top-level module splits first; creating more folders for UI/orchestration layers was deferred to avoid a bigger churn while features were still moving quickly.

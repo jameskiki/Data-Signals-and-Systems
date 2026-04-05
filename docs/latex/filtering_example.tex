@@ -1,0 +1,162 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{docs/images/algorithms/}{../images/algorithms/}}
+
+\title{Filtering in EvalData\\A Small Algorithm Note}
+\author{EvalData Repository Example}
+\date{April 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Purpose}
+
+This document is a short formal note for the filtering methods currently visible in the EvalData analysis workspace.
+
+The examples are intentionally reproducible. They use the built-in spectral reference demo dataset exposed by the app's demo menu.
+
+Use the practical workflow pages first. Use this note when you want the algorithm-level description of what the filtering controls actually do.
+
+\section{Method Groups}
+
+EvalData currently exposes two filtering groups in the analysis workspace:
+
+\begin{itemize}
+    \item \textbf{Simple Filtering}: keep values inside a selected range and write the result to a column.
+    \item \textbf{Signal Processing}: create a smoothed or trend-removed version of a numeric signal.
+\end{itemize}
+
+Both groups operate on the workspace's working dataframe copy. They do not edit the original loaded dataset in place.
+
+\section{Simple Filtering}
+
+Simple filtering is a masking operation. For a source signal $x[n]$ and a range $[a,b]$, the output can be written informally as
+
+\[
+y[n] =
+\begin{cases}
+x[n], & a \le x[n] \le b, \\
+\mathrm{NaN}, & \text{otherwise.}
+\end{cases}
+\]
+
+In EvalData, the user may supply only a minimum or only a maximum. Missing values can optionally be preserved.
+
+This is useful when you want to hide out-of-range values without dropping rows from the rest of the dataframe.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.9\linewidth]{simple_filter_mask_example.png}
+    \caption{Simple filtering on the built-in spectral demo. The example keeps only larger values of the known \texttt{structural\_ringing} component. The row count stays unchanged; only the output column is masked.}
+\end{figure}
+
+\section{Smoothing Filters}
+
+\subsection{Moving Average}
+
+The moving average is a local low-pass smoother. For an odd window width $W = 2m + 1$,
+
+\[
+y[n] = \frac{1}{W} \sum_{k=-m}^{m} x[n+k].
+\]
+
+In EvalData this is implemented as a centered rolling mean.
+
+Use it when the signal is noisy but the underlying variation is slower than the sample-to-sample fluctuations.
+
+\subsection{Median Filter}
+
+The median filter replaces each point by the median of its local neighborhood:
+
+\[
+y[n] = \mathrm{median}\{x[n-m], \dots, x[n+m]\}.
+\]
+
+This is less sensitive to isolated spikes than a moving average.
+
+Use it when you want smoothing that is more resistant to outliers.
+
+\subsection{Exponential Smoothing}
+
+Exponential smoothing is recursive:
+
+\[
+y[n] = \alpha x[n] + (1-\alpha) y[n-1], \qquad 0 < \alpha \le 1.
+\]
+
+Smaller $\alpha$ produces heavier smoothing and more lag.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.9\linewidth]{filter_smoothing_comparison.png}
+    \caption{Three smoothing filters applied to the deterministic \texttt{measured\_signal} channel from the built-in spectral demo. The comparison is reproducible because the demo signal is fixed.}
+\end{figure}
+
+\section{High-Pass Filtering}
+
+The current high-pass option in EvalData is implemented as
+
+\[
+y[n] = x[n] - \mathrm{LP}_{W}\{x[n]\},
+\]
+
+where $\mathrm{LP}_{W}$ is the moving-average trend computed with the chosen window size.
+
+This is a pragmatic trend-removal method rather than a full designed digital high-pass filter with a specified frequency response.
+
+Use it when you want to suppress slow drift and emphasize faster variations.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.9\linewidth]{high_pass_ringing_comparison.png}
+    \caption{High-pass filtering on the built-in spectral demo. The lower panel compares the high-pass result against the known \texttt{structural\_ringing} component included in the synthetic dataset.}
+\end{figure}
+
+\section{What the Demo Shows}
+
+The spectral reference demo contains several ingredients on purpose:
+
+\begin{itemize}
+    \item slow drift near 0.15 Hz,
+    \item clean periodic content near 1.0 Hz, 7.5 Hz, and 18.0 Hz,
+    \item repeated impacts,
+    \item decaying structural ringing near 42 Hz,
+    \item seeded broadband noise.
+\end{itemize}
+
+That makes it a useful control case for filtering documentation:
+
+\begin{itemize}
+    \item smoothing can reduce the seeded noise,
+    \item high-pass filtering can suppress the slow drift,
+    \item simple filtering can isolate larger ringing excursions.
+\end{itemize}
+
+\section{Practical Interpretation Limits}
+
+These methods are useful, but they have limits:
+
+\begin{itemize}
+    \item stronger smoothing also blurs short events,
+    \item median and moving-average filters do not preserve the same features equally well,
+    \item exponential smoothing introduces lag,
+    \item the current high-pass option should not be described as a precise frequency-domain filter design,
+    \item a masked simple-filter output is not the same thing as row-wise trimming.
+\end{itemize}
+
+Those distinctions matter because the user-visible controls are operationally simple, but their outputs answer different questions.
+
+\section{Conclusion}
+
+EvalData's current filtering tools are lightweight and practical. Simple filtering is a masking tool. The signal-processing filters are smoothing or trend-removal tools. The built-in spectral demo gives a reproducible reference case for showing the difference between those behaviors without relying on private measurement data.
+
+\end{document}

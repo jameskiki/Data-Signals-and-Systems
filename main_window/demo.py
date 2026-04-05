@@ -259,7 +259,41 @@ def describe_demo_frequency_expectations(
                 f"Expected for {normalized_analysis}: peaks remain near 2.0 Hz, 12.0 Hz, and 28.0 Hz, but high-frequency content is more "
                 "attenuated and the 12.0 Hz region is relatively emphasized by the added resonance."
             )
-        if normalized_column == "resonance_component":
-            return f"Expected for {normalized_analysis}: a narrow dominant peak centered near 12.0 Hz."
 
-    return "No built-in validation note is available for the current dataset/column."
+    return f"No built-in {normalized_analysis} hint is available for {normalized_column}."
+
+
+def get_demo_frequency_guides(
+    dataframe: pd.DataFrame,
+    active_column: str,
+    analysis_name: str,
+) -> list[tuple[float, str]]:
+    """Return expected demo peak frequencies for simple visual validation."""
+
+    normalized_analysis = analysis_name.strip() or "FFT Amplitude"
+    if normalized_analysis not in {"FFT Amplitude", "Welch PSD"}:
+        return []
+
+    columns = set(map(str, dataframe.columns))
+    normalized_column = active_column.strip()
+
+    if {"clean_signal", "measured_signal", "response_signal", "structural_ringing"}.issubset(columns):
+        frequency_map = {
+            "clean_signal": [(1.0, "1 Hz"), (7.5, "7.5 Hz"), (18.0, "18 Hz")],
+            "measured_signal": [(0.15, "0.15 Hz"), (1.0, "1 Hz"), (7.5, "7.5 Hz"), (18.0, "18 Hz"), (42.0, "42 Hz")],
+            "response_signal": [(1.0, "1 Hz"), (7.5, "7.5 Hz"), (18.0, "18 Hz"), (42.0, "42 Hz")],
+            "structural_ringing": [(42.0, "42 Hz")],
+        }
+        return frequency_map.get(normalized_column, [])
+
+    if {"actuator_input", "system_output", "delayed_input", "resonance_component"}.issubset(columns):
+        frequency_map = {
+            "actuator_input": [(2.0, "2 Hz"), (12.0, "12 Hz"), (28.0, "28 Hz")],
+            "delayed_input": [(2.0, "2 Hz"), (12.0, "12 Hz"), (28.0, "28 Hz")],
+            "system_output": [(2.0, "2 Hz"), (12.0, "12 Hz"), (28.0, "28 Hz")],
+            "resonance_component": [(12.0, "12 Hz")],
+            "output_residual": [(12.0, "12 Hz")],
+        }
+        return frequency_map.get(normalized_column, [])
+
+    return []

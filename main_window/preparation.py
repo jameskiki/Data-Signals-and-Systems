@@ -2,13 +2,8 @@
 
 import os
 
-from data_ops.frame_ops import (
-    normalize_index_range,
-    select_dataframe_columns,
-    slice_dataframe_by_index_range,
-    split_dataframe_by_index_ranges,
-)
-from evaldata_datasets import (
+from data_ops.frame_ops import select_dataframe_columns, split_dataframe_by_index_ranges
+from .datasets import (
     build_virtual_dataset_path,
     collect_source_paths,
     parse_split_ranges,
@@ -33,19 +28,16 @@ def _get_source_column_roles(app, selected_path: str) -> dict[str, str]:
 
 
 def create_prepared_dataset(app) -> str | None:
-    """Create a dataset from the selected row interval and optional column subset."""
+    """Create a dataset from the selected dataframe and optional column subset."""
 
     selected_path = app._get_single_selected_file_path("Select exactly one dataset first")
     if selected_path is None:
         return None
 
     source_frame = app.data_frames[selected_path]
-    start_index, end_index = get_preview_plot_range(app, len(source_frame))
-    prepared_frame = slice_dataframe_by_index_range(source_frame, start_index, end_index)
+    prepared_frame = source_frame.copy()
 
     description_parts: list[str] = []
-    if start_index != 0 or end_index != len(source_frame):
-        description_parts.append(f"Rows [{start_index}, {end_index})")
 
     selected_columns = get_selected_column_names(app)
     if selected_columns:
@@ -69,20 +61,20 @@ def create_prepared_dataset(app) -> str | None:
     return prepared_path
 
 
-def split_selected_dataset(app) -> list[str]:
+def split_selected_dataset(app, raw_ranges_text: str, prefix: str | None = None) -> list[str]:
     """Split the selected dataset into multiple subframes based on ranges."""
 
     selected_path = app._get_single_selected_file_path("Select exactly one dataset first")
-    if selected_path is None or app._split_ranges_text is None:
+    if selected_path is None:
         return []
 
-    ranges = parse_split_ranges(app._split_ranges_text.get("1.0", "end"))
+    ranges = parse_split_ranges(raw_ranges_text)
     split_frames = split_dataframe_by_index_ranges(app.data_frames[selected_path], ranges)
 
-    prefix = app.split_prefix_var.get().strip() or "cycle"
+    resolved_prefix = (prefix or app.split_prefix_var.get()).strip() or "cycle"
     created_paths: list[str] = []
     for index, ((start_index, end_index), frame) in enumerate(split_frames, start=1):
-        suffix = f"{prefix}_{index:03d}_{start_index}_{end_index}"
+        suffix = f"{resolved_prefix}_{index:03d}_{start_index}_{end_index}"
         prepared_path = build_virtual_dataset_path(app.data_frames, selected_path, suffix)
         register_dataset(
             app,
@@ -90,7 +82,7 @@ def split_selected_dataset(app) -> list[str]:
             frame,
             source_paths=collect_source_paths(app, [selected_path]),
             description=(
-                f"Split from {os.path.basename(selected_path)} as {prefix} {index:03d} "
+                f"Split from {os.path.basename(selected_path)} as {resolved_prefix} {index:03d} "
                 f"for rows [{start_index}, {end_index})"
             ),
             column_roles=project_column_roles(_get_source_column_roles(app, selected_path), frame),

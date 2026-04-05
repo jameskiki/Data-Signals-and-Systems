@@ -17,7 +17,7 @@ import os
 import pandas as pd
 
 from display_format import apply_numeric_axis_format
-from evaldata_datasets import get_column_role, get_column_role_plot_color
+from main_window.datasets import get_column_role, get_column_role_plot_color
 
 
 DataFrameMap = Mapping[str, pd.DataFrame]
