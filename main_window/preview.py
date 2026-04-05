@@ -5,6 +5,7 @@ from tkinter import ttk
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.widgets import SpanSelector
 import pandas as pd
 
 from display_format import apply_numeric_axis_format, format_display_value
@@ -39,7 +40,16 @@ def refresh_preview_plot(
     clear_preview_plot(app)
     figure, axis = plt.subplots(figsize=figure_size, dpi=100)
     preview_frame = dataframe.loc[:, preview_columns]
-    x_values = range(len(preview_frame))
+
+    # Use time-role column for x-axis when available
+    time_col = _get_time_role_column(resolved_roles)
+    if time_col is not None and time_col in dataframe.columns:
+        x_values = pd.to_numeric(dataframe[time_col], errors="coerce")
+        x_label = time_col
+    else:
+        x_values = range(len(preview_frame))
+        x_label = "Index"
+
     for column in preview_columns:
         numeric_values = pd.to_numeric(preview_frame[column], errors="coerce")
         role_name = get_column_role(resolved_roles, str(column))
@@ -52,7 +62,7 @@ def refresh_preview_plot(
         )
 
     axis.set_title("Role-aware overview", fontsize=10)
-    axis.set_xlabel("Index", fontsize=9)
+    axis.set_xlabel(x_label, fontsize=9)
     axis.set_ylabel("Value", fontsize=9)
     axis.grid(True, alpha=0.28, color="#6b7280")
     axis.margins(x=0.02)
@@ -68,6 +78,9 @@ def refresh_preview_plot(
     app._preview_plot_toolbar.update()
     app._preview_plot_toolbar.pack(side=tk.TOP, fill=tk.X)
     app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    # Attach SpanSelector for visual range picking
+    _attach_span_selector(app, axis)
 
 
 def refresh_preview_plot_signal_controls(
@@ -99,12 +112,14 @@ def refresh_selected_dataset_preview_plot(app, figure_size: tuple[float, float],
     if selected_path is None:
         clear_preview_plot(app, "Select exactly one dataset to show the overview plot.")
         return
+    roles = _get_selected_dataset_roles(app, selected_path)
+    dataframe = app.data_frames[selected_path]
     refresh_preview_plot(
         app,
-        app.data_frames[selected_path],
+        dataframe,
         figure_size,
         max_columns,
-        _get_selected_dataset_roles(app, selected_path),
+        roles,
     )
 
 
@@ -288,3 +303,31 @@ def get_preview_plot_columns(dataframe: pd.DataFrame, column_roles: dict[str, st
 def _get_selected_dataset_roles(app, selected_path: str) -> dict[str, str]:
     context = app.dataset_contexts.get(selected_path)
     return dict(context.column_roles) if context is not None else {}
+
+
+def _get_time_role_column(column_roles: dict[str, str]) -> str | None:
+    """Return the first column with role 'time', or None."""
+    for column, role in column_roles.items():
+        if role == "time":
+            return column
+    return None
+
+
+def _attach_span_selector(app, axis) -> None:
+    """Attach a horizontal SpanSelector to let users drag-select a row range."""
+
+    def _on_select(xmin: float, xmax: float) -> None:
+        if hasattr(app, "_set_row_range_from_span"):
+            app._set_row_range_from_span(xmin, xmax)
+
+    span = SpanSelector(
+        axis,
+        _on_select,
+        "horizontal",
+        useblit=True,
+        props=dict(alpha=0.25, facecolor="#3b82f6"),
+        interactive=True,
+        drag_from_anywhere=True,
+    )
+    # Keep a reference so matplotlib doesn't garbage-collect it
+    app._row_range_span_selector = span

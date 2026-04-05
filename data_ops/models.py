@@ -7,7 +7,10 @@ import pandas as pd
 
 
 DataFrameMap = Mapping[str, pd.DataFrame]
-SIGNAL_FILTER_OPERATIONS = ["moving_average", "median", "exponential_smoothing", "high_pass"]
+SIGNAL_FILTER_OPERATIONS = [
+    "moving_average", "median", "exponential_smoothing", "high_pass",
+    "butterworth_lowpass", "butterworth_highpass", "butterworth_bandpass",
+]
 
 
 @dataclass(frozen=True)

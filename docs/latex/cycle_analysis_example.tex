@@ -27,11 +27,13 @@ Cycle analysis in EvalData is based on segmentation first and statistics second.
 
 \section{Two Cycle Modes}
 
-The current UI exposes two modes:
+The current UI exposes four modes:
 
 \begin{itemize}
     \item \textbf{fixed\_length}: build cycles as equal row blocks,
-    \item \textbf{rising\_edge}: detect cycle starts from threshold crossings on a reference signal.
+    \item \textbf{rising\_edge}: detect cycle starts from threshold crossings on a reference signal,
+    \item \textbf{zero\_crossing}: detect cycles between sign-change points of a reference signal,
+    \item \textbf{peak}: detect cycles between successive peaks of a reference signal.
 \end{itemize}
 
 \subsection{Fixed-Length Segmentation}
@@ -65,6 +67,64 @@ Consecutive rising edges define candidate cycle ranges. Short ranges below the c
     \includegraphics[width=0.92\linewidth]{cycle_detection_example.png}
     \caption{Rising-edge cycle detection on the built-in spectral demo. The marker channel provides explicit threshold crossings for cycle boundary detection.}
 \end{figure}
+
+\subsection{Zero-Crossing Segmentation}
+
+For a reference signal $r[n]$, a zero crossing occurs where the sign of $r$ changes between consecutive samples. EvalData computes the sign-change indicator
+
+\[
+\Delta s[n] = \mathrm{sign}(r[n]) - \mathrm{sign}(r[n-1]).
+\]
+
+Crossings are classified by the user-selected direction:
+
+\begin{itemize}
+    \item \textbf{rising}: $\Delta s[n] > 0$ (signal crosses from negative to positive),
+    \item \textbf{falling}: $\Delta s[n] < 0$ (signal crosses from positive to negative),
+    \item \textbf{both}: $\Delta s[n] \ne 0$ (any sign change).
+\end{itemize}
+
+Consecutive crossing indices define candidate cycle ranges. A minimum cycle length parameter allows short spurious segments to be discarded.
+
+\subsubsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Reference column}: the signal on which zero crossings are detected.
+    \item \textbf{Direction}: \texttt{rising}, \texttt{falling}, or \texttt{both}.
+    \item \textbf{Minimum cycle length}: ranges shorter than this many samples are dropped.
+    \item \textbf{Maximum cycles} (optional): cap the number of detected cycles.
+\end{itemize}
+
+\subsection{Peak-Based Segmentation}
+
+Peak-based cycle detection finds successive local maxima of a reference signal using \texttt{scipy.signal.find\_peaks} and defines each cycle as the interval between consecutive peaks.
+
+A peak at sample $n$ satisfies
+
+\[
+r[n] > r[n-1] \quad \text{and} \quad r[n] > r[n+1],
+\]
+
+subject to optional constraints. Consecutive peak indices $p_i, p_{i+1}$ yield cycle ranges $[p_i, p_{i+1})$.
+
+\subsubsection{Prominence Filtering}
+
+Prominence measures how much a peak stands out from surrounding valleys. For a peak at index $p$, the prominence is
+
+\[
+\mathrm{prom}(p) = r[p] - \max\bigl(\text{highest valley on left}, \text{highest valley on right}\bigr).
+\]
+
+Setting a minimum prominence value filters out small local maxima caused by noise, retaining only structurally significant peaks as cycle boundaries.
+
+\subsubsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Reference column}: the signal on which peaks are detected.
+    \item \textbf{Minimum cycle length}: enforced as a minimum distance between peaks.
+    \item \textbf{Prominence} (optional): minimum peak prominence; peaks below this threshold are ignored.
+    \item \textbf{Maximum cycles} (optional): cap the number of detected cycles.
+\end{itemize}
 
 \section{Cycle Alignment}
 
@@ -134,12 +194,34 @@ The spectral demo repeats impacts every 0.5 seconds and adds decaying ringing af
 \begin{itemize}
     \item Fixed-length segmentation is only valid if the cycle length is known or approximately constant.
     \item Rising-edge detection depends on threshold choice and signal cleanliness.
+    \item Zero-crossing detection requires the reference signal to actually oscillate around zero; a nonzero offset must be removed first.
+    \item The \texttt{both} direction for zero crossings produces half-cycles rather than full oscillation periods.
+    \item Peak-based detection is sensitive to noise; without adequate prominence filtering, spurious peaks create meaningless short cycles.
     \item Truncating all cycles to the shortest length simplifies alignment but discards tail samples from longer cycles.
     \item Cycle metrics summarize segments; they do not prove physical repeatability by themselves.
 \end{itemize}
 
 \section{Conclusion}
 
-EvalData's cycle workflow is deliberately simple: detect or define cycle ranges, align them, and summarize them. That is enough to make repeat structure visible, but the mathematical assumptions behind the segmentation step should always be stated explicitly.
+EvalData's cycle workflow is deliberately simple: detect or define cycle ranges, align them, and summarize them. Four detection strategies are available---fixed length, rising edge, zero crossing, and peak-based---so the user can match the segmentation logic to the physical structure of the signal. The mathematical assumptions behind the chosen segmentation step should always be stated explicitly.
+
+\begin{thebibliography}{9}
+
+\bibitem{bendat2010}
+J.~S.~Bendat and A.~G.~Piersol,
+\emph{Random Data: Analysis and Measurement Procedures}, 4th~ed.
+Hoboken, NJ: Wiley, 2010.
+
+\bibitem{downing1982}
+S.~D.~Downing and D.~F.~Socie,
+``Simple rainflow counting algorithms,''
+\emph{International Journal of Fatigue}, vol.~4, no.~1, pp.~31--40, 1982.
+
+\bibitem{scipy_find_peaks}
+SciPy Community,
+``scipy.signal.find\_peaks,'' SciPy Reference Guide.
+Available: \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.find_peaks.html}
+
+\end{thebibliography}
 
 \end{document}

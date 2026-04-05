@@ -21,6 +21,7 @@ class FrequencySpectrumResult:
     sample_count: int
     sample_spacing: float
     sampling_frequency: float
+    nyquist_frequency: float
     dominant_frequency: float
     dominant_amplitude: float
     window: str
@@ -29,6 +30,7 @@ class FrequencySpectrumResult:
     uniformity_ratio: float
     frequencies: np.ndarray
     amplitudes: np.ndarray
+    phase: np.ndarray | None
     peaks_frame: pd.DataFrame
     y_axis_label: str
     plot_title: str
@@ -95,6 +97,7 @@ def compute_fft_spectrum(
         sample_count=int(working_values.size),
         sample_spacing=float(resolved_sample_spacing),
         sampling_frequency=float(1.0 / resolved_sample_spacing),
+        nyquist_frequency=float(0.5 / resolved_sample_spacing),
         dominant_frequency=float(frequencies[dominant_index]),
         dominant_amplitude=float(amplitudes[dominant_index]),
         window=window,
@@ -103,6 +106,7 @@ def compute_fft_spectrum(
         uniformity_ratio=float(uniformity_ratio),
         frequencies=frequencies,
         amplitudes=amplitudes,
+        phase=None,
         peaks_frame=peaks_frame,
         y_axis_label="Amplitude",
         plot_title=f"FFT of {source_column}",
@@ -176,7 +180,7 @@ def compute_welch_psd(
         power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
         if power_density.size > 2:
             power_density[1:-1] *= 2.0
-        segment_spectra.append(power_density / normalized_segment_length**2)
+        segment_spectra.append(power_density)
 
     if not segment_spectra:
         raise ValueError("Unable to build Welch segments from the selected data")
@@ -186,6 +190,8 @@ def compute_welch_psd(
     dominant_index = _get_dominant_frequency_index(amplitudes)
     peaks_frame = _build_peak_frame(frequencies, amplitudes, peak_count)
 
+    sampling_freq = float(1.0 / resolved_sample_spacing)
+
     return FrequencySpectrumResult(
         analysis_name="Welch PSD",
         source_column=source_column,
@@ -193,7 +199,8 @@ def compute_welch_psd(
         reference_column=reference_column,
         sample_count=int(values.size),
         sample_spacing=float(resolved_sample_spacing),
-        sampling_frequency=float(1.0 / resolved_sample_spacing),
+        sampling_frequency=sampling_freq,
+        nyquist_frequency=float(0.5 * sampling_freq),
         dominant_frequency=float(frequencies[dominant_index]),
         dominant_amplitude=float(amplitudes[dominant_index]),
         window=window,
@@ -202,6 +209,7 @@ def compute_welch_psd(
         uniformity_ratio=float(uniformity_ratio),
         frequencies=frequencies,
         amplitudes=amplitudes,
+        phase=None,
         peaks_frame=peaks_frame,
         y_axis_label="PSD",
         plot_title=f"Welch PSD of {source_column}",
@@ -237,6 +245,7 @@ def compute_transfer_estimate(
     denominator = np.maximum(np.abs(prepared["auto_input"]), 1e-12)
     transfer_values = prepared["cross_spectrum"] / denominator
     amplitudes = np.abs(transfer_values)
+    phase = np.angle(transfer_values)
     dominant_index = _get_dominant_frequency_index(amplitudes)
     peaks_frame = _build_peak_frame(prepared["frequencies"], amplitudes, peak_count)
 
@@ -248,6 +257,7 @@ def compute_transfer_estimate(
         sample_count=int(prepared["sample_count"]),
         sample_spacing=float(prepared["sample_spacing"]),
         sampling_frequency=float(prepared["sampling_frequency"]),
+        nyquist_frequency=float(0.5 * prepared["sampling_frequency"]),
         dominant_frequency=float(prepared["frequencies"][dominant_index]),
         dominant_amplitude=float(amplitudes[dominant_index]),
         window=window,
@@ -256,6 +266,7 @@ def compute_transfer_estimate(
         uniformity_ratio=float(prepared["uniformity_ratio"]),
         frequencies=prepared["frequencies"],
         amplitudes=amplitudes,
+        phase=phase,
         peaks_frame=peaks_frame,
         y_axis_label="|H(f)|",
         plot_title=f"Transfer Estimate: {comparison_column} -> {source_column}",
@@ -301,6 +312,7 @@ def compute_coherence_spectrum(
         sample_count=int(prepared["sample_count"]),
         sample_spacing=float(prepared["sample_spacing"]),
         sampling_frequency=float(prepared["sampling_frequency"]),
+        nyquist_frequency=float(0.5 * prepared["sampling_frequency"]),
         dominant_frequency=float(prepared["frequencies"][dominant_index]),
         dominant_amplitude=float(amplitudes[dominant_index]),
         window=window,
@@ -309,10 +321,109 @@ def compute_coherence_spectrum(
         uniformity_ratio=float(prepared["uniformity_ratio"]),
         frequencies=prepared["frequencies"],
         amplitudes=amplitudes,
+        phase=None,
         peaks_frame=peaks_frame,
         y_axis_label="Coherence",
         plot_title=f"Coherence: {comparison_column} -> {source_column}",
         value_column_label="Coh",
+    )
+
+
+@dataclass(frozen=True)
+class SpectrogramResult:
+    """Time-frequency representation of a signal via short-time FFT."""
+
+    source_column: str
+    reference_column: str | None
+    sample_spacing: float
+    sampling_frequency: float
+    segment_length: int
+    overlap_fraction: float
+    window: str
+    times: np.ndarray
+    frequencies: np.ndarray
+    power: np.ndarray
+
+
+def compute_spectrogram(
+    dataframe: pd.DataFrame,
+    source_column: str,
+    reference_column: str | None = None,
+    sample_spacing: float = 1.0,
+    window: str = "hann",
+    detrend: bool = True,
+    segment_length: int = 256,
+    overlap_fraction: float = 0.5,
+) -> SpectrogramResult:
+    """Compute a short-time Fourier transform spectrogram for one signal column."""
+
+    if source_column not in dataframe.columns:
+        raise KeyError(f"Unknown source column: {source_column}")
+
+    signal_series = pd.to_numeric(dataframe[source_column], errors="coerce")
+    if reference_column is None:
+        valid_mask = signal_series.notna()
+        resolved_sample_spacing = float(sample_spacing)
+    else:
+        if reference_column not in dataframe.columns:
+            raise KeyError(f"Unknown reference column: {reference_column}")
+        reference_values = _coerce_reference_axis(dataframe[reference_column])
+        valid_mask = signal_series.notna() & reference_values.notna()
+        resolved_sample_spacing, _ = _estimate_sample_spacing(reference_values.loc[valid_mask])
+
+    if resolved_sample_spacing <= 0:
+        raise ValueError("Sample spacing must be greater than zero")
+
+    values = signal_series.loc[valid_mask].to_numpy(dtype=float, copy=False)
+    if values.size < 4:
+        raise ValueError("At least four valid samples are required for spectrogram analysis")
+
+    normalized_segment_length = max(4, min(int(segment_length), values.size))
+    if normalized_segment_length % 2 == 1:
+        normalized_segment_length -= 1
+
+    normalized_overlap_fraction = float(overlap_fraction)
+    step = max(1, int(round(normalized_segment_length * (1.0 - normalized_overlap_fraction))))
+    window_values = _build_window(window, normalized_segment_length)
+    window_power = float(np.sum(window_values * window_values))
+    if window_power == 0:
+        raise ValueError("Invalid window configuration")
+
+    working_values = values - values.mean() if detrend else values.copy()
+
+    segment_starts = list(range(0, values.size - normalized_segment_length + 1, step))
+    if not segment_starts:
+        raise ValueError("Unable to build spectrogram segments from the selected data")
+
+    segment_spectra = []
+    times = []
+    for start in segment_starts:
+        segment = working_values[start : start + normalized_segment_length]
+        if segment.size != normalized_segment_length:
+            continue
+        fft_values = np.fft.rfft(segment * window_values)
+        power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
+        if power_density.size > 2:
+            power_density[1:-1] *= 2.0
+        segment_spectra.append(power_density)
+        center_sample = start + normalized_segment_length // 2
+        times.append(center_sample * resolved_sample_spacing)
+
+    frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
+    power = np.array(segment_spectra)  # shape: (n_times, n_freqs)
+    fs = 1.0 / resolved_sample_spacing
+
+    return SpectrogramResult(
+        source_column=source_column,
+        reference_column=reference_column,
+        sample_spacing=float(resolved_sample_spacing),
+        sampling_frequency=float(fs),
+        segment_length=normalized_segment_length,
+        overlap_fraction=normalized_overlap_fraction,
+        window=window,
+        times=np.array(times),
+        frequencies=frequencies,
+        power=power,
     )
 
 

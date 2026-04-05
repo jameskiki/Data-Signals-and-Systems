@@ -26,7 +26,15 @@ The application has two working areas:
 - dataset import and summary views
 - preparation workflows for column-role assignment, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
-- a dedicated analysis workspace for filtering, spectral analysis, and cycle-oriented exploration
+- a dedicated analysis workspace with:
+  - simple filtering (min/max masking)
+  - signal processing (moving average, median, exponential smoothing, high-pass, Butterworth lowpass/highpass/bandpass)
+  - derived signal creation (delta, ratio, rolling mean, derivative, normalized, detrend, integrate, RMS envelope, Hilbert envelope)
+  - frequency analysis (FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, Spectrogram)
+  - cycle analysis (fixed-length, rising-edge, zero-crossing, peak detection)
+  - resampling to a uniform time grid
+  - engineering statistics and correlation matrices
+  - interactive plotting with subplots and exports
 - demo datasets for reproducible walkthroughs and exploratory checks
 
 ## Workflow Overview
@@ -136,11 +144,15 @@ The repository root is now intentionally kept thin: the launcher stays at the to
 
 ## Validation Status
 
-This project is not meaningfully validated.
+The project includes an automated test suite with 131 tests covering all `data_ops` modules: spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), and summary statistics.
 
-There is currently no automated test suite in the repository, no structured manual verification record, and no trustworthy basis for engineering confidence.
+Run the tests with:
 
-At most, there have been occasional editor checks, ad-hoc imports, and compile-time checks during development. Those are useful for catching syntax or packaging issues, but they do not validate data handling, analysis correctness, numerical stability, exports, or engineering conclusions.
+```powershell
+python -m pytest tests/ -v
+```
+
+The UI layer (Tkinter) is not unit-tested. Manual verification is still recommended for interactive workflows and engineering conclusions.
 
 ## Current Preparation Caveat
 

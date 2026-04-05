@@ -59,103 +59,72 @@ def build_main_ui(app, preview_row_limit: int) -> None:
 
     app.root.config(menu=menu_bar)
 
-    main_pane = ttk.Panedwindow(app.root, orient=tk.VERTICAL)
-    main_pane.pack(fill=tk.BOTH, expand=True)
-
-    preparation_panel = ttk.LabelFrame(main_pane, text="Dataset Preparation", padding=5)
-    dataset_panel = ttk.LabelFrame(main_pane, text="Loaded Datasets", padding=5)
-    main_pane.add(preparation_panel, weight=6)
-    main_pane.add(dataset_panel, weight=1)
-
-    build_preparation_panel(app, preparation_panel, preview_row_limit)
-    build_dataset_panel(app, dataset_panel)
-
-
-def build_dataset_panel(app, parent: ttk.LabelFrame) -> None:
-    """Build the lower dataset table panel."""
-
-    ttk.Label(
-        parent,
-        text="Loaded source datasets and prepared datasets with their current analysis context.",
-        wraplength=1100,
-        justify=tk.LEFT,
-    ).pack(anchor="w", padx=5, pady=(5, 8))
-
-    table_frame = ttk.Frame(parent)
-    table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-    table_frame.rowconfigure(0, weight=1)
-    table_frame.columnconfigure(0, weight=1)
-
-    app.dataset_table = ttk.Treeview(
-        table_frame,
-        columns=("dataset", "rows", "cols", "num", "dt", "missing", "source", "time", "missing_cols"),
-        show="headings",
-        selectmode="extended",
-        height=4,
-    )
-    app.dataset_table.grid(row=0, column=0, sticky="nsew")
-    app.dataset_table.bind("<<TreeviewSelect>>", app._handle_file_selection_changed)
-
-    app.dataset_table.heading("dataset", text="Dataset")
-    app.dataset_table.heading("rows", text="Rows")
-    app.dataset_table.heading("cols", text="Cols")
-    app.dataset_table.heading("num", text="Num")
-    app.dataset_table.heading("dt", text="DT")
-    app.dataset_table.heading("missing", text="Missing")
-    app.dataset_table.heading("source", text="Source")
-    app.dataset_table.heading("time", text="Time")
-    app.dataset_table.heading("missing_cols", text="Missing By Col")
-
-    app.dataset_table.column("dataset", width=360, stretch=True, anchor=tk.W)
-    app.dataset_table.column("rows", width=90, stretch=False, anchor=tk.E)
-    app.dataset_table.column("cols", width=70, stretch=False, anchor=tk.E)
-    app.dataset_table.column("num", width=70, stretch=False, anchor=tk.E)
-    app.dataset_table.column("dt", width=70, stretch=False, anchor=tk.E)
-    app.dataset_table.column("missing", width=85, stretch=False, anchor=tk.E)
-    app.dataset_table.column("source", width=260, stretch=True, anchor=tk.W)
-    app.dataset_table.column("time", width=320, stretch=True, anchor=tk.W)
-    app.dataset_table.column("missing_cols", width=320, stretch=True, anchor=tk.W)
-
-    scrollbar_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=app.dataset_table.yview)
-    scrollbar_y.grid(row=0, column=1, sticky="ns")
-    scrollbar_x = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=app.dataset_table.xview)
-    scrollbar_x.grid(row=1, column=0, sticky="ew")
-    app.dataset_table.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
-
-
-def build_preparation_panel(app, parent: ttk.LabelFrame, preview_row_limit: int) -> None:
-    """Build the upper preparation workspace panel."""
-
-    workspace = ttk.Frame(parent, padding=8)
-    workspace.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    workspace = ttk.Frame(app.root, padding=8)
+    workspace.pack(fill=tk.BOTH, expand=True)
     workspace.columnconfigure(0, weight=3)
     workspace.columnconfigure(1, weight=5)
-    workspace.rowconfigure(0, weight=0)
     workspace.rowconfigure(1, weight=1)
 
+    build_dataset_selector(app, workspace)
     build_info_tab(app, workspace)
     build_preview_views_notebook(app, workspace, preview_row_limit)
 
 
-def build_info_tab(app, parent: ttk.Frame) -> None:
-    """Build the dataset context and preparation controls area."""
+def build_dataset_selector(app, parent: ttk.Frame) -> None:
+    """Build a compact dataset table selector spanning both columns."""
 
-    context_frame = ttk.LabelFrame(parent, text="Selected Dataset")
-    context_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=(0, 4))
-    ttk.Label(context_frame, textvariable=app.selected_dataset_var, wraplength=360).pack(anchor="w", padx=5, pady=(5, 2))
-    ttk.Label(context_frame, textvariable=app.dataset_shape_var, wraplength=360).pack(anchor="w", padx=5, pady=2)
-    ttk.Label(context_frame, textvariable=app.dataset_source_var, wraplength=360).pack(anchor="w", padx=5, pady=2)
-    ttk.Label(context_frame, textvariable=app.dataset_note_var, wraplength=360).pack(anchor="w", padx=5, pady=(2, 5))
+    selector_frame = ttk.LabelFrame(parent, text="Datasets")
+    selector_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 6))
+    selector_frame.columnconfigure(0, weight=1)
+
+    table_frame = ttk.Frame(selector_frame, padding=(5, 4, 5, 4))
+    table_frame.pack(fill=tk.X)
+    table_frame.columnconfigure(0, weight=1)
+
+    app.dataset_table = ttk.Treeview(
+        table_frame,
+        columns=("dataset", "rows", "cols", "missing", "source"),
+        show="headings",
+        selectmode="browse",
+        height=3,
+    )
+    app.dataset_table.grid(row=0, column=0, sticky="ew")
+    app.dataset_table.bind("<<TreeviewSelect>>", app._handle_dataset_combo_changed)
+
+    app.dataset_table.heading("dataset", text="Dataset")
+    app.dataset_table.heading("rows", text="Rows")
+    app.dataset_table.heading("cols", text="Cols")
+    app.dataset_table.heading("missing", text="Missing")
+    app.dataset_table.heading("source", text="Source")
+
+    app.dataset_table.column("dataset", width=260, stretch=True, anchor=tk.W)
+    app.dataset_table.column("rows", width=70, stretch=False, anchor=tk.E)
+    app.dataset_table.column("cols", width=60, stretch=False, anchor=tk.E)
+    app.dataset_table.column("missing", width=70, stretch=False, anchor=tk.E)
+    app.dataset_table.column("source", width=200, stretch=True, anchor=tk.W)
+
+    scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=app.dataset_table.yview)
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    app.dataset_table.configure(yscrollcommand=scrollbar.set)
+
+    info_frame = ttk.Frame(selector_frame, padding=(5, 0, 5, 4))
+    info_frame.pack(fill=tk.X)
+    ttk.Label(info_frame, textvariable=app.dataset_shape_var, wraplength=800).pack(anchor="w", padx=5, pady=1)
+    ttk.Label(info_frame, textvariable=app.dataset_note_var, wraplength=800).pack(anchor="w", padx=5, pady=(1, 2))
+
+
+def build_info_tab(app, parent: ttk.Frame) -> None:
+    """Build the preparation controls area (left column)."""
 
     manipulations_frame = ttk.LabelFrame(parent, text="Preparation")
-    manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=(4, 0))
+    manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=0)
     build_manipulations_frame(app, manipulations_frame)
 
 def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int) -> None:
     """Build the right-side notebook for plot and table previews."""
 
     preview_frame = ttk.LabelFrame(parent, text="Preview")
-    preview_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(5, 0))
+    preview_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 0))
     preview_frame.columnconfigure(0, weight=1)
     preview_frame.rowconfigure(0, weight=1)
 
@@ -262,12 +231,16 @@ def build_prepare_tab(app, parent: ttk.Frame) -> None:
     output_frame.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 6))
     build_dataset_creation_tab(app, output_frame)
 
+    range_frame = ttk.LabelFrame(container, text="Row Range")
+    range_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=(0, 6))
+    build_row_range_controls(app, range_frame)
+
     column_frame = ttk.LabelFrame(container, text="Channels")
-    column_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=(0, 5))
+    column_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=(0, 5))
     build_column_controls(app, column_frame)
 
     roles_frame = ttk.LabelFrame(container, text="Roles")
-    roles_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=(6, 5))
+    roles_frame.grid(row=4, column=0, sticky="ew", padx=2, pady=(6, 5))
     build_role_controls_tab(app, roles_frame)
 
 
@@ -293,6 +266,43 @@ def build_dataset_creation_tab(app, parent: ttk.Frame) -> None:
         padx=5,
         pady=(6, 5),
     )
+
+
+def build_row_range_controls(app, parent: ttk.Frame) -> None:
+    """Build start/end row-range entries with a Reset button.
+
+    The label dynamically reflects whether a time-role column is present
+    (showing units) or falls back to row indices.  Drag-selecting on the
+    preview plot fills these entries automatically via SpanSelector.
+    """
+
+    frame = ttk.Frame(parent, padding=5)
+    frame.pack(fill=tk.BOTH, expand=True)
+    frame.columnconfigure(1, weight=1)
+    frame.columnconfigure(3, weight=1)
+
+    ttk.Label(frame, textvariable=app.row_range_label_var).grid(
+        row=0, column=0, columnspan=5, sticky="w", padx=5, pady=(0, 4),
+    )
+
+    ttk.Label(frame, text="Start").grid(row=1, column=0, sticky="w", padx=(5, 2))
+    ttk.Entry(frame, textvariable=app.row_range_start_var, width=14).grid(
+        row=1, column=1, sticky="ew", padx=(0, 8),
+    )
+    ttk.Label(frame, text="End").grid(row=1, column=2, sticky="w", padx=(0, 2))
+    ttk.Entry(frame, textvariable=app.row_range_end_var, width=14).grid(
+        row=1, column=3, sticky="ew", padx=(0, 8),
+    )
+
+    app._row_range_reset_button = ttk.Button(frame, text="Reset", width=6, command=app.reset_row_range)
+    app._row_range_reset_button.grid(row=1, column=4, sticky="e", padx=(0, 5))
+
+    ttk.Label(
+        frame,
+        text="Leave empty for full dataset. Drag on the preview plot to select a range visually.",
+        wraplength=420,
+        justify=tk.LEFT,
+    ).grid(row=2, column=0, columnspan=5, sticky="w", padx=5, pady=(4, 0))
 
 
 def build_role_controls_tab(app, parent: ttk.Frame) -> None:

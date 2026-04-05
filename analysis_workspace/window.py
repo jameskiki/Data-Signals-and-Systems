@@ -41,18 +41,23 @@ from data_ops.cycles import (
     CycleAnalysisResult,
     compute_fixed_length_cycle_analysis,
     compute_cycle_analysis_from_ranges,
+    detect_peak_cycle_ranges,
     detect_rising_edge_cycle_ranges,
+    detect_zero_crossing_cycle_ranges,
 )
 from display_format import apply_numeric_axis_format, format_display_number, format_display_percent
 from main_window.demo import describe_demo_frequency_expectations, get_demo_frequency_guides
 from main_window.datasets import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
 
 from data_ops.filtering import resolve_filtered_column_name
+from data_ops.frame_ops import resample_to_uniform
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
 from data_ops.spectral import (
     FrequencySpectrumResult,
+    SpectrogramResult,
     compute_coherence_spectrum,
     compute_fft_spectrum,
+    compute_spectrogram,
     compute_transfer_estimate,
     compute_welch_psd,
 )
@@ -102,6 +107,12 @@ class AnalysisWorkspace:
         self.signal_filter_window_var = tk.StringVar(value="5")
         self.signal_filter_alpha_var = tk.StringVar(value="0.2")
         self.signal_filter_name_var = tk.StringVar()
+        self.signal_filter_cutoff_var = tk.StringVar(value="10.0")
+        self.signal_filter_order_var = tk.StringVar(value="4")
+        self.signal_filter_spacing_var = tk.StringVar(value="0.0")
+
+        self.resample_time_var = tk.StringVar(value="Index")
+        self.resample_spacing_var = tk.StringVar(value="1.0")
 
         self.derived_operation_var = tk.StringVar(value=DERIVED_OPERATIONS[0])
         self.derived_source_var = tk.StringVar()
@@ -127,6 +138,7 @@ class AnalysisWorkspace:
         self.cycle_reference_var = tk.StringVar(value="Index")
         self.cycle_threshold_var = tk.StringVar(value="0.0")
         self.cycle_max_cycles_var = tk.StringVar(value="")
+        self.cycle_prominence_var = tk.StringVar(value="0.0")
         self.cycle_summary_var = tk.StringVar(value="Analyze equal-length cycles for the active column.")
 
         self._plot_figure: plt.Figure | None = None
@@ -180,8 +192,15 @@ class AnalysisWorkspace:
         if self.on_close is not None:
             self.on_close(self)
 
-    def _refresh_all_views(self) -> None:
+    def _ensure_current_summary(self) -> None:
+        if self.session.last_summary is not None and self.session.last_summary_revision == self.session.working_revision:
+            return
         self.session.last_summary = summarize_dataframe(self.session.working_frame)
+        self.session.last_summary_revision = self.session.working_revision
+
+    def _refresh_all_views(self, refresh_summary: bool = True) -> None:
+        if refresh_summary:
+            self._ensure_current_summary()
         refresh_sidebar(self)
         refresh_history(self)
         refresh_overview(self)
@@ -190,6 +209,17 @@ class AnalysisWorkspace:
         self._refresh_statistics()
         refresh_plot_controls(self)
         self._refresh_frequency_expectation()
+
+    def _refresh_summary_views(self) -> None:
+        self._ensure_current_summary()
+        refresh_sidebar(self)
+        refresh_overview(self)
+        self._refresh_statistics()
+
+    def refresh_column_roles(self, column_roles: dict[str, str]) -> None:
+        self.column_roles = dict(column_roles)
+        self._refresh_all_views(refresh_summary=False)
+        self._refresh_live_plot()
 
     def _refresh_preview(self) -> None:
         self._preview_tree = render_dataframe_preview(
@@ -266,6 +296,9 @@ class AnalysisWorkspace:
                 output_name=self.signal_filter_name_var.get(),
                 window_size=int(self.signal_filter_window_var.get() or "5"),
                 alpha=float(self.signal_filter_alpha_var.get() or "0.2"),
+                cutoff_hz=float(self.signal_filter_cutoff_var.get() or "10.0"),
+                sample_spacing=float(self.signal_filter_spacing_var.get() or "0.0"),
+                filter_order=int(self.signal_filter_order_var.get() or "4"),
             )
         except Exception as error:
             messagebox.showerror("Signal Filter Error", str(error))
@@ -278,6 +311,28 @@ class AnalysisWorkspace:
             focus_column=output_column,
         )
         self.signal_filter_name_var.set("")
+
+    def _apply_resample(self) -> None:
+        time_column = self.resample_time_var.get().strip()
+        if not time_column or time_column == "Index":
+            messagebox.showwarning("Warning", "Select a time column for resampling")
+            return
+
+        try:
+            target_spacing = float(self.resample_spacing_var.get() or "1.0")
+            resampled = resample_to_uniform(
+                self.session.working_frame,
+                time_column=time_column,
+                target_spacing=target_spacing,
+            )
+        except Exception as error:
+            messagebox.showerror("Resample Error", str(error))
+            return
+
+        self._replace_working_frame(
+            resampled,
+            f"Resampled to uniform grid (spacing={target_spacing}) using {time_column}",
+        )
 
     def _apply_derived_signal(self) -> None:
         source_column = self.active_column_var.get().strip()
@@ -329,7 +384,20 @@ class AnalysisWorkspace:
                 "window": self.fft_window_var.get().strip(),
                 "detrend": self.fft_detrend_var.get(),
             }
-            if analysis_name == "Welch PSD":
+            if analysis_name == "Spectrogram":
+                spectrogram_result = compute_spectrogram(
+                    **common_kwargs,
+                    segment_length=int(self.welch_segment_length_var.get() or "256"),
+                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
+                )
+                self._render_spectrogram_result(spectrogram_result)
+                self.session.history.append(
+                    f"Computed Spectrogram for {source_column} "
+                    f"(segment={spectrogram_result.segment_length}, fs={spectrogram_result.sampling_frequency:.1f} Hz)"
+                )
+                refresh_history(self)
+                return
+            elif analysis_name == "Welch PSD":
                 result = compute_welch_psd(
                     **common_kwargs,
                     segment_length=int(self.welch_segment_length_var.get() or "256"),
@@ -388,6 +456,41 @@ class AnalysisWorkspace:
                     source_column=source_column,
                     cycle_ranges=cycle_ranges,
                     method="rising_edge",
+                    reference_column=resolved_reference,
+                )
+            elif cycle_mode == "zero_crossing":
+                reference_column = self.cycle_reference_var.get().strip() or "Index"
+                resolved_reference = source_column if reference_column == "Index" else reference_column
+                cycle_ranges = detect_zero_crossing_cycle_ranges(
+                    self.session.working_frame,
+                    reference_column=resolved_reference,
+                    direction="rising",
+                    min_cycle_length=cycle_length,
+                    max_cycles=max_cycles,
+                )
+                result = compute_cycle_analysis_from_ranges(
+                    self.session.working_frame,
+                    source_column=source_column,
+                    cycle_ranges=cycle_ranges,
+                    method="zero_crossing",
+                    reference_column=resolved_reference,
+                )
+            elif cycle_mode == "peak":
+                reference_column = self.cycle_reference_var.get().strip() or "Index"
+                resolved_reference = source_column if reference_column == "Index" else reference_column
+                prominence = float(self.cycle_prominence_var.get().strip() or "0.0")
+                cycle_ranges = detect_peak_cycle_ranges(
+                    self.session.working_frame,
+                    reference_column=resolved_reference,
+                    min_cycle_length=cycle_length,
+                    prominence=prominence,
+                    max_cycles=max_cycles,
+                )
+                result = compute_cycle_analysis_from_ranges(
+                    self.session.working_frame,
+                    source_column=source_column,
+                    cycle_ranges=cycle_ranges,
+                    method="peak",
                     reference_column=resolved_reference,
                 )
             else:
@@ -461,6 +564,21 @@ class AnalysisWorkspace:
         figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
         frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
         amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
+        has_phase = result.phase is not None and result.phase.size > 0
+
+        if has_phase:
+            figure, (axis, phase_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=True)
+            phase_values = np.degrees(result.phase[1:]) if result.phase.size > 1 else np.degrees(result.phase)
+            phase_axis.plot(frequencies, phase_values, linewidth=1.0, color="#c62828")
+            phase_axis.set_xlabel("Frequency [Hz]", fontsize=9)
+            phase_axis.set_ylabel("Phase [deg]", fontsize=9)
+            phase_axis.set_ylim(-200, 200)
+            phase_axis.set_yticks([-180, -90, 0, 90, 180])
+            phase_axis.grid(True, alpha=0.3)
+            phase_axis.margins(x=0.02)
+            apply_numeric_axis_format(phase_axis, format_x=True, format_y=False)
+        else:
+            figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
         axis.plot(frequencies, amplitudes, linewidth=1.2)
         axis.set_title(result.plot_title, fontsize=10)
         axis.set_xlabel("Frequency [Hz]", fontsize=9)
@@ -507,6 +625,41 @@ class AnalysisWorkspace:
                 widget.destroy()
         if message:
             ttk.Label(self.frequency_plot_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
+
+    def _render_spectrogram_result(self, result: SpectrogramResult) -> None:
+        self._clear_fft_results()
+        self.fft_summary_var.set(
+            f"Spectrogram | {result.source_column} | "
+            f"fs = {result.sampling_frequency:.2f} Hz | "
+            f"Segment: {result.segment_length} samples | "
+            f"Overlap: {result.overlap_fraction:.0%} | "
+            f"Window: {result.window}"
+        )
+
+        power_db = 10.0 * np.log10(result.power.T + 1e-20)
+        figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
+        mesh = axis.pcolormesh(
+            result.times,
+            result.frequencies,
+            power_db,
+            shading="auto",
+            cmap="viridis",
+        )
+        figure.colorbar(mesh, ax=axis, label="Power [dB]")
+        axis.set_title(f"Spectrogram — {result.source_column}", fontsize=10)
+        axis.set_xlabel("Time [s]" if result.reference_column else "Sample", fontsize=9)
+        axis.set_ylabel("Frequency [Hz]", fontsize=9)
+        apply_numeric_axis_format(axis, format_x=True, format_y=True)
+        figure.tight_layout()
+
+        self._fft_figure = figure
+        self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
+        self._fft_canvas.draw()
+        self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
+        self._fft_toolbar.update()
+        self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
+        self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        self.plot_notebook.select(self.frequency_plot_tab)
 
     def _render_cycle_result(self, result: CycleAnalysisResult) -> None:
         self._clear_cycle_results()
@@ -663,6 +816,7 @@ class AnalysisWorkspace:
         self.session.working_frame = dataframe.copy()
         self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
         self.session.working_revision += 1
+        self.session.last_summary = None
         self.session.history.append(history_entry)
         self.fft_summary_var.set(self._default_frequency_summary_text())
         self._clear_fft_results("Recompute the frequency analysis after data changes.")
@@ -864,6 +1018,7 @@ class AnalysisWorkspace:
             f"n={result.sample_count}",
             f"dt={format_display_number(result.sample_spacing)} s",
             f"fs={format_display_number(result.sampling_frequency)} Hz",
+            f"f_nyq={format_display_number(result.nyquist_frequency)} Hz",
             f"dominant={format_display_number(result.dominant_frequency)} Hz",
             f"{result.value_column_label.lower()}={format_display_number(result.dominant_amplitude)}",
             result.spacing_source_text,
@@ -872,4 +1027,6 @@ class AnalysisWorkspace:
             summary_parts.append(f"vs={result.comparison_column}")
         if result.uniformity_ratio > 0.05:
             summary_parts.append(f"nonuniformity~{format_display_percent(result.uniformity_ratio)}")
+        if result.dominant_frequency > 0.8 * result.nyquist_frequency:
+            summary_parts.append("\u26a0 dominant peak near Nyquist")
         return " | ".join(summary_parts)

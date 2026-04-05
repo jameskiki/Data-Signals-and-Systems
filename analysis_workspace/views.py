@@ -2,6 +2,7 @@
 
 import math
 import tkinter as tk
+from dataclasses import dataclass
 from tkinter import font as tkfont, ttk
 
 import pandas as pd
@@ -18,6 +19,48 @@ from .state import (
     STATISTICS_COLUMNS,
     STATISTICS_COLUMN_LABELS,
 )
+
+
+@dataclass(frozen=True)
+class TreeColumnSpec:
+    """Column definition for build_data_tree."""
+
+    key: str
+    label: str
+    width: int
+    min_width: int
+    anchor: str = "e"
+    stretch: bool = False
+
+
+def build_data_tree(
+    container: ttk.Frame,
+    columns: list[TreeColumnSpec],
+    *,
+    selectmode: str = "browse",
+    clear: bool = True,
+) -> ttk.Treeview:
+    """Create a headed Treeview with vertical scrollbar inside *container*.
+
+    Returns the tree ready for row insertion.
+    """
+
+    if clear:
+        _clear_container(container)
+
+    column_keys = [col.key for col in columns]
+    tree = ttk.Treeview(container, columns=column_keys, show="headings", selectmode=selectmode)
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    for col in columns:
+        tree.heading(col.key, text=col.label)
+        tree.column(col.key, width=col.width, minwidth=col.min_width, anchor=col.anchor, stretch=col.stretch)
+
+    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree.config(yscrollcommand=scrollbar.set)
+
+    return tree
 
 
 def render_dataframe_preview(
@@ -92,26 +135,18 @@ def render_statistics_tree(
 ) -> ttk.Treeview:
     """Render a compact engineering statistics tree."""
 
-    _clear_container(container)
-
     tree_font = tkfont.nametofont("TkDefaultFont")
-    tree = ttk.Treeview(container, columns=["column", *STATISTICS_COLUMNS], show="headings")
-    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    tree.heading("column", text="column")
-    column_width = _measure_tree_column_width(
-        tree_font,
-        "column",
-        [str(row_name) for row_name in stats_frame.index],
-        minimum=70,
-        maximum=180,
+    name_width = _measure_tree_column_width(
+        tree_font, "column", [str(row_name) for row_name in stats_frame.index], minimum=70, maximum=180,
     )
-    tree.column("column", width=column_width, minwidth=column_width, anchor="w", stretch=False)
+    col_specs = [TreeColumnSpec(key="column", label="column", width=name_width, min_width=name_width, anchor="w")]
     for column in STATISTICS_COLUMNS:
         label = STATISTICS_COLUMN_LABELS.get(column, column)
-        values = [_format_stat_value(value) for value in stats_frame.get(column, pd.Series(dtype=object)).tolist()]
+        values = [_format_stat_value(v) for v in stats_frame.get(column, pd.Series(dtype=object)).tolist()]
         width = _measure_tree_column_width(tree_font, label, values, minimum=44, maximum=90)
-        tree.heading(column, text=label)
-        tree.column(column, width=width, minwidth=width, anchor="center", stretch=False)
+        col_specs.append(TreeColumnSpec(key=column, label=label, width=width, min_width=width, anchor="center"))
+
+    tree = build_data_tree(container, col_specs)
 
     resolved_roles = column_roles or {}
     for role_name, (background, foreground) in {
@@ -125,9 +160,6 @@ def render_statistics_tree(
         role_name = get_column_role(resolved_roles, str(row_name))
         tree.insert("", tk.END, values=[row_name, *formatted_values], tags=(role_name,))
 
-    stats_scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
-    stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    tree.config(yscrollcommand=stats_scrollbar.set)
     return tree
 
 
@@ -180,9 +212,9 @@ def render_correlation_view(container: ttk.Frame, correlation_frame: pd.DataFram
                 fg=foreground,
                 borderwidth=1,
                 relief="solid",
-                padx=8,
-                pady=5,
-                width=max(7, math.ceil(len(str(column)) * 0.85)),
+                padx=4,
+                pady=2,
+                width=max(6, math.ceil(len(str(column)) * 0.85)),
                 anchor="e",
             )
             label.grid(row=row_index, column=column_index, sticky="nsew")
@@ -208,14 +240,11 @@ def render_fft_peaks_tree(container: ttk.Frame, peaks_frame: pd.DataFrame, value
         ttk.Label(container, text="No FFT peaks available.", justify=tk.LEFT).pack(anchor="w")
         return None
 
-    tree = ttk.Treeview(container, columns=["rank", "frequency_hz", "amplitude"], show="headings")
-    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    tree.heading("rank", text="#")
-    tree.heading("frequency_hz", text="Hz")
-    tree.heading("amplitude", text=value_column_label)
-    tree.column("rank", width=45, minwidth=45, anchor="center", stretch=False)
-    tree.column("frequency_hz", width=90, minwidth=90, anchor="e", stretch=False)
-    tree.column("amplitude", width=100, minwidth=100, anchor="e", stretch=False)
+    tree = build_data_tree(container, [
+        TreeColumnSpec("rank", "#", 45, 45, anchor="center"),
+        TreeColumnSpec("frequency_hz", "Hz", 90, 90),
+        TreeColumnSpec("amplitude", value_column_label, 100, 100),
+    ], clear=False)
 
     for row in peaks_frame.itertuples(index=False):
         tree.insert(
@@ -224,9 +253,6 @@ def render_fft_peaks_tree(container: ttk.Frame, peaks_frame: pd.DataFrame, value
             values=(int(row.rank), _format_stat_value(row.frequency_hz), _format_stat_value(row.amplitude)),
         )
 
-    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    tree.config(yscrollcommand=scrollbar.set)
     return tree
 
 
@@ -239,30 +265,20 @@ def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame)
         ttk.Label(container, text="No cycle metrics available.", justify=tk.LEFT).pack(anchor="w")
         return None
 
-    columns = ["cycle", "start", "end", "length", "mean", "std", "min", "max", "rms", "peak_to_peak"]
-    labels = {
-        "cycle": "#",
-        "start": "start",
-        "end": "end",
-        "length": "len",
-        "mean": "mean",
-        "std": "sd",
-        "min": "min",
-        "max": "max",
-        "rms": "rms",
-        "peak_to_peak": "p2p",
-    }
+    col_specs = [
+        TreeColumnSpec("cycle", "#", 45, 45, anchor="center"),
+        TreeColumnSpec("start", "start", 68, 60),
+        TreeColumnSpec("end", "end", 68, 60),
+        TreeColumnSpec("length", "len", 68, 60),
+        TreeColumnSpec("mean", "mean", 82, 72),
+        TreeColumnSpec("std", "sd", 82, 72),
+        TreeColumnSpec("min", "min", 82, 72),
+        TreeColumnSpec("max", "max", 82, 72),
+        TreeColumnSpec("rms", "rms", 82, 72),
+        TreeColumnSpec("peak_to_peak", "p2p", 82, 72),
+    ]
 
-    tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="extended")
-    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    tree.heading("cycle", text=labels["cycle"])
-    tree.column("cycle", width=45, minwidth=45, anchor="center", stretch=False)
-    for column_name in columns[1:4]:
-        tree.heading(column_name, text=labels[column_name])
-        tree.column(column_name, width=68, minwidth=60, anchor="e", stretch=False)
-    for column_name in columns[4:]:
-        tree.heading(column_name, text=labels[column_name])
-        tree.column(column_name, width=82, minwidth=72, anchor="e", stretch=False)
+    tree = build_data_tree(container, col_specs, selectmode="extended", clear=False)
 
     for row in metrics_frame.itertuples(index=False):
         tree.insert(
@@ -282,9 +298,6 @@ def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame)
             ),
         )
 
-    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    tree.config(yscrollcommand=scrollbar.set)
     return tree
 
 
@@ -350,8 +363,8 @@ def _build_correlation_header_cell(
         font=font,
         borderwidth=1,
         relief="solid",
-        padx=8,
-        pady=5,
+        padx=4,
+        pady=2,
         anchor=anchor,
     )
     label.grid(row=row_index, column=column_index, sticky="nsew")

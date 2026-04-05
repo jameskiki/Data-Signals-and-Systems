@@ -82,7 +82,7 @@ flowchart TB
 
 The main window is for structural work: load files, inspect them, assign roles, choose which columns to carry forward, and create prepared datasets. If one source file contains several useful row windows, `Preparation -> Split Into Subframes` is the main-window tool for breaking it apart before analysis.
 
-The analysis workspace is for detailed work on one selected dataset. The sidebar sets the active context, `Preview` lets you verify the current working dataframe, `Filter` and `Derived Signals` change that working copy, `Frequency` and `Cycles` inspect behavior, and `Statistics` summarizes the result.
+The analysis workspace is for detailed work on one selected dataset. The sidebar sets the active context, `Preview` lets you verify the current working dataframe, `Filter` (with sub-tabs for Simple Filtering, Signal Processing, and Resample) and `Derived Signals` change that working copy, `Frequency` and `Cycles` inspect behavior, and `Statistics` summarizes the result.
 
 Where a deeper method note exists, the practical workflow should link to it. For frequency analysis, the current formal note is [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
@@ -172,7 +172,7 @@ Select exactly one dataset, then use:
 
 The analysis workspace is for detailed work on one dataset at a time.
 
-The `Preview` tab shows the current working dataframe. `Filter` and `Derived Signals` change that working copy. `Frequency` runs FFT amplitude or Welch PSD. `Cycles` focuses on repeated segments. `Statistics` summarizes the current state with statistics and correlation views.
+The `Preview` tab shows the current working dataframe. `Filter` changes that working copy through three sub-tabs: Simple Filtering (min/max masking), Signal Processing (smoothing, high-pass, and Butterworth filters), and Resample (interpolation to a uniform time grid). `Derived Signals` creates new columns such as delta, derivative, detrend, integrate, rms_envelope, and hilbert_envelope. `Frequency` runs FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, or Spectrogram. `Cycles` detects repeated segments via fixed_length, rising_edge, zero_crossing, or peak detection. `Statistics` summarizes the current state with statistics and correlation views.
 
 ## Step 8: Choose The Right Analysis Tool
 
@@ -180,9 +180,10 @@ Use the sidebar to choose the active analysis column first.
 
 Then choose the appropriate tab:
 
-- `Filter` when you want to clean, limit, or smooth a signal
-- `Derived Signals` when you want new columns based on an existing signal
-- `Frequency` when you want to find repeating patterns or strong frequency content
+- `Filter` when you want to clean, limit, smooth, or resample a signal
+- `Derived Signals` when you want new columns based on an existing signal (delta, derivative, detrend, integrate, envelope, etc.)
+- `Frequency` when you want to find repeating patterns, strong frequency content, input-output relationships, or time-varying spectral behavior
+- `Cycles` when you want to segment repeating patterns based on fixed blocks, threshold crossings, zero crossings, or peak locations
 - `Statistics` when you want distributions, summary values, or correlations
 
 Example: if you mainly want to know whether a signal repeats strongly, go straight to `Frequency`. If you first need to smooth or clean the signal, start in `Filter` and then return to `Frequency`.
@@ -190,6 +191,12 @@ Example: if you mainly want to know whether a signal repeats strongly, go straig
 For the short method reference behind `Filter`, `Derived Signals`, `Frequency`, `Cycles`, and `Statistics`, see [analysis-methods.md](analysis-methods.md).
 
 For the current technical note behind `FFT Amplitude` and `Welch PSD`, see [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
+
+The `Filter` tab has three sub-tabs:
+
+- **Simple Filtering**: mask values outside a min/max range on the active column.
+- **Signal Processing**: apply smoothing, high-pass, or Butterworth filters (lowpass, highpass, bandpass). Butterworth filters use zero-phase `sosfiltfilt` and require cutoff frequency, sample spacing, and filter order.
+- **Resample**: interpolate all numeric columns to a uniform time grid by specifying the time column and target spacing.
 
 For a fuller task-to-tool mapping, see `which-tool-when.md`.
 

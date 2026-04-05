@@ -8,6 +8,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
+from data_ops.models import DataSummary
 from data_ops.summary import summarize_dataframe
 
 
@@ -53,6 +54,7 @@ class DatasetContext:
     source_paths: list[str] = field(default_factory=list)
     description: str = ""
     column_roles: dict[str, str] = field(default_factory=dict)
+    cached_summary: DataSummary | None = None
 
 
 def register_dataset(
@@ -70,6 +72,7 @@ def register_dataset(
         source_paths=list(dict.fromkeys(source_paths or [dataset_path])),
         description=description,
         column_roles=infer_column_roles(dataframe, column_roles),
+        cached_summary=None,
     )
 
 
@@ -309,33 +312,34 @@ def collect_source_paths(app, dataset_paths: list[str]) -> list[str]:
 
 
 def refresh_dataset_table(app) -> None:
-    """Rebuild the dataset table from the registered datasets."""
+    """Rebuild the compact dataset selector table."""
 
     if app.dataset_table is None:
         return
 
-    selected_paths = set(app._get_selected_file_paths())
+    selected_paths = {
+        iid
+        for iid in app.dataset_table.selection()
+        if app.dataset_table.exists(iid)
+    }
     for item_id in app.dataset_table.get_children():
         app.dataset_table.delete(item_id)
 
     for path, dataframe in app.data_frames.items():
         context = app.dataset_contexts.get(path, DatasetContext(source_paths=[path], description="", column_roles={}))
-        source_label = format_source_paths(context.source_paths)
-        summary = summarize_dataframe(dataframe)
+        if context.cached_summary is None:
+            context.cached_summary = summarize_dataframe(dataframe)
+        summary = context.cached_summary
         app.dataset_table.insert(
             "",
             tk.END,
             iid=path,
             values=(
-                path,
+                os.path.basename(path),
                 summary.row_count,
                 summary.column_count,
-                summary.numeric_column_count,
-                summary.datetime_column_count,
                 summary.total_missing_count,
-                source_label,
-                summary.time_range_text or "-",
-                summary.missing_columns_text or "-",
+                format_source_paths(context.source_paths),
             ),
         )
 
@@ -345,7 +349,7 @@ def refresh_dataset_table(app) -> None:
 
 
 def select_dataset_in_table(app, file_path: str) -> None:
-    """Select and reveal one dataset in the dataset table."""
+    """Select and reveal one dataset in the selector table."""
 
     if app.dataset_table is None or not app.dataset_table.exists(file_path):
         return

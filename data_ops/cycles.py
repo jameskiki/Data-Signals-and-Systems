@@ -135,6 +135,84 @@ def detect_rising_edge_cycle_ranges(
     return cycle_ranges
 
 
+def detect_zero_crossing_cycle_ranges(
+    dataframe: pd.DataFrame,
+    reference_column: str,
+    direction: str = "rising",
+    min_cycle_length: int = 2,
+    max_cycles: int | None = None,
+) -> list[tuple[int, int]]:
+    """Detect cycles at zero-crossing points of a reference signal."""
+
+    if reference_column not in dataframe.columns:
+        raise KeyError(f"Unknown reference column: {reference_column}")
+    if min_cycle_length <= 1:
+        raise ValueError("Minimum cycle length must be greater than 1")
+
+    reference_series = pd.to_numeric(dataframe[reference_column], errors="coerce")
+    values = reference_series.to_numpy(dtype=float)
+    sign_changes = np.diff(np.sign(values))
+
+    if direction == "rising":
+        crossings = np.flatnonzero(sign_changes > 0)
+    elif direction == "falling":
+        crossings = np.flatnonzero(sign_changes < 0)
+    else:
+        crossings = np.flatnonzero(sign_changes != 0)
+
+    if crossings.size < 2:
+        raise ValueError(f"Need at least two {direction} zero crossings to define cycles")
+
+    cycle_ranges: list[tuple[int, int]] = []
+    for start_index, end_index in zip(crossings[:-1], crossings[1:]):
+        if int(end_index) - int(start_index) < min_cycle_length:
+            continue
+        cycle_ranges.append((int(start_index), int(end_index)))
+        if max_cycles is not None and len(cycle_ranges) >= max_cycles:
+            break
+
+    if not cycle_ranges:
+        raise ValueError("No cycles matched the selected zero-crossing criteria and minimum length")
+    return cycle_ranges
+
+
+def detect_peak_cycle_ranges(
+    dataframe: pd.DataFrame,
+    reference_column: str,
+    min_cycle_length: int = 2,
+    prominence: float = 0.0,
+    max_cycles: int | None = None,
+) -> list[tuple[int, int]]:
+    """Detect cycles between successive peaks of a reference signal."""
+
+    from scipy.signal import find_peaks
+
+    if reference_column not in dataframe.columns:
+        raise KeyError(f"Unknown reference column: {reference_column}")
+    if min_cycle_length <= 1:
+        raise ValueError("Minimum cycle length must be greater than 1")
+
+    reference_series = pd.to_numeric(dataframe[reference_column], errors="coerce")
+    values = reference_series.to_numpy(dtype=float)
+    peak_kwargs: dict = {"distance": min_cycle_length}
+    if prominence > 0:
+        peak_kwargs["prominence"] = float(prominence)
+
+    peaks, _ = find_peaks(values, **peak_kwargs)
+    if peaks.size < 2:
+        raise ValueError("Need at least two peaks to define cycles")
+
+    cycle_ranges: list[tuple[int, int]] = []
+    for start_index, end_index in zip(peaks[:-1], peaks[1:]):
+        cycle_ranges.append((int(start_index), int(end_index)))
+        if max_cycles is not None and len(cycle_ranges) >= max_cycles:
+            break
+
+    if not cycle_ranges:
+        raise ValueError("No cycles matched the selected peak detection criteria")
+    return cycle_ranges
+
+
 def compute_fixed_length_cycle_analysis(
     dataframe: pd.DataFrame,
     source_column: str,

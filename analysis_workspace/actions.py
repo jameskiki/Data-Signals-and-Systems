@@ -48,6 +48,9 @@ def build_signal_filter_update(
     output_name: str,
     window_size: int,
     alpha: float,
+    cutoff_hz: float = 1.0,
+    sample_spacing: float = 0.0,
+    filter_order: int = 4,
 ) -> FrameUpdate:
     """Apply a signal filter and return the resulting dataframe update."""
 
@@ -59,6 +62,9 @@ def build_signal_filter_update(
         new_column=output_column,
         window_size=window_size,
         alpha=alpha,
+        cutoff_hz=cutoff_hz,
+        sample_spacing=sample_spacing,
+        filter_order=filter_order,
     )
     return FrameUpdate(
         dataframe=filtered_frame,

@@ -30,6 +30,7 @@ from .datasets import (
     format_source_paths,
     get_available_column_roles,
     get_column_role_cell_colors,
+    get_preferred_role_column,
     infer_column_roles,
     parse_split_ranges,
     refresh_dataset_table,
@@ -82,7 +83,8 @@ class DataAnalysisApp:
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
 
         self.selected_dataset_var = tk.StringVar(value="No dataset selected")
-        self.dataset_shape_var = tk.StringVar(value="Select exactly one dataset for preparation")
+        self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")
+        self.dataset_source_var = tk.StringVar(value="")
         self.dataset_source_var = tk.StringVar(value="")
         self.dataset_note_var = tk.StringVar(value="")
 
@@ -92,6 +94,12 @@ class DataAnalysisApp:
         self.role_editor_value_var = tk.StringVar(value="metadata")
         self.split_prefix_var = tk.StringVar(value="cycle")
         self.preview_plot_signal_summary_var = tk.StringVar(value="No dataset selected")
+        self.row_range_start_var = tk.StringVar(value="")
+        self.row_range_end_var = tk.StringVar(value="")
+        self.row_range_label_var = tk.StringVar(value="Row index")
+        self._row_range_update_in_progress = False
+        self._row_range_span_selector = None
+        self._row_range_debounce_id: str | None = None
 
         self._preview_table_container: ttk.Frame | None = None
         self._preview_plot_container: ttk.Frame | None = None
@@ -105,10 +113,13 @@ class DataAnalysisApp:
         self._column_selector_button: ttk.Menubutton | None = None
         self._column_selector_menu: tk.Menu | None = None
         self._column_selection_vars: dict[str, tk.BooleanVar] = {}
+        self._row_range_reset_button: ttk.Button | None = None
 
         build_main_ui(self, PREVIEW_ROW_LIMIT)
         self.role_editor_column_var.trace_add("write", self._handle_role_editor_column_changed)
         self.role_editor_value_var.trace_add("write", self._handle_role_editor_value_changed)
+        self.row_range_start_var.trace_add("write", self._handle_row_range_changed)
+        self.row_range_end_var.trace_add("write", self._handle_row_range_changed)
         self._refresh_dataset_preparation_views()
 
     def load_files(self) -> None:
@@ -198,7 +209,7 @@ class DataAnalysisApp:
         return dataset_path
 
     def plot_selected_data(self) -> None:
-        selected_file_paths = self._get_selected_file_paths("Select one or more files first")
+        selected_file_paths = self._get_multiple_selected_file_paths("Select one or more files first")
         if not selected_file_paths:
             return
 
@@ -224,7 +235,7 @@ class DataAnalysisApp:
         show_figure_in_window(self.root, figure, PLOT_WINDOW_TITLE, PLOT_WINDOW_GEOMETRY)
 
     def merge_selected_files(self) -> None:
-        selected_file_paths = self._get_selected_file_paths("Select one or more files first")
+        selected_file_paths = self._get_multiple_selected_file_paths("Select files to merge")
         if not selected_file_paths:
             return
         if len(selected_file_paths) < 2:
@@ -363,7 +374,7 @@ class DataAnalysisApp:
         self._analysis_workspaces.append(workspace)
 
     def unload_selected_files(self) -> None:
-        selected_file_paths = self._get_selected_file_paths("Select one or more files to unload")
+        selected_file_paths = self._get_multiple_selected_file_paths("Select files to unload")
         if not selected_file_paths:
             return
 
@@ -404,26 +415,169 @@ class DataAnalysisApp:
         context = self.dataset_contexts.get(selected_path, DatasetContext(source_paths=[selected_path], description=""))
 
         self.selected_dataset_var.set(os.path.basename(selected_path))
-        self.dataset_shape_var.set(f"Shape: {dataframe.shape[0]} rows x {dataframe.shape[1]} columns")
+        self.dataset_shape_var.set(f"{dataframe.shape[0]} rows x {dataframe.shape[1]} columns")
         self.dataset_source_var.set(format_source_paths(context.source_paths))
         note_parts = [part for part in [context.description, summarize_column_roles(context.column_roles)] if part]
         self.dataset_note_var.set("\n".join(note_parts))
         self._refresh_role_editor(dataframe, context.column_roles)
-        refresh_preview_table(self, dataframe, PREVIEW_ROW_LIMIT, context.column_roles)
+        self._refresh_row_range_controls(dataframe, context.column_roles)
+        preview_frame = self._get_row_range_filtered_frame(dataframe, context.column_roles)
+        refresh_preview_table(self, preview_frame, PREVIEW_ROW_LIMIT, context.column_roles)
         self._refresh_dataset_controls(dataframe)
-        refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
+        self._refresh_preview_with_range(dataframe, context.column_roles)
 
     def _clear_preparation_views(self) -> None:
-        message = "Select exactly one dataset to preview or structurally prepare it."
-        self.selected_dataset_var.set("No dataset selected")
+        message = "Select a dataset to preview or prepare it."
+        self.selected_dataset_var.set("")
         self.dataset_shape_var.set(message)
         self.dataset_source_var.set("")
         self.dataset_note_var.set("")
         self._clear_role_editor()
+        self._reset_row_range()
         clear_preview_plot(self, message)
         clear_preview_table(self, message)
         self._clear_preview_plot_signal_selector()
         self._clear_column_selector()
+
+    # ── Row range helpers ──────────────────────────────────────────────
+
+    def _get_time_column(self, column_roles: dict[str, str]) -> str | None:
+        """Return the name of the time-role column, or None."""
+        return get_preferred_role_column(column_roles, "time")
+
+    def _refresh_row_range_controls(self, dataframe: pd.DataFrame, column_roles: dict[str, str]) -> None:
+        """Set the range label and placeholder text based on the reference column."""
+        time_col = self._get_time_column(column_roles)
+        if time_col is not None:
+            self.row_range_label_var.set(f"Range ({time_col})")
+        else:
+            self.row_range_label_var.set("Range (row index)")
+
+    def _reset_row_range(self) -> None:
+        """Clear the row range entries back to empty (= full dataset)."""
+        self._row_range_update_in_progress = True
+        self.row_range_start_var.set("")
+        self.row_range_end_var.set("")
+        self._row_range_update_in_progress = False
+
+    def _handle_row_range_changed(self, *_args: object) -> None:
+        """Called whenever start or end entry text changes — debounced."""
+        if self._row_range_update_in_progress:
+            return
+        if self._row_range_debounce_id is not None:
+            self.root.after_cancel(self._row_range_debounce_id)
+        self._row_range_debounce_id = self.root.after(350, self._apply_row_range_to_preview)
+
+    def _apply_row_range_to_preview(self) -> None:
+        """Re-render the preview table using the current range filter.
+
+        The plot always shows the full dataset (with an interactive
+        SpanSelector for visual picking), so only the table is filtered.
+        """
+        selected_path = self._get_single_selected_file_path()
+        if selected_path is None:
+            return
+        dataframe = self.data_frames[selected_path]
+        context = self.dataset_contexts.get(selected_path, DatasetContext())
+        preview_frame = self._get_row_range_filtered_frame(dataframe, context.column_roles)
+        refresh_preview_table(self, preview_frame, PREVIEW_ROW_LIMIT, context.column_roles)
+
+    def _get_row_range_filtered_frame(self, dataframe: pd.DataFrame, column_roles: dict[str, str]) -> pd.DataFrame:
+        """Return the dataframe sliced to the current row range controls."""
+        start_text = self.row_range_start_var.get().strip()
+        end_text = self.row_range_end_var.get().strip()
+        if not start_text and not end_text:
+            return dataframe
+
+        time_col = self._get_time_column(column_roles)
+        if time_col is not None:
+            return self._filter_by_time_range(dataframe, time_col, start_text, end_text)
+        return self._filter_by_index_range(dataframe, start_text, end_text)
+
+    def _filter_by_time_range(
+        self, dataframe: pd.DataFrame, time_col: str, start_text: str, end_text: str,
+    ) -> pd.DataFrame:
+        time_values = pd.to_numeric(dataframe[time_col], errors="coerce")
+        mask = pd.Series(True, index=dataframe.index)
+        try:
+            if start_text:
+                mask &= time_values >= float(start_text)
+        except ValueError:
+            pass
+        try:
+            if end_text:
+                mask &= time_values <= float(end_text)
+        except ValueError:
+            pass
+        filtered = dataframe.loc[mask].reset_index(drop=True)
+        return filtered if not filtered.empty else dataframe
+
+    def _filter_by_index_range(
+        self, dataframe: pd.DataFrame, start_text: str, end_text: str,
+    ) -> pd.DataFrame:
+        try:
+            start_idx = int(start_text) if start_text else 0
+        except ValueError:
+            start_idx = 0
+        try:
+            end_idx = int(end_text) if end_text else len(dataframe)
+        except ValueError:
+            end_idx = len(dataframe)
+        start_idx = max(0, min(start_idx, len(dataframe)))
+        end_idx = max(start_idx, min(end_idx, len(dataframe)))
+        filtered = dataframe.iloc[start_idx:end_idx].reset_index(drop=True)
+        return filtered if not filtered.empty else dataframe
+
+    def _refresh_preview_with_range(self, dataframe: pd.DataFrame, column_roles: dict[str, str]) -> None:
+        """Render the preview plot using the full data (SpanSelector highlights the range)."""
+        refresh_preview_plot(
+            self,
+            dataframe,
+            PREVIEW_PLOT_FIGURE_SIZE,
+            PREVIEW_PLOT_MAX_COLUMNS,
+            column_roles,
+        )
+
+    def _set_row_range_from_span(self, start_val: float, end_val: float) -> None:
+        """Called by the SpanSelector to fill the range entries.
+
+        Only updates entries and the table — does NOT re-render the plot
+        (which would destroy the active SpanSelector widget).
+        """
+        selected_path = self._get_single_selected_file_path()
+        if selected_path is None:
+            return
+        context = self.dataset_contexts.get(selected_path, DatasetContext())
+        time_col = self._get_time_column(context.column_roles)
+
+        self._row_range_update_in_progress = True
+        if time_col is not None:
+            self.row_range_start_var.set(f"{start_val:.6g}")
+            self.row_range_end_var.set(f"{end_val:.6g}")
+        else:
+            self.row_range_start_var.set(str(int(round(start_val))))
+            self.row_range_end_var.set(str(int(round(end_val))))
+        self._row_range_update_in_progress = False
+
+        # Update only the table preview, not the plot
+        dataframe = self.data_frames[selected_path]
+        preview_frame = self._get_row_range_filtered_frame(dataframe, context.column_roles)
+        refresh_preview_table(self, preview_frame, PREVIEW_ROW_LIMIT, context.column_roles)
+
+    def reset_row_range(self) -> None:
+        """Public callback for the Reset button."""
+        self._reset_row_range()
+        selected_path = self._get_single_selected_file_path()
+        if selected_path is None:
+            return
+        dataframe = self.data_frames[selected_path]
+        context = self.dataset_contexts.get(selected_path, DatasetContext())
+        refresh_preview_table(self, dataframe, PREVIEW_ROW_LIMIT, context.column_roles)
+        self._refresh_preview_with_range(dataframe, context.column_roles)
+
+    def get_row_range_for_preparation(self) -> tuple[str, str]:
+        """Return the current (start, end) range text for use during dataset creation."""
+        return self.row_range_start_var.get().strip(), self.row_range_end_var.get().strip()
 
     def _refresh_dataset_controls(self, dataframe: pd.DataFrame) -> None:
         if self._column_selector_menu is None:
@@ -620,7 +774,7 @@ class DataAnalysisApp:
         return get_column_role_cell_colors(column_roles.get(column_name, "metadata"))
 
     def _handle_file_selection_changed(self, _event: tk.Event | None = None) -> None:
-        self._refresh_dataset_preparation_views()
+        self._handle_dataset_combo_changed(_event)
 
     def _refresh_role_editor(self, dataframe: pd.DataFrame, column_roles: dict[str, str]) -> None:
         if self.role_editor_column_combo is None or self.role_editor_value_combo is None:
@@ -707,36 +861,92 @@ class DataAnalysisApp:
         for workspace in self._analysis_workspaces:
             if workspace.session.source_path != dataset_path:
                 continue
-            workspace.column_roles = dict(column_roles)
-            workspace._refresh_all_views()
-            workspace._refresh_live_plot()
+            workspace.refresh_column_roles(column_roles)
 
     def _get_selected_file_paths(self, warning_message: str | None = None) -> list[str]:
-        if self.dataset_table is None:
-            return []
+        """Return a list containing the single combobox-selected path."""
+        path = self._get_single_selected_file_path(warning_message)
+        return [path] if path is not None else []
 
+    def _get_single_selected_file_path(self, warning_message: str | None = None) -> str | None:
+        if self.dataset_table is None:
+            return None
         selection = self.dataset_table.selection()
         if not selection:
             if warning_message:
                 messagebox.showwarning("Warning", warning_message)
+            return None
+        path = selection[0]  # iid is the full dataset path
+        if path in self.data_frames:
+            return path
+        if warning_message:
+            messagebox.showwarning("Warning", warning_message)
+        return None
+
+    def _get_multiple_selected_file_paths(self, warning_message: str) -> list[str]:
+        """Open a dialog for the user to pick multiple datasets."""
+        if not self.data_frames:
+            messagebox.showwarning("Warning", warning_message)
             return []
+        return self._prompt_multi_dataset_selection(warning_message)
 
-        selected_paths: list[str] = []
-        for item_id in selection:
-            dataset_path = self.dataset_table.set(item_id, "dataset")
-            if dataset_path in self.data_frames:
-                selected_paths.append(dataset_path)
-        return selected_paths
+    def _prompt_multi_dataset_selection(self, title: str) -> list[str]:
+        """Show a dialog with checkboxes for all loaded datasets. Return selected paths."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(True, True)
+        dialog.geometry("500x350")
 
-    def _get_single_selected_file_path(self, warning_message: str | None = None) -> str | None:
-        selected_file_paths = self._get_selected_file_paths(warning_message)
-        if not selected_file_paths:
-            return None
-        if len(selected_file_paths) != 1:
-            if warning_message:
-                messagebox.showwarning("Warning", warning_message)
-            return None
-        return selected_file_paths[0]
+        container = ttk.Frame(dialog, padding=10)
+        container.pack(fill=tk.BOTH, expand=True)
+        container.rowconfigure(1, weight=1)
+        container.columnconfigure(0, weight=1)
+
+        ttk.Label(container, text="Select one or more datasets:").grid(
+            row=0, column=0, sticky="w", padx=5, pady=(0, 5),
+        )
+
+        list_frame = ttk.Frame(container)
+        list_frame.grid(row=1, column=0, sticky="nsew", padx=5)
+        list_frame.rowconfigure(0, weight=1)
+        list_frame.columnconfigure(0, weight=1)
+
+        listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
+        listbox.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        listbox.configure(yscrollcommand=scrollbar.set)
+
+        paths = list(self.data_frames.keys())
+        for path in paths:
+            listbox.insert(tk.END, os.path.basename(path))
+
+        result: list[str] = []
+
+        def _confirm() -> None:
+            nonlocal result
+            result = [paths[i] for i in listbox.curselection()]
+            dialog.destroy()
+
+        def _cancel() -> None:
+            dialog.destroy()
+
+        btn_row = ttk.Frame(container)
+        btn_row.grid(row=2, column=0, sticky="ew", padx=5, pady=(8, 0))
+        btn_row.columnconfigure(0, weight=1)
+        btn_row.columnconfigure(1, weight=1)
+        ttk.Button(btn_row, text="OK", command=_confirm).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(btn_row, text="Cancel", command=_cancel).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        dialog.protocol("WM_DELETE_WINDOW", _cancel)
+        dialog.wait_window()
+        return result
+
+    def _handle_dataset_combo_changed(self, _event: tk.Event | None = None) -> None:
+        self._reset_row_range()
+        self._refresh_dataset_preparation_views()
 
     def _refresh_file_listbox(self) -> None:
         refresh_dataset_table(self)

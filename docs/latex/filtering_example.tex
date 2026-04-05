@@ -121,6 +121,61 @@ Use it when you want to suppress slow drift and emphasize faster variations.
     \caption{High-pass filtering on the built-in spectral demo. The lower panel compares the high-pass result against the known \texttt{structural\_ringing} component included in the synthetic dataset.}
 \end{figure}
 
+\section{Butterworth Filters}
+
+EvalData also exposes zero-phase Butterworth filters for lowpass, highpass, and bandpass operation. These are designed digital IIR filters with a maximally flat magnitude response in the passband.
+
+\subsection{Butterworth Transfer Function}
+
+The squared magnitude response of an $N$-th order Butterworth lowpass filter with cutoff frequency $f_c$ is
+
+\[
+|H(f)|^2 = \frac{1}{1 + \left(\frac{f}{f_c}\right)^{2N}}.
+\]
+
+At the cutoff frequency $f = f_c$ the gain is $-3$\,dB regardless of filter order. Higher order $N$ gives a steeper roll-off.
+
+For a digital implementation, the analog prototype is mapped to a discrete-time filter using the bilinear transform. The cutoff frequency must be normalized to the Nyquist frequency $f_{\mathrm{Ny}} = f_s / 2$:
+
+\[
+W_n = \frac{f_c}{f_{\mathrm{Ny}}}, \qquad 0 < W_n < 1.
+\]
+
+\subsection{Lowpass}
+
+A Butterworth lowpass filter passes frequencies below $f_c$ and attenuates frequencies above it. It is used to suppress high-frequency noise while preserving slower signal content.
+
+\subsection{Highpass}
+
+A Butterworth highpass filter passes frequencies above $f_c$ and attenuates frequencies below it. It is used to remove slow trends or DC offsets while preserving faster oscillations.
+
+\subsection{Bandpass}
+
+A Butterworth bandpass filter passes frequencies in the range $[f_{\mathrm{low}}, f_{\mathrm{high}}]$ and attenuates content outside that band. Two normalized cutoff frequencies are required:
+
+\[
+W_{n,1} = \frac{f_{\mathrm{low}}}{f_{\mathrm{Ny}}}, \qquad W_{n,2} = \frac{f_{\mathrm{high}}}{f_{\mathrm{Ny}}}, \qquad 0 < W_{n,1} < W_{n,2} < 1.
+\]
+
+\subsection{Zero-Phase Implementation}
+
+All three Butterworth filter types use zero-phase filtering via \texttt{sosfiltfilt}. The filter is applied forward and then backward, which squares the magnitude response and eliminates phase distortion:
+
+\[
+y[n] = \mathrm{sosfiltfilt}(\mathrm{SOS}, x[n]),
+\]
+
+where $\mathrm{SOS}$ is the second-order sections representation produced by \texttt{scipy.signal.butter}. Because the filter is applied twice, the effective order is doubled: an $N$-th order design yields a $2N$-th order zero-phase response.
+
+\subsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Filter order} $N$: controls roll-off steepness. EvalData clamps to $1 \le N \le 10$.
+    \item \textbf{Cutoff frequency} $f_c$ (Hz): the $-3$\,dB point. Must satisfy $0 < f_c < f_{\mathrm{Ny}}$. Bandpass requires two values.
+    \item \textbf{Sample spacing} $\Delta t$ (s): the uniform time step between samples. Required so that $f_s = 1/\Delta t$ is known.
+    \item The signal must contain at least $3N + 1$ valid samples for stable filtering.
+\end{itemize}
+
 \section{What the Demo Shows}
 
 The spectral reference demo contains several ingredients on purpose:
@@ -149,7 +204,10 @@ These methods are useful, but they have limits:
     \item stronger smoothing also blurs short events,
     \item median and moving-average filters do not preserve the same features equally well,
     \item exponential smoothing introduces lag,
-    \item the current high-pass option should not be described as a precise frequency-domain filter design,
+    \item the moving-average high-pass option should not be described as a precise frequency-domain filter design,
+    \item Butterworth filters require correct sample spacing; wrong spacing shifts all frequency interpretations,
+    \item Butterworth bandpass requires two well-separated cutoff frequencies below the Nyquist limit,
+    \item zero-phase filtering cannot be applied causally in real-time applications,
     \item a masked simple-filter output is not the same thing as row-wise trimming.
 \end{itemize}
 
@@ -157,6 +215,36 @@ Those distinctions matter because the user-visible controls are operationally si
 
 \section{Conclusion}
 
-EvalData's current filtering tools are lightweight and practical. Simple filtering is a masking tool. The signal-processing filters are smoothing or trend-removal tools. The built-in spectral demo gives a reproducible reference case for showing the difference between those behaviors without relying on private measurement data.
+EvalData's current filtering tools span two levels: lightweight smoothing and trend-removal tools (moving average, median, exponential smoothing, moving-average high-pass) and designed digital filters (Butterworth lowpass, highpass, bandpass with zero-phase application). Simple filtering remains a masking tool. The built-in spectral demo gives a reproducible reference case for showing the difference between those behaviors without relying on private measurement data.
+
+\begin{thebibliography}{9}
+
+\bibitem{oppenheim2010}
+A.~V.~Oppenheim and R.~W.~Schafer,
+\emph{Discrete-Time Signal Processing}, 3rd~ed.
+Upper Saddle River, NJ: Pearson, 2010.
+
+\bibitem{smith1997}
+S.~W.~Smith,
+\emph{The Scientist and Engineer's Guide to Digital Signal Processing}.
+San Diego, CA: California Technical Publishing, 1997.
+Available: \url{https://www.dspguide.com/}
+
+\bibitem{butterworth1930}
+S.~Butterworth,
+``On the theory of filter amplifiers,''
+\emph{Wireless Engineer}, vol.~7, no.~6, pp.~536--541, 1930.
+
+\bibitem{parks1987}
+T.~W.~Parks and C.~S.~Burrus,
+\emph{Digital Filter Design}.
+New York, NY: Wiley, 1987.
+
+\bibitem{gustafsson1996}
+F.~Gustafsson,
+``Determining the initial states in forward-backward filtering,''
+\emph{IEEE Trans.\ Signal Processing}, vol.~44, no.~4, pp.~988--992, 1996.
+
+\end{thebibliography}
 
 \end{document}

@@ -26,14 +26,18 @@ Derived signals create new columns from existing columns. They do not overwrite 
 
 \section{Operation Set}
 
-The current UI exposes five derived-signal operations:
+The current UI exposes nine derived-signal operations:
 
 \begin{itemize}
     \item \textbf{delta}: first difference,
     \item \textbf{ratio}: source divided by a second column,
     \item \textbf{rolling\_mean}: moving average written as a derived column,
     \item \textbf{derivative}: discrete rate of change with respect to a reference column or index,
-    \item \textbf{normalized}: z-score normalization, or mean-centering when the standard deviation is zero.
+    \item \textbf{normalized}: z-score normalization, or mean-centering when the standard deviation is zero,
+    \item \textbf{detrend}: polynomial trend removal,
+    \item \textbf{integrate}: cumulative trapezoidal integration,
+    \item \textbf{rms\_envelope}: rolling root-mean-square envelope,
+    \item \textbf{hilbert\_envelope}: amplitude envelope via the analytic signal.
 \end{itemize}
 
 \section{Difference-Based Signals}
@@ -108,6 +112,87 @@ z[n] = x[n] - \mu_x.
     \caption{Normalization on the built-in input-output demo. The lower plot shows the same \texttt{system\_output} channel after z-score scaling.}
 \end{figure}
 
+\section{Trend Removal and Integration}
+
+\subsection{Detrend (Polynomial Trend Removal)}
+
+The detrend operation fits a polynomial of order $p$ ($1 \le p \le 3$) to the signal and subtracts it. Let $x[n]$ be the signal and $n$ the sample index. EvalData uses \texttt{numpy.polyfit} to find coefficients $a_0, a_1, \dots, a_p$ that minimize
+
+\[
+\sum_{n} \bigl(x[n] - (a_p n^p + a_{p-1} n^{p-1} + \cdots + a_0)\bigr)^2.
+\]
+
+The detrended signal is then
+
+\[
+y[n] = x[n] - \sum_{k=0}^{p} a_k n^k.
+\]
+
+\begin{itemize}
+    \item $p = 1$: removes a linear trend (drift).
+    \item $p = 2$: removes a quadratic trend.
+    \item $p = 3$: removes a cubic trend.
+\end{itemize}
+
+The polynomial order is controlled via the window-size parameter, clamped to $[1, 3]$.
+
+\subsection{Integrate (Cumulative Trapezoidal Integration)}
+
+The integrate operation computes a running integral of the signal with respect to a reference axis $t[n]$:
+
+\[
+Y[n] = \sum_{k=1}^{n} x[k] \cdot (t[k] - t[k-1]) \approx \int_0^{t_n} x(\tau)\,d\tau.
+\]
+
+If no reference column is selected, the row index is used as the integration variable. The result is a cumulative sum that grows monotonically for nonnegative signals.
+
+The current implementation uses the product $x[k] \cdot \Delta t[k]$ accumulated via cumulative summation, which corresponds to a left-rectangle rule. Missing values at the start are filled with zero.
+
+\section{Envelope Operations}
+
+\subsection{RMS Envelope}
+
+The RMS envelope computes a rolling root-mean-square value over a centered window of width $W$:
+
+\[
+y[n] = \sqrt{\frac{1}{W} \sum_{k \in \mathcal{W}(n)} x[k]^2},
+\]
+
+where $\mathcal{W}(n)$ is the set of indices within the centered window around sample $n$. At signal boundaries the window shrinks gracefully (minimum one sample).
+
+The RMS envelope tracks the local signal energy or amplitude level and is useful for detecting amplitude modulation, transients, or slowly varying excitation levels.
+
+\subsubsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Window size} $W$: the number of samples in the rolling window. Larger values produce a smoother envelope.
+\end{itemize}
+
+\subsection{Hilbert Envelope}
+
+The Hilbert envelope extracts the instantaneous amplitude of a signal using the analytic signal representation. For a real signal $x[n]$, the analytic signal is
+
+\[
+z[n] = x[n] + j\,\hat{x}[n],
+\]
+
+where $\hat{x}[n]$ is the Hilbert transform of $x[n]$, computed via \texttt{scipy.signal.hilbert}. In the frequency domain, the Hilbert transform zeroes out the negative-frequency components and doubles the positive-frequency components.
+
+The amplitude envelope is the magnitude of the analytic signal:
+
+\[
+A[n] = |z[n]| = \sqrt{x[n]^2 + \hat{x}[n]^2}.
+\]
+
+This produces a smooth, non-negative envelope that tracks the instantaneous amplitude of oscillatory or modulated signals without requiring a window-size parameter.
+
+\subsubsection{When to Use Each Envelope}
+
+\begin{itemize}
+    \item Use \textbf{RMS envelope} when you want a configurable local energy measure and can tolerate smoothing lag.
+    \item Use \textbf{Hilbert envelope} when you want a parameter-free instantaneous amplitude that tracks modulation tightly, but the signal should be narrowband or pre-filtered for best results.
+\end{itemize}
+
 \section{What the Demo Cases Show}
 
 The spectral demo is useful for delta and derivative because it contains impacts, ringing, drift, and smooth periodic content in the same deterministic record. The input-output demo is useful for normalization because the output channel has a nonzero offset and a different scale from the other signals.
@@ -120,10 +205,33 @@ The spectral demo is useful for delta and derivative because it contains impacts
     \item Ratios become unstable when the denominator is near zero, even if exact zeros are suppressed.
     \item Normalized signals lose their original engineering units.
     \item Rolling means smooth data, but they also blur short transients.
+    \item Polynomial detrending of order $p > 1$ can introduce artifacts near the edges of the record.
+    \item Cumulative integration accumulates drift; small biases in $x$ or $\Delta t$ grow without bound.
+    \item The RMS envelope lags sharp transients; wider windows produce more lag.
+    \item The Hilbert envelope assumes a narrowband signal; broadband or multi-component signals produce a noisy envelope that may require pre-filtering.
 \end{itemize}
 
 \section{Conclusion}
 
-Derived signals are lightweight transformations that make specific behaviors easier to see: change, relative scaling, local trend, rate of change, or scale-free variation. They are mathematically simple, but they change the meaning of the signal enough that the documentation should state the formulas explicitly.
+Derived signals are lightweight transformations that make specific behaviors easier to see: change, relative scaling, local trend, rate of change, scale-free variation, trend removal, running integration, and amplitude envelope extraction. They are mathematically simple, but they change the meaning of the signal enough that the documentation should state the formulas explicitly.
+
+\begin{thebibliography}{9}
+
+\bibitem{chapra2015}
+S.~C.~Chapra and R.~P.~Canale,
+\emph{Numerical Methods for Engineers}, 7th~ed.
+New York, NY: McGraw-Hill, 2015.
+
+\bibitem{oppenheim2010}
+A.~V.~Oppenheim and R.~W.~Schafer,
+\emph{Discrete-Time Signal Processing}, 3rd~ed.
+Upper Saddle River, NJ: Pearson, 2010.
+
+\bibitem{marple1999}
+S.~L.~Marple,
+``Computing the discrete-time `analytic' signal via FFT,''
+\emph{IEEE Trans.\ Signal Processing}, vol.~47, no.~9, pp.~2600--2603, 1999.
+
+\end{thebibliography}
 
 \end{document}

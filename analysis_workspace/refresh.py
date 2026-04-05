@@ -73,6 +73,13 @@ def refresh_filter_controls(workspace) -> None:
     if workspace.cycle_reference_var.get() not in reference_values:
         workspace.cycle_reference_var.set(get_preferred_role_column(workspace.column_roles, "time", available_columns=columns) or "Index")
 
+    if getattr(workspace, "resample_time_combo", None) is not None:
+        workspace.resample_time_combo.config(values=columns)
+        if workspace.resample_time_var.get() not in columns:
+            workspace.resample_time_var.set(
+                get_preferred_role_column(workspace.column_roles, "time", available_columns=columns) or (columns[0] if columns else "")
+            )
+
     if getattr(workspace, "frequency_compare_combo", None) is not None:
         workspace.frequency_compare_combo.config(values=numeric_columns or columns)
         comparison_value = workspace.frequency_compare_var.get()

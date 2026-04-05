@@ -48,6 +48,21 @@ For the short functional description of the user-visible analysis methods, see [
 
 The main application window is implemented in `main_window/app.py` and supported by `layout.py`, `preview.py`, `preparation.py`, `datasets.py`, `plotting.py`, and `demo.py`. The per-dataset analysis workflow lives in `analysis_workspace/window.py` and is supported by `layout.py`, `refresh.py`, `actions.py`, `views.py`, and `state.py`. Reusable operations remain in `data_ops/`, while root-level support files such as `EvalData.py`, `data_parser.py`, `plot_utils.py`, and `deploy.py` handle launching, parsing, shared plotting, and packaging.
 
+The `data_ops/` package contains:
+
+| Module | Contents |
+| --- | --- |
+| `signals.py` | 7 signal filters (`moving_average`, `median`, `exponential_smoothing`, `high_pass`, `butterworth_lowpass`, `butterworth_highpass`, `butterworth_bandpass`) and 9 derived-signal operations (`delta`, `ratio`, `rolling_mean`, `derivative`, `normalized`, `detrend`, `integrate`, `rms_envelope`, `hilbert_envelope`) |
+| `spectral.py` | 5 frequency-domain methods: FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, Spectrogram |
+| `cycles.py` | 4 cycle-detection modes: `fixed_length`, `rising_edge`, `zero_crossing`, `peak` |
+| `frame_ops.py` | select, drop, slice, split, normalize columns, and `resample_to_uniform` |
+| `summary.py` | Descriptive statistics (count, missing, min, max, mean, std, rms, peak-to-peak) and Pearson correlation matrix |
+| `filtering.py` | Simple min/max filtering and column-name resolution |
+| `io_ops.py` | CSV/merge export helpers |
+| `models.py` | Shared data classes |
+
+A test suite in `tests/` covers all `data_ops` modules with 131 tests.
+
 ## Main Window Package
 
 `main_window/app.py` is the top-level orchestrator for the main window. `layout.py` builds the Tk layout, `preview.py` renders the table and overview plot, `preparation.py` handles prepared datasets and explicit subframe splits, `datasets.py` manages lineage and role-aware helpers, `plotting.py` opens detached figure windows, and `demo.py` provides deterministic demo datasets.
@@ -56,7 +71,7 @@ The main application window is implemented in `main_window/app.py` and supported
 
 `analysis_workspace/window.py` owns the main analysis session window. `layout.py` builds the analysis UI, `refresh.py` updates it based on the current dataframe and selected columns, `actions.py` applies reusable dataframe updates, `views.py` renders preview/statistics/correlation/cycle widgets, and `state.py` stores shared constants and session structures.
 
-Important current boundary: the frequency tab currently exposes `FFT Amplitude` and `Welch PSD` in the UI. The lower-level spectral module also contains transfer-estimate and coherence helpers, but those are not part of the current documented UI workflow.
+Important current boundary: the frequency tab exposes `FFT Amplitude`, `Welch PSD`, `Transfer Estimate`, `Coherence`, and `Spectrogram` in the UI. Transfer Estimate and Coherence require a comparison column. Spectrogram produces a time-frequency heatmap instead of a single spectrum plot.
 
 ## Dataset Lifecycle
 
@@ -112,7 +127,7 @@ That split matters because UI state stays in the window packages, while the reus
 
 This repository is not meaningfully validated.
 
-Editor diagnostics, ad-hoc import checks, and compile-time checks help catch syntax and packaging failures, but they do not prove correct parsing, correct transformations, correct spectra, correct exports, or trustworthy engineering interpretation. The demo datasets are useful control cases for exploration, not evidence of general correctness. Manual exploration during development is likewise not a validation program.
+Editor diagnostics, ad-hoc import checks, and compile-time checks help catch syntax and packaging failures, but they do not prove correct parsing, correct transformations, correct spectra, correct exports, or trustworthy engineering interpretation. A test suite with 131 tests covers the `data_ops` modules and helps catch regressions, but passing tests are not a substitute for domain-specific validation. The demo datasets are useful control cases for exploration, not evidence of general correctness. Manual exploration during development is likewise not a validation program.
 
 ## Documentation Notes
 

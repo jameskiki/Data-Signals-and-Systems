@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+import numpy as np
 import pandas as pd
 
 
@@ -103,3 +104,42 @@ def normalize_index_range(row_count: int, start_index: int, end_index: int) -> t
     if normalized_start >= row_count:
         raise ValueError(f"Range start {normalized_start} exceeds dataset length {row_count}")
     return normalized_start, min(normalized_end, row_count)
+
+
+def resample_to_uniform(
+    dataframe: pd.DataFrame,
+    time_column: str,
+    target_spacing: float,
+) -> pd.DataFrame:
+    """Resample all numeric columns to a uniform time grid via linear interpolation."""
+
+    if time_column not in dataframe.columns:
+        raise KeyError(f"Unknown time column: {time_column}")
+    if target_spacing <= 0:
+        raise ValueError("Target spacing must be greater than zero")
+
+    time_series = pd.to_numeric(dataframe[time_column], errors="coerce")
+    if pd.api.types.is_datetime64_any_dtype(dataframe[time_column]):
+        time_series = pd.to_datetime(dataframe[time_column], errors="coerce").astype("int64") / 1e9
+
+    valid_mask = time_series.notna()
+    t_original = time_series.loc[valid_mask].to_numpy(dtype=float)
+    if t_original.size < 2:
+        raise ValueError("Need at least two valid time samples for resampling")
+
+    t_uniform = np.arange(t_original[0], t_original[-1], target_spacing)
+    if t_uniform.size < 2:
+        raise ValueError("Target spacing is too large for the time range")
+
+    result_data: dict[str, np.ndarray] = {time_column: t_uniform}
+    for column in dataframe.columns:
+        if column == time_column:
+            continue
+        col_numeric = pd.to_numeric(dataframe[column], errors="coerce")
+        if col_numeric.isna().all():
+            result_data[column] = np.full(t_uniform.size, np.nan)
+            continue
+        col_valid = col_numeric.loc[valid_mask].to_numpy(dtype=float)
+        result_data[column] = np.interp(t_uniform, t_original, col_valid)
+
+    return pd.DataFrame(result_data)

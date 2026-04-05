@@ -1,28 +1,30 @@
-"""Shared helpers for opening project documentation from the GUI."""
+"""Shared helpers for opening project help targets from the GUI."""
 
 from dataclasses import dataclass
 import os
 from pathlib import Path
 import subprocess
 import sys
+from urllib.parse import urlparse
+import webbrowser
 
 
 @dataclass(frozen=True)
 class DocumentationLink:
-    """Menu metadata for one documentation destination."""
+    """Menu metadata for one help destination."""
 
     label: str
     relative_path: str
 
 
 DOCUMENTATION_LINKS: tuple[DocumentationLink, ...] = (
-    DocumentationLink("Quickstart", "docs/quickstart.md"),
-    DocumentationLink("User Guide", "docs/user-guide.md"),
-    DocumentationLink("Which Tool When", "docs/which-tool-when.md"),
-    DocumentationLink("Analysis Methods", "docs/analysis-methods.md"),
-    DocumentationLink("Technical Overview", "docs/technical-overview.md"),
-    DocumentationLink("Open Docs Folder", "docs"),
+    DocumentationLink("Open GitHub Repository", "https://github.com/jameskiki/Data-Signals-and-Systems"),
 )
+
+
+def _is_web_url(target: str) -> bool:
+    parsed_target = urlparse(target)
+    return parsed_target.scheme in {"http", "https"} and bool(parsed_target.netloc)
 
 
 def resolve_documentation_path(relative_path: str) -> Path:
@@ -32,7 +34,11 @@ def resolve_documentation_path(relative_path: str) -> Path:
 
 
 def open_documentation_path(relative_path: str) -> Path:
-    """Open a documentation file or directory with the OS default handler."""
+    """Open a help target with the OS default handler."""
+
+    if _is_web_url(relative_path):
+        webbrowser.open(relative_path, new=2)
+        return Path(relative_path)
 
     target_path = resolve_documentation_path(relative_path).resolve()
     if not target_path.exists():

@@ -52,7 +52,7 @@ def build_sidebar(workspace, parent: ttk.Frame) -> None:
     action_frame.pack(fill=tk.X, padx=5, pady=5)
     ttk.Button(action_frame, text="Reset Working Data", command=workspace._reset_working_data).pack(fill=tk.X, padx=5, pady=(5, 2))
     ttk.Button(action_frame, text="Export Current View", command=workspace._export_current_view).pack(fill=tk.X, padx=5, pady=2)
-    ttk.Button(action_frame, text="Refresh Statistics", command=workspace._refresh_all_views).pack(fill=tk.X, padx=5, pady=(2, 5))
+    ttk.Button(action_frame, text="Refresh Statistics", command=workspace._refresh_summary_views).pack(fill=tk.X, padx=5, pady=(2, 5))
 
     context_pane = ttk.Panedwindow(parent, orient=tk.VERTICAL)
     context_pane.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -172,11 +172,14 @@ def build_filter_tab(workspace) -> None:
 
     simple_filter_tab = ttk.Frame(filter_notebook)
     signal_filter_tab = ttk.Frame(filter_notebook)
+    resample_tab = ttk.Frame(filter_notebook)
     filter_notebook.add(simple_filter_tab, text="Simple Filtering")
     filter_notebook.add(signal_filter_tab, text="Signal Processing")
+    filter_notebook.add(resample_tab, text="Resample")
 
     build_simple_filter_tab(workspace, simple_filter_tab)
     build_signal_filter_tab(workspace, signal_filter_tab)
+    build_resample_tab(workspace, resample_tab)
 
 
 def build_simple_filter_tab(workspace, parent: ttk.Frame) -> None:
@@ -236,20 +239,58 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
     ttk.Label(controls, text="Alpha (exp. smoothing)").grid(row=3, column=0, sticky="w", padx=5, pady=5)
     ttk.Entry(controls, textvariable=workspace.signal_filter_alpha_var).grid(row=3, column=1, sticky="ew", padx=5, pady=5)
 
-    ttk.Label(controls, text="New column name").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_name_var).grid(row=4, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Label(controls, text="Cutoff freq [Hz]").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.signal_filter_cutoff_var).grid(row=4, column=1, sticky="ew", padx=5, pady=5)
+
+    ttk.Label(controls, text="Filter order").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.signal_filter_order_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
+
+    ttk.Label(controls, text="Sample spacing [s]").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.signal_filter_spacing_var).grid(row=6, column=1, sticky="ew", padx=5, pady=5)
+
+    ttk.Label(controls, text="New column name").grid(row=7, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.signal_filter_name_var).grid(row=7, column=1, sticky="ew", padx=5, pady=5)
 
     ttk.Button(controls, text="Apply Signal Filter", command=workspace._apply_signal_filter).grid(
-        row=5, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
+        row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
     )
 
     help_text = (
         "moving_average: low-pass smoothing\n"
         "median: spike-resistant smoothing\n"
         "exponential_smoothing: recursive low-pass filter\n"
-        "high_pass: original signal minus low-pass trend"
+        "high_pass: original signal minus low-pass trend\n"
+        "butterworth_lowpass: zero-phase Butterworth LP\n"
+        "butterworth_highpass: zero-phase Butterworth HP\n"
+        "butterworth_bandpass: zero-phase Butterworth BP\n"
+        "  Butterworth filters need cutoff, order, and spacing"
     )
-    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=6, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=9, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+    controls.columnconfigure(1, weight=1)
+
+
+def build_resample_tab(workspace, parent: ttk.Frame) -> None:
+    controls = ttk.Frame(parent, padding=10)
+    controls.pack(fill=tk.BOTH, expand=True)
+
+    ttk.Label(controls, text="Time column").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.resample_time_combo = ttk.Combobox(controls, textvariable=workspace.resample_time_var, state="readonly")
+    workspace.resample_time_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+
+    ttk.Label(controls, text="Target spacing").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.resample_spacing_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+
+    ttk.Button(controls, text="Resample to Uniform Grid", command=workspace._apply_resample).grid(
+        row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
+    )
+
+    ttk.Label(
+        controls,
+        text="Interpolates all numeric columns onto an evenly-spaced time grid. "
+             "This replaces the working dataframe. Use Reset to undo.",
+        justify=tk.LEFT,
+        wraplength=380,
+    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=5)
     controls.columnconfigure(1, weight=1)
 
 
@@ -293,7 +334,11 @@ def build_derived_tab(workspace) -> None:
         "ratio: source / second column\n"
         "rolling_mean: moving average\n"
         "derivative: dy / dx using a reference column or index\n"
-        "normalized: z-score or mean-centered if std = 0"
+        "normalized: z-score or mean-centered if std = 0\n"
+        "detrend: remove polynomial trend (order via window size 1-3)\n"
+        "integrate: cumulative trapezoidal integration\n"
+        "rms_envelope: rolling RMS with window size\n"
+        "hilbert_envelope: amplitude envelope via Hilbert transform"
     )
     ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=6, column=0, columnspan=2, sticky="w", padx=5, pady=5)
     controls.columnconfigure(1, weight=1)
@@ -375,8 +420,9 @@ def build_frequency_tab(workspace) -> None:
 
     ttk.Label(
         controls,
-        text="Use X / reference when you have time or sample positions. Otherwise the Index step size is used.",
+        text="FFT: single-shot spectrum. Welch: averaged PSD. Transfer Estimate / Coherence: two-signal relationship (set comparison signal). Spectrogram: time-frequency heatmap. Use X / reference for time-based spacing.",
         justify=tk.LEFT,
+        wraplength=380,
     ).grid(row=10, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.frequency_tab, textvariable=workspace.fft_summary_var, wraplength=680, justify=tk.LEFT).pack(
@@ -437,7 +483,7 @@ def build_cycles_tab(workspace) -> None:
         controls,
         textvariable=workspace.cycle_mode_var,
         state="readonly",
-        values=["fixed_length", "rising_edge"],
+        values=["fixed_length", "rising_edge", "zero_crossing", "peak"],
     )
     workspace.cycle_mode_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
@@ -454,8 +500,11 @@ def build_cycles_tab(workspace) -> None:
     ttk.Label(controls, text="Max cycles").grid(row=5, column=0, sticky="w", padx=5, pady=5)
     ttk.Entry(controls, textvariable=workspace.cycle_max_cycles_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
 
+    ttk.Label(controls, text="Prominence").grid(row=6, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.cycle_prominence_var).grid(row=6, column=1, sticky="ew", padx=5, pady=5)
+
     ttk.Button(controls, text="Analyze Cycles", command=workspace._compute_cycle_analysis).grid(
-        row=6,
+        row=7,
         column=0,
         columnspan=2,
         sticky="ew",
@@ -464,7 +513,7 @@ def build_cycles_tab(workspace) -> None:
     )
 
     selection_row = ttk.Frame(controls)
-    selection_row.grid(row=7, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
+    selection_row.grid(row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
     selection_row.columnconfigure(0, weight=1)
     selection_row.columnconfigure(1, weight=1)
     ttk.Button(selection_row, text="Select All Cycles", command=workspace._select_all_cycles).grid(
@@ -482,9 +531,10 @@ def build_cycles_tab(workspace) -> None:
 
     ttk.Label(
         controls,
-        text="Fixed length uses equal row blocks. Rising edge uses threshold crossings on the selected reference signal.",
+        text="Fixed length: equal row blocks. Rising edge: threshold crossings. Zero crossing: sign-change points. Peak: successive signal peaks (set prominence to filter weak peaks).",
         justify=tk.LEFT,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+        wraplength=380,
+    ).grid(row=9, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.cycles_tab, textvariable=workspace.cycle_summary_var, wraplength=680, justify=tk.LEFT).pack(
         anchor="w",

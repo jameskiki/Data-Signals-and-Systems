@@ -17,9 +17,11 @@ flowchart TB
     B --> F[Frequency]
     B --> G[Cycles]
     B --> H[Statistics]
+    B --> R[Resample]
     C --> I[Updated columns or masked values]
     D --> I
     E --> I
+    R --> I
     F --> J[Spectrum plot and dominant peaks]
     G --> K[Cycle metrics and representative cycle]
     H --> L[Statistics table and correlations]
@@ -30,7 +32,7 @@ flowchart TB
     classDef output fill:#ede9fe,stroke:#7c3aed,color:#0f172a,stroke-width:1.5px;
 
     class A,B data;
-    class C,D,E transform;
+    class C,D,E,R transform;
     class F,G,H inspect;
     class I,J,K,L output;
 ```
@@ -61,10 +63,20 @@ Expected result: the new filtered column keeps only the larger ringing excursion
 
 `Signal Processing` creates a new filtered version of the active numeric column.
 
+**Window-based filters:**
+
 - `moving_average`: centered rolling mean for low-pass smoothing.
 - `median`: centered rolling median for spike-resistant smoothing.
 - `exponential_smoothing`: recursive smoothing controlled by `alpha`.
 - `high_pass`: original signal minus a rolling-mean trend.
+
+**Butterworth filters (zero-phase, `sosfiltfilt`):**
+
+- `butterworth_lowpass`: zero-phase low-pass filter. Requires cutoff frequency (Hz), sample spacing, and filter order.
+- `butterworth_highpass`: zero-phase high-pass filter. Same parameters as lowpass.
+- `butterworth_bandpass`: zero-phase band-pass filter. Requires low and high cutoff frequencies, sample spacing, and filter order.
+
+All Butterworth variants use `scipy.signal.sosfiltfilt` for zero-phase filtering, which avoids the phase distortion of a single-pass IIR filter at the cost of doubling the effective filter order.
 
 These operations keep the full dataframe and add or replace one derived signal column.
 
@@ -72,6 +84,7 @@ Reproducible demo examples:
 
 - On the spectral reference demo, apply `moving_average` to `measured_signal` with a window such as `21` to reduce short-scale noise.
 - On the same demo, apply `high_pass` to `measured_signal` with a wider window such as `101` to suppress drift and emphasize faster content such as impacts and ringing.
+- On the same demo, apply `butterworth_lowpass` with cutoff `10 Hz`, order `4`, and the correct sample spacing to isolate the low-frequency components of `measured_signal`.
 
 For a short formal note on the current filtering methods, see [latex/filtering_example.pdf](latex/filtering_example.pdf).
 
@@ -84,6 +97,10 @@ For a short formal note on the current filtering methods, see [latex/filtering_e
 - `rolling_mean`: moving average written as a new derived column.
 - `derivative`: $dy/dx$ using a reference column or the row index.
 - `normalized`: z-score normalization, or mean-centering when the standard deviation is zero.
+- `detrend`: subtract a fitted polynomial trend (order 1–3, controlled by the window-size parameter).
+- `integrate`: cumulative trapezoidal integration using a reference column for the time step.
+- `rms_envelope`: rolling RMS computed over a centered window, useful for tracking instantaneous signal energy.
+- `hilbert_envelope`: amplitude envelope of the analytic signal via the Hilbert transform, useful for extracting the modulation envelope of narrowband signals.
 
 Use these when the original channel is less informative than its change, ratio, trend, or normalized form.
 
@@ -92,15 +109,21 @@ Reproducible demo examples:
 - On the spectral reference demo, create `delta` from `measured_signal` to highlight abrupt sample-to-sample changes.
 - On the same demo, create `derivative` from `measured_signal` using `time_s` as the reference column to estimate rate of change.
 - On the input-output demo, create `normalized` from `system_output` when you want a scale-free comparison against other channels.
+- On the spectral reference demo, create `detrend` from `measured_signal` with window size `1` (linear detrend) to remove slow drift before frequency analysis.
+- On the same demo, create `rms_envelope` from `measured_signal` with a window such as `51` to track how the signal energy varies over time.
+- On the same demo, create `hilbert_envelope` from `clean_signal` to extract the amplitude modulation envelope without windowing artifacts.
 
 For the formal note on the current derived-signal operations, see [latex/derived_signals_example.pdf](latex/derived_signals_example.pdf).
 
 ## Frequency
 
-The current frequency tab exposes two methods:
+The frequency tab exposes five methods:
 
 - `FFT Amplitude`: one-sided amplitude spectrum for dominant frequency inspection.
 - `Welch PSD`: averaged power spectral density estimate for smoother spectral inspection.
+- `Transfer Estimate`: frequency response magnitude $|H(f)| = S_{xy}/S_{xx}$ between a comparison (input) signal and the active (output) signal. Also provides the phase response. Requires a comparison column.
+- `Coherence`: magnitude-squared coherence $\gamma^2(f) = |S_{xy}|^2 / (S_{xx} \cdot S_{yy})$ between a comparison signal and the active signal. Values range from 0 (no linear relationship) to 1 (perfect linear relationship at that frequency). Requires a comparison column.
+- `Spectrogram`: short-time FFT producing a time-frequency heatmap (power vs. time vs. frequency). Useful for signals whose frequency content changes over time.
 
 Current behavior:
 
@@ -108,38 +131,42 @@ Current behavior:
 - If you leave the reference on `Index`, the app uses the manual step size.
 - Window options are `hann`, `hamming`, `blackman`, and `rectangular`.
 - `Remove trend before analysis` subtracts the mean before the spectrum calculation.
-- The result view shows both the plotted spectrum and a ranked peak table.
+- The result view shows both the plotted spectrum and a ranked peak table (except for the spectrogram, which shows a heatmap).
+- `Transfer Estimate` and `Coherence` require a comparison column to be set; without it, the analysis cannot run.
 
-For the current formal note behind these two methods, see [latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
-
-Technical note: the lower-level spectral module also contains transfer-estimate and coherence helpers, but the current UI method selector only exposes `FFT Amplitude` and `Welch PSD`.
+For the current formal note behind FFT and Welch, see [latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
 Reproducible demo examples:
 
 - On the spectral reference demo, analyze `clean_signal` with `FFT Amplitude`, `X / reference = time_s`, and a `hann` window. Expected dominant peaks are near `1.0`, `7.5`, and `18.0 Hz`.
 - On the same demo, switch to `Welch PSD` on `measured_signal` when you want a smoother spectrum with visible low-frequency drift and ringing content.
+- On the input-output demo, use `Transfer Estimate` with the input signal as the comparison column and the output signal as the active column to inspect the frequency response magnitude and phase.
+- On the input-output demo, use `Coherence` with the same pair to check at which frequencies the input-output relationship is linear and strong.
+- On the spectral reference demo, use `Spectrogram` on `measured_signal` to observe how the frequency content changes across the recording duration.
 
 ## Cycles
 
-The cycle tab currently supports two modes:
+The cycle tab supports four detection modes:
 
-- `fixed_length`: split the active signal into equal row blocks.
-- `rising_edge`: detect cycle boundaries from threshold crossings on a reference signal.
+- `fixed_length`: split the active signal into equal row blocks of a given size.
+- `rising_edge`: detect cycle boundaries from rising threshold crossings on a reference signal.
+- `zero_crossing`: detect cycles between zero-crossing points on a reference signal, with direction options: `rising`, `falling`, or `both`.
+- `peak`: detect cycles between successive peaks of a reference signal using `scipy.signal.find_peaks`. Supports a `prominence` filter to ignore minor peaks.
 
-Both modes produce:
+All modes produce:
 
 - per-cycle metrics such as mean, standard deviation, RMS, and peak-to-peak
 - an aligned cycle matrix trimmed to a common cycle length
 - a representative cycle summary with mean, spread, min, and max
 
-Use `fixed_length` when the row count per cycle is already known. Use `rising_edge` when one channel marks repeat boundaries more clearly than a fixed block size.
+Use `fixed_length` when the row count per cycle is already known. Use `rising_edge` when one channel marks repeat boundaries more clearly than a fixed block size. Use `zero_crossing` when cycles naturally correspond to sign changes (e.g. oscillating signals). Use `peak` when cycles are best defined by successive signal peaks (e.g. impact events or vibration bursts) and set `prominence` to skip small peaks.
 
 Reproducible demo examples:
 
 - On the spectral reference demo, use `fixed_length` with `cycle_length = 250`. The built-in impact train repeats every `0.5 s` at `500 Hz`, so `250` rows is a natural first check.
 - On the same demo, use `rising_edge` with `Reference = impact_marker`, `Threshold = 0.5`, and `Cycle length = 200` as the minimum accepted cycle size.
-
-Expected result: both modes should recover repeated segments from the same deterministic demo, but the threshold-based mode follows the marker channel explicitly.
+- On the same demo, use `zero_crossing` with `Reference = clean_signal`, `Direction = rising`, and a minimum cycle length to segment the underlying oscillation.
+- On the same demo, use `peak` with `Reference = impact_marker` and a `prominence` value to segment the response around successive significant peaks.
 
 For the formal note on the current cycle workflow, see [latex/cycle_analysis_example.pdf](latex/cycle_analysis_example.pdf).
 
@@ -158,13 +185,23 @@ On the spectral reference demo, compare `clean_signal`, `measured_signal`, and `
 
 For the formal note on engineering statistics and correlation, see [latex/statistics_correlation_example.pdf](latex/statistics_correlation_example.pdf).
 
+## Resample
+
+The `Resample` sub-tab (inside the `Filter` tab) interpolates all numeric columns onto a uniform time grid.
+
+- Select the time column and specify the target spacing.
+- The operation uses `resample_to_uniform` from `data_ops/frame_ops.py`.
+- This replaces the entire working dataframe with the resampled version.
+
+Use it when non-uniform sample spacing would distort frequency analysis or when downstream processing expects evenly spaced data.
+
 ## Boundaries And Current Gaps
 
 - The analysis workspace edits only its working copy, not the original loaded dataset in place.
 - `Export Current View` exports the current working dataframe state.
 - Row-based structural splitting belongs in the main window under `Preparation -> Split Into Subframes`, not in the analysis workspace.
 - Formal LaTeX coverage now exists for the current user-visible method families: spectral analysis, filtering, derived signals, cycles, and statistics/correlation.
-- Lower-level transfer-estimate and coherence helpers still exist in code, but they are not part of the current documented UI workflow.
+- Formal LaTeX notes for Transfer Estimate, Coherence, Spectrogram, Butterworth filters, and the newer derived-signal operations (detrend, integrate, rms_envelope, hilbert_envelope) do not yet exist.
 
 Related pages:
 

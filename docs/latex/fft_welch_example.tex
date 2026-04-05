@@ -10,7 +10,7 @@
 
 \graphicspath{{docs/images/algorithms/}{../images/algorithms/}}
 
-\title{FFT Amplitude and Welch PSD\\A Small Algorithm Note}
+\title{FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, and Spectrogram\\A Small Algorithm Note}
 \author{EvalData Repository Example}
 \date{April 2026}
 
@@ -20,7 +20,7 @@
 
 \section{Purpose}
 
-This document is a small LaTeX example for the repository. It explains two frequency-analysis methods used in the app: FFT amplitude and Welch power spectral density (PSD).
+This document is a small LaTeX example for the repository. It explains the frequency-analysis methods used in the app: FFT amplitude, Welch power spectral density (PSD), transfer estimate, coherence, and spectrogram.
 
 The goal is not to be mathematically exhaustive. The goal is to show the kind of formal algorithm note that fits well in LaTeX: what the method is for, the basic principle, where it works well, and where users should be careful.
 
@@ -122,7 +122,7 @@ In practical terms, Welch PSD answers the question: \emph{how is signal power di
     \item Users can misread PSD peaks as if they were identical to FFT peak magnitudes.
 \end{itemize}
 
-\section{FFT Amplitude vs. Welch PSD}
+\section{FFT Amplitude vs.\ Welch PSD}
 
 \begin{figure}[h]
     \centering
@@ -147,6 +147,105 @@ Interpretation risk & Leakage and scaling confusion & PSD vs amplitude confusion
 \hline
 \end{tabular}
 \end{center}
+
+\section{Transfer Estimate}
+
+The transfer estimate describes the frequency-domain input-output relationship between two signals. EvalData uses the $H_1$ estimator based on cross-spectral analysis.
+
+\subsection{Cross-Spectral Method ($H_1$)}
+
+For input signal $x[n]$ and output signal $y[n]$, the segment-averaged cross-spectrum and auto-spectrum are
+
+\[
+S_{xy}(f) = \frac{1}{L} \sum_{\ell=1}^{L} X_\ell^*(f) Y_\ell(f), \qquad S_{xx}(f) = \frac{1}{L} \sum_{\ell=1}^{L} |X_\ell(f)|^2,
+\]
+
+where $X_\ell(f)$ and $Y_\ell(f)$ are the windowed DFTs of the $\ell$-th segment. The transfer function estimate is
+
+\[
+H_1(f) = \frac{S_{xy}(f)}{S_{xx}(f)}.
+\]
+
+EvalData reports both the magnitude $|H_1(f)|$ and the phase $\angle H_1(f)$.
+
+\subsection{Interpretation}
+
+$|H_1(f)|$ shows the gain of the system at each frequency. $\angle H_1(f)$ shows the phase shift introduced by the system. The $H_1$ estimator is unbiased when noise is present only on the output; it underestimates the true transfer function when the input is also noisy.
+
+\subsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Source column} (output): the system response signal.
+    \item \textbf{Comparison column} (input): the excitation or reference signal.
+    \item \textbf{Segment length}, \textbf{overlap fraction}, \textbf{window}, \textbf{detrend}: same as Welch PSD.
+\end{itemize}
+
+\section{Coherence}
+
+Magnitude-squared coherence measures the linear correlation between two signals as a function of frequency.
+
+\subsection{Definition}
+
+For signals $x$ and $y$ with segment-averaged spectra,
+
+\[
+\gamma^2_{xy}(f) = \frac{|S_{xy}(f)|^2}{S_{xx}(f) \cdot S_{yy}(f)}, \qquad 0 \le \gamma^2 \le 1.
+\]
+
+\subsection{Interpretation}
+
+\begin{itemize}
+    \item $\gamma^2 \approx 1$: $x$ and $y$ are strongly linearly related at frequency $f$.
+    \item $\gamma^2 \approx 0$: no linear relationship at that frequency (noise, nonlinearity, or no shared content).
+\end{itemize}
+
+Coherence is useful for validating a transfer estimate: frequency bands where $\gamma^2$ is low indicate that $H_1$ is unreliable there.
+
+\subsection{Parameters}
+
+Same as the transfer estimate: source column, comparison column, segment length, overlap fraction, window, and detrend.
+
+\section{Spectrogram}
+
+The spectrogram is a time-frequency representation that shows how the spectral content of a signal evolves over time.
+
+\subsection{Short-Time FFT Principle}
+
+The signal $x[n]$ is divided into overlapping segments of length $M$ with step size $R$. Each segment is windowed and transformed:
+
+\[
+X_\ell(f) = \sum_{n=0}^{M-1} x[n + \ell R]\, w[n]\, e^{-j 2\pi f n / M},
+\]
+
+where $w[n]$ is the window function and $\ell$ indexes the time step. The power spectral density for each segment is
+
+\[
+P_\ell(f) = \frac{|X_\ell(f)|^2}{\sum_n w[n]^2 / \Delta t},
+\]
+
+with one-sided doubling for $0 < f < f_{\mathrm{Ny}}$.
+
+The result is a matrix $P(t_\ell, f)$ where each row corresponds to the center time of a segment and each column to a frequency bin.
+
+\subsection{Time-Frequency Resolution Trade-Off}
+
+Segment length $M$ controls the trade-off:
+
+\begin{itemize}
+    \item Longer segments give finer frequency resolution $\Delta f = f_s / M$ but coarser time resolution.
+    \item Shorter segments give finer time resolution but coarser frequency resolution.
+\end{itemize}
+
+This is a fundamental limitation, not a software design choice.
+
+\subsection{Parameters}
+
+\begin{itemize}
+    \item \textbf{Segment length} $M$: number of samples per short-time window.
+    \item \textbf{Overlap fraction}: controls the step size $R = M(1 - \text{overlap})$. Higher overlap gives smoother time progression.
+    \item \textbf{Window}: applied to each segment before the FFT.
+    \item \textbf{Detrend}: if enabled, the global mean is subtracted before segmentation.
+\end{itemize}
 
 \section{Use in EvalData}
 
@@ -183,8 +282,57 @@ If both methods tell a different story, do not assume one is wrong immediately. 
     \item whether the data segment is stationary enough for spectral interpretation.
 \end{itemize}
 
+For transfer estimate and coherence, also check:
+
+\begin{itemize}
+    \item whether the input and output columns are correctly assigned,
+    \item whether the signals are simultaneously sampled,
+    \item whether enough segments are available for averaging (coherence with very few segments tends toward~1 regardless of actual relationship).
+\end{itemize}
+
+For the spectrogram, also consider:
+
+\begin{itemize}
+    \item whether the segment length is appropriate for the frequencies of interest,
+    \item whether the color scale reveals the features you expect or saturates on dominant content.
+\end{itemize}
+
 \section{Conclusion}
 
-FFT amplitude and Welch PSD are complementary rather than interchangeable. FFT amplitude is often the clearest first inspection tool. Welch PSD is often the more stable estimate for noisy real-world data. Good documentation should explain both the principle and the limits of each method, which is exactly the kind of material LaTeX can represent well.
+FFT amplitude, Welch PSD, transfer estimate, coherence, and spectrogram are complementary tools. FFT amplitude is the clearest first inspection tool. Welch PSD is the more stable estimate for noisy data. The transfer estimate and coherence quantify the input-output relationship and its reliability at each frequency. The spectrogram reveals how spectral content changes over time. Good documentation should explain both the principle and the limits of each method, which is exactly the kind of material LaTeX can represent well.
+
+\begin{thebibliography}{9}
+
+\bibitem{welch1967}
+P.~Welch,
+``The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms,''
+\emph{IEEE Trans.\ Audio and Electroacoustics}, vol.~AU-15, no.~2, pp.~70--73, 1967.
+
+\bibitem{cooley1965}
+J.~W.~Cooley and J.~W.~Tukey,
+``An algorithm for the machine calculation of complex Fourier series,''
+\emph{Mathematics of Computation}, vol.~19, no.~90, pp.~297--301, 1965.
+
+\bibitem{harris1978}
+F.~J.~Harris,
+``On the use of windows for harmonic analysis with the discrete Fourier transform,''
+\emph{Proceedings of the IEEE}, vol.~66, no.~1, pp.~51--83, 1978.
+
+\bibitem{oppenheim2010}
+A.~V.~Oppenheim and R.~W.~Schafer,
+\emph{Discrete-Time Signal Processing}, 3rd~ed.
+Upper Saddle River, NJ: Pearson, 2010.
+
+\bibitem{bendat2010}
+J.~S.~Bendat and A.~G.~Piersol,
+\emph{Random Data: Analysis and Measurement Procedures}, 4th~ed.
+Hoboken, NJ: Wiley, 2010.
+
+\bibitem{carter1987}
+G.~C.~Carter,
+``Coherence and time delay estimation,''
+\emph{Proceedings of the IEEE}, vol.~75, no.~2, pp.~236--255, 1987.
+
+\end{thebibliography}
 
 \end{document}

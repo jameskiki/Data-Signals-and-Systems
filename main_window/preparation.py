@@ -35,9 +35,17 @@ def create_prepared_dataset(app) -> str | None:
         return None
 
     source_frame = app.data_frames[selected_path]
-    prepared_frame = source_frame.copy()
+
+    # Apply row-range filtering if set
+    context = app.dataset_contexts.get(selected_path)
+    column_roles = dict(context.column_roles) if context is not None else {}
+    prepared_frame = app._get_row_range_filtered_frame(source_frame, column_roles)
 
     description_parts: list[str] = []
+
+    start_text, end_text = app.get_row_range_for_preparation()
+    if start_text or end_text:
+        description_parts.append(f"range [{start_text or '0'}:{end_text or 'end'}]")
 
     selected_columns = get_selected_column_names(app)
     if selected_columns:
