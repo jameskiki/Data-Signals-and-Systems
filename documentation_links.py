@@ -18,7 +18,16 @@ class DocumentationLink:
 
 
 DOCUMENTATION_LINKS: tuple[DocumentationLink, ...] = (
-    DocumentationLink("Open GitHub Repository", "https://github.com/jameskiki/Data-Signals-and-Systems"),
+    DocumentationLink("GitHub Repository", "https://github.com/jameskiki/Data-Signals-and-Systems"),
+    DocumentationLink("Quickstart", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/quickstart.md"),
+    DocumentationLink("User Guide", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/user-guide.md"),
+    DocumentationLink("Which Tool When", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/which-tool-when.md"),
+    DocumentationLink("Analysis Methods", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/analysis-methods.md"),
+    DocumentationLink("Technical Overview", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/technical-overview.md"),
+    DocumentationLink("FAQ", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/faq.md"),
+    DocumentationLink("Data Formats", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/data-formats.md"),
+    DocumentationLink("Glossary", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/glossary.md"),
+    DocumentationLink("LaTeX Notes Index", "https://github.com/jameskiki/Data-Signals-and-Systems/blob/main/docs/latex/README.md"),
 )
 
 
