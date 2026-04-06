@@ -345,10 +345,12 @@ def build_derived_tab(workspace) -> None:
 
 
 def build_frequency_tab(workspace) -> None:
+
     controls = ttk.Frame(workspace.frequency_tab, padding=10)
     controls.pack(fill=tk.X, padx=5, pady=(5, 0))
     controls.columnconfigure(1, weight=1)
 
+    # Method selection
     ttk.Label(controls, text="Method").grid(row=0, column=0, sticky="w", padx=5, pady=5)
     workspace.frequency_analysis_combo = ttk.Combobox(
         controls,
@@ -358,50 +360,19 @@ def build_frequency_tab(workspace) -> None:
     )
     workspace.frequency_analysis_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
+    # Signal selection
     ttk.Label(controls, text="Signal").grid(row=1, column=0, sticky="w", padx=5, pady=5)
     workspace.frequency_active_column_label = tk.Label(controls, textvariable=workspace.active_column_var, anchor="w", padx=6, pady=3)
     workspace.frequency_active_column_label.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
+    # Reference selection
     ttk.Label(controls, text="X / reference").grid(row=2, column=0, sticky="w", padx=5, pady=5)
     workspace.fft_reference_combo = ttk.Combobox(controls, textvariable=workspace.fft_reference_var, state="readonly")
     workspace.fft_reference_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
-    workspace.frequency_compare_label = ttk.Label(controls, text="Comparison signal")
-    workspace.frequency_compare_label.grid(row=3, column=0, sticky="w", padx=5, pady=5)
-    workspace.frequency_compare_combo = ttk.Combobox(
-        controls,
-        textvariable=workspace.frequency_compare_var,
-        state="readonly",
-    )
-    workspace.frequency_compare_combo.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
-
-    workspace.fft_sample_spacing_label = ttk.Label(controls, text="Index step size")
-    workspace.fft_sample_spacing_label.grid(row=4, column=0, sticky="w", padx=5, pady=5)
-    workspace.fft_sample_spacing_entry = ttk.Entry(controls, textvariable=workspace.fft_sample_spacing_var)
-    workspace.fft_sample_spacing_entry.grid(row=4, column=1, sticky="ew", padx=5, pady=5)
-
-    workspace.fft_window_label = ttk.Label(controls, text="Window shape")
-    workspace.fft_window_label.grid(row=5, column=0, sticky="w", padx=5, pady=5)
-    workspace.fft_window_combo = ttk.Combobox(
-        controls,
-        textvariable=workspace.fft_window_var,
-        state="readonly",
-        values=FFT_WINDOW_OPTIONS,
-    )
-    workspace.fft_window_combo.grid(row=5, column=1, sticky="ew", padx=5, pady=5)
-
-    workspace.welch_segment_length_label = ttk.Label(controls, text="Welch window length")
-    workspace.welch_segment_length_label.grid(row=6, column=0, sticky="w", padx=5, pady=5)
-    workspace.welch_segment_length_entry = ttk.Entry(controls, textvariable=workspace.welch_segment_length_var)
-    workspace.welch_segment_length_entry.grid(row=6, column=1, sticky="ew", padx=5, pady=5)
-
-    workspace.welch_overlap_fraction_label = ttk.Label(controls, text="Welch overlap")
-    workspace.welch_overlap_fraction_label.grid(row=7, column=0, sticky="w", padx=5, pady=5)
-    workspace.welch_overlap_fraction_entry = ttk.Entry(controls, textvariable=workspace.welch_overlap_fraction_var)
-    workspace.welch_overlap_fraction_entry.grid(row=7, column=1, sticky="ew", padx=5, pady=5)
-
+    # Detrend and analyze
     ttk.Checkbutton(controls, text="Remove trend before analysis", variable=workspace.fft_detrend_var).grid(
-        row=8,
+        row=3,
         column=0,
         columnspan=2,
         sticky="w",
@@ -409,8 +380,53 @@ def build_frequency_tab(workspace) -> None:
         pady=5,
     )
 
+    # --- Algorithm-specific frames ---
+    # Comparison signal (Transfer/Coherence)
+    workspace.comparison_frame = ttk.Frame(controls)
+    workspace.frequency_compare_label = ttk.Label(workspace.comparison_frame, text="Comparison signal")
+    workspace.frequency_compare_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.frequency_compare_combo = ttk.Combobox(
+        workspace.comparison_frame,
+        textvariable=workspace.frequency_compare_var,
+        state="readonly",
+    )
+    workspace.frequency_compare_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.comparison_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
+
+
+    # --- General frequency options (shown for all methods) ---
+    workspace.freq_general_frame = ttk.Frame(controls)
+    workspace.fft_sample_spacing_label = ttk.Label(workspace.freq_general_frame, text="Index step size")
+    workspace.fft_sample_spacing_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.fft_sample_spacing_entry = ttk.Entry(workspace.freq_general_frame, textvariable=workspace.fft_sample_spacing_var)
+    workspace.fft_sample_spacing_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+
+    workspace.fft_window_label = ttk.Label(workspace.freq_general_frame, text="Window shape")
+    workspace.fft_window_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    workspace.fft_window_combo = ttk.Combobox(
+        workspace.freq_general_frame,
+        textvariable=workspace.fft_window_var,
+        state="readonly",
+        values=FFT_WINDOW_OPTIONS,
+    )
+    workspace.fft_window_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    workspace.freq_general_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
+
+    # --- Welch-specific options (only for Welch, Transfer, Coherence) ---
+    workspace.welch_specific_frame = ttk.Frame(controls)
+    workspace.welch_segment_length_label = ttk.Label(workspace.welch_specific_frame, text="Welch window length")
+    workspace.welch_segment_length_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.welch_segment_length_entry = ttk.Entry(workspace.welch_specific_frame, textvariable=workspace.welch_segment_length_var)
+    workspace.welch_segment_length_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+
+    workspace.welch_overlap_fraction_label = ttk.Label(workspace.welch_specific_frame, text="Welch overlap")
+    workspace.welch_overlap_fraction_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    workspace.welch_overlap_fraction_entry = ttk.Entry(workspace.welch_specific_frame, textvariable=workspace.welch_overlap_fraction_var)
+    workspace.welch_overlap_fraction_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    workspace.welch_specific_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
+
     ttk.Button(controls, text="Analyze Spectrum", command=workspace._compute_fft).grid(
-        row=9,
+        row=7,
         column=0,
         columnspan=2,
         sticky="ew",
@@ -423,7 +439,7 @@ def build_frequency_tab(workspace) -> None:
         text="FFT: single-shot spectrum. Welch: averaged PSD. Transfer Estimate / Coherence: two-signal relationship (set comparison signal). Spectrogram: time-frequency heatmap. Use X / reference for time-based spacing.",
         justify=tk.LEFT,
         wraplength=380,
-    ).grid(row=10, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+    ).grid(row=8, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.frequency_tab, textvariable=workspace.fft_summary_var, wraplength=680, justify=tk.LEFT).pack(
         anchor="w",
@@ -468,6 +484,7 @@ def build_cycles_tab(workspace) -> None:
     controls.pack(fill=tk.X, padx=5, pady=(5, 0))
     controls.columnconfigure(1, weight=1)
 
+    # Always visible
     ttk.Label(controls, text="Active column").grid(row=0, column=0, sticky="w", padx=5, pady=5)
     workspace.cycles_active_column_label = tk.Label(
         controls,
@@ -487,24 +504,39 @@ def build_cycles_tab(workspace) -> None:
     )
     workspace.cycle_mode_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
-    ttk.Label(controls, text="Reference").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-    workspace.cycles_reference_combo = ttk.Combobox(controls, textvariable=workspace.cycle_reference_var, state="readonly")
-    workspace.cycles_reference_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+    # --- Option frames ---
+    # Fixed length
+    workspace.cycle_fixed_frame = ttk.Frame(controls)
+    ttk.Label(workspace.cycle_fixed_frame, text="Cycle length").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.cycle_fixed_frame, textvariable=workspace.cycle_length_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.cycle_fixed_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Cycle length").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.cycle_length_var).grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+    # Rising edge & zero crossing
+    workspace.cycle_edge_frame = ttk.Frame(controls)
+    ttk.Label(workspace.cycle_edge_frame, text="Reference").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.cycles_reference_combo = ttk.Combobox(workspace.cycle_edge_frame, textvariable=workspace.cycle_reference_var, state="readonly")
+    workspace.cycles_reference_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Label(workspace.cycle_edge_frame, text="Threshold").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.cycle_edge_frame, textvariable=workspace.cycle_threshold_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    workspace.cycle_edge_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Threshold").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.cycle_threshold_var).grid(row=4, column=1, sticky="ew", padx=5, pady=5)
+    # Peak
+    workspace.cycle_peak_frame = ttk.Frame(controls)
+    ttk.Label(workspace.cycle_peak_frame, text="Reference").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    workspace.cycles_reference_combo_peak = ttk.Combobox(workspace.cycle_peak_frame, textvariable=workspace.cycle_reference_var, state="readonly")
+    workspace.cycles_reference_combo_peak.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Label(workspace.cycle_peak_frame, text="Prominence").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.cycle_peak_frame, textvariable=workspace.cycle_prominence_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    workspace.cycle_peak_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Max cycles").grid(row=5, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.cycle_max_cycles_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
-
-    ttk.Label(controls, text="Prominence").grid(row=6, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.cycle_prominence_var).grid(row=6, column=1, sticky="ew", padx=5, pady=5)
+    # Max cycles (shown for all except fixed_length)
+    workspace.cycle_max_frame = ttk.Frame(controls)
+    ttk.Label(workspace.cycle_max_frame, text="Max cycles").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.cycle_max_frame, textvariable=workspace.cycle_max_cycles_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.cycle_max_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
 
     ttk.Button(controls, text="Analyze Cycles", command=workspace._compute_cycle_analysis).grid(
-        row=7,
+        row=6,
         column=0,
         columnspan=2,
         sticky="ew",
@@ -513,7 +545,7 @@ def build_cycles_tab(workspace) -> None:
     )
 
     selection_row = ttk.Frame(controls)
-    selection_row.grid(row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
+    selection_row.grid(row=7, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
     selection_row.columnconfigure(0, weight=1)
     selection_row.columnconfigure(1, weight=1)
     ttk.Button(selection_row, text="Select All Cycles", command=workspace._select_all_cycles).grid(
@@ -534,7 +566,7 @@ def build_cycles_tab(workspace) -> None:
         text="Fixed length: equal row blocks. Rising edge: threshold crossings. Zero crossing: sign-change points. Peak: successive signal peaks (set prominence to filter weak peaks).",
         justify=tk.LEFT,
         wraplength=380,
-    ).grid(row=9, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+    ).grid(row=8, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.cycles_tab, textvariable=workspace.cycle_summary_var, wraplength=680, justify=tk.LEFT).pack(
         anchor="w",

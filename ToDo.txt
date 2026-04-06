@@ -16,6 +16,9 @@ Documentation
 - validate the user guide wording with a non-expert user and tighten unclear steps
 - expand Mermaid diagrams where they improve orientation without cluttering the docs
 
+plotting:
+- yy-axis for signals (groupe by oder of magnitude like)
+
 Analysis Workspace
 - finish FFT workflow cleanup
 - add plot / subplot settings dialog

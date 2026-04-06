@@ -66,6 +66,28 @@ from plot_utils import create_plot_figure
 
 
 class AnalysisWorkspace:
+    def _refresh_cycle_method_controls(self) -> None:
+        mode = self.cycle_mode_var.get().strip() or "fixed_length"
+        # Hide all frames first
+        if hasattr(self, "cycle_fixed_frame") and self.cycle_fixed_frame is not None:
+            self.cycle_fixed_frame.grid_remove()
+        if hasattr(self, "cycle_edge_frame") and self.cycle_edge_frame is not None:
+            self.cycle_edge_frame.grid_remove()
+        if hasattr(self, "cycle_peak_frame") and self.cycle_peak_frame is not None:
+            self.cycle_peak_frame.grid_remove()
+        if hasattr(self, "cycle_max_frame") and self.cycle_max_frame is not None:
+            self.cycle_max_frame.grid_remove()
+
+        # Show relevant frames
+        if mode == "fixed_length":
+            self.cycle_fixed_frame.grid()
+        elif mode in {"rising_edge", "zero_crossing"}:
+            self.cycle_edge_frame.grid()
+            self.cycle_max_frame.grid()
+        elif mode == "peak":
+            self.cycle_peak_frame.grid()
+            self.cycle_max_frame.grid()
+
     """Tkinter window for filtering, deriving, plotting, and exporting one dataset."""
 
     def __init__(
@@ -171,7 +193,9 @@ class AnalysisWorkspace:
         self.cycle_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
         self.signal_filter_operation_var.trace_add("write", self._handle_output_defaults_changed)
         self.derived_operation_var.trace_add("write", self._handle_output_defaults_changed)
+        self.cycle_mode_var.trace_add("write", lambda *_: self._refresh_cycle_method_controls())
         self._refresh_all_views()
+        self._refresh_cycle_method_controls()
         self._refresh_live_plot()
 
     def close(self) -> None:
@@ -209,6 +233,8 @@ class AnalysisWorkspace:
         self._refresh_statistics()
         refresh_plot_controls(self)
         self._refresh_frequency_expectation()
+        self._refresh_frequency_method_controls()
+        self._refresh_cycle_method_controls()
 
     def _refresh_summary_views(self) -> None:
         self._ensure_current_summary()
@@ -862,36 +888,27 @@ class AnalysisWorkspace:
     def _refresh_frequency_method_controls(self) -> None:
         analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
         uses_comparison = analysis_name in {"Transfer Estimate", "Coherence"}
-        uses_welch_settings = analysis_name in {"Welch PSD", "Transfer Estimate", "Coherence"}
+        uses_welch_specific = analysis_name in {"Welch PSD", "Transfer Estimate", "Coherence"}
 
-        for widget_name in ("frequency_compare_label", "frequency_compare_combo"):
-            widget = getattr(self, widget_name, None)
-            if widget is None:
-                continue
+        # Show/hide comparison frame
+        if hasattr(self, "comparison_frame") and self.comparison_frame is not None:
             if uses_comparison:
-                widget.grid()
-            else:
-                widget.grid_remove()
-
-        for widget_name in (
-            "welch_segment_length_label",
-            "welch_segment_length_entry",
-            "welch_overlap_fraction_label",
-            "welch_overlap_fraction_entry",
-        ):
-            widget = getattr(self, widget_name, None)
-            if widget is None:
-                continue
-            if uses_welch_settings:
-                widget.grid()
-            else:
-                widget.grid_remove()
-
-        if hasattr(self, "frequency_compare_combo") and self.frequency_compare_combo is not None:
-            if uses_comparison:
+                self.comparison_frame.grid()
                 self.frequency_compare_combo.state(["!disabled"])
             else:
+                self.comparison_frame.grid_remove()
                 self.frequency_compare_combo.state(["disabled"])
+
+        # Show general frequency options for all methods
+        if hasattr(self, "freq_general_frame") and self.freq_general_frame is not None:
+            self.freq_general_frame.grid()
+
+        # Show Welch-specific options only for Welch/Transfer/Coherence
+        if hasattr(self, "welch_specific_frame") and self.welch_specific_frame is not None:
+            if uses_welch_specific:
+                self.welch_specific_frame.grid()
+            else:
+                self.welch_specific_frame.grid_remove()
 
     def _default_frequency_summary_text(self) -> str:
         analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
