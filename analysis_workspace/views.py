@@ -212,9 +212,9 @@ def render_correlation_view(container: ttk.Frame, correlation_frame: pd.DataFram
                 fg=foreground,
                 borderwidth=1,
                 relief="solid",
-                padx=4,
-                pady=2,
-                width=max(6, math.ceil(len(str(column)) * 0.85)),
+                padx=8,
+                pady=5,
+                width=max(7, math.ceil(len(str(column)) * 0.85)),
                 anchor="e",
             )
             label.grid(row=row_index, column=column_index, sticky="nsew")
@@ -363,8 +363,8 @@ def _build_correlation_header_cell(
         font=font,
         borderwidth=1,
         relief="solid",
-        padx=4,
-        pady=2,
+        padx=8,
+        pady=5,
         anchor=anchor,
     )
     label.grid(row=row_index, column=column_index, sticky="nsew")
