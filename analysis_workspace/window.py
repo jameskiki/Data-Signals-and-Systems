@@ -267,12 +267,16 @@ class AnalysisWorkspace:
             self._clear_plot_container()
             return
 
+        from plot_utils import PlotOptions
+        plot_options = PlotOptions(
+            cols_to_plot=self.session.selected_y_columns,
+            xcol=self.session.selected_x_column,
+            use_subplots=self.session.use_subplots,
+        )
         figure = create_plot_figure(
+            plot_options,
             [self.session.source_path],
             {self.session.source_path: self.session.working_frame},
-            self.session.selected_y_columns,
-            self.session.selected_x_column,
-            use_subplots=self.session.use_subplots,
             column_roles=self.column_roles,
         )
         self._render_plot_figure(figure)
@@ -547,12 +551,16 @@ class AnalysisWorkspace:
         self.session.selected_y_columns = selected_columns
         self.session.use_subplots = self.plot_subplots_var.get()
 
+        from plot_utils import PlotOptions
+        plot_options = PlotOptions(
+            cols_to_plot=selected_columns,
+            xcol=x_column,
+            use_subplots=self.session.use_subplots,
+        )
         figure = create_plot_figure(
+            plot_options,
             [self.session.source_path],
             {self.session.source_path: self.session.working_frame},
-            selected_columns,
-            x_column,
-            use_subplots=self.session.use_subplots,
             column_roles=self.column_roles,
         )
         self._render_plot_figure(figure)

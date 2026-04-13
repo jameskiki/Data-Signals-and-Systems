@@ -8,7 +8,7 @@ from numbers import Real
 from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
-
+import matplotlib.dates as mdates
 
 DISPLAY_DECIMALS = 3
 
@@ -48,11 +48,19 @@ def apply_numeric_axis_format(axis, *, format_x: bool = False, format_y: bool = 
     formatter = FuncFormatter(lambda tick_value, _position: format_display_number(tick_value))
     if format_x and _axis_looks_numeric(axis, "x"):
         axis.xaxis.set_major_formatter(formatter)
+    elif format_x:
+        axis.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M:%S'))
     if format_y and _axis_looks_numeric(axis, "y"):
         axis.yaxis.set_major_formatter(formatter)
 
 
 def _axis_looks_numeric(axis, dimension: str) -> bool:
+    # Check axis label for date/time keywords
+    label = axis.get_xlabel() if dimension == "x" else axis.get_ylabel()
+    label_lower = label.lower()
+    if any(kw in label_lower for kw in ("date", "timestamp")):
+        return False
+
     for line in axis.lines:
         raw_values = line.get_xdata(orig=False) if dimension == "x" else line.get_ydata(orig=False)
         values = np.asarray(raw_values)

@@ -3,18 +3,18 @@
 import tkinter as tk
 from tkinter import ttk
 
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
+from plot_utils import create_plot_figure
+from plot_utils import PlotOptions
 import pandas as pd
 
-from display_format import apply_numeric_axis_format, format_display_value
+from display_format import format_display_value
 from .datasets import (
     get_column_role,
     get_column_role_cell_colors,
     get_column_role_colors,
     get_column_role_label,
-    get_column_role_plot_color,
     sort_columns_by_role,
 )
 
@@ -26,8 +26,7 @@ def refresh_preview_plot(
     max_columns: int,
     column_roles: dict[str, str] | None = None,
 ) -> None:
-    """Render the index-based preview plot for the selected dataset."""
-
+    """Render the index-based preview plot for the selected dataset using shared plot utilities."""
     if app._preview_plot_container is None:
         return
 
@@ -38,38 +37,32 @@ def refresh_preview_plot(
         return
 
     clear_preview_plot(app)
-    figure, axis = plt.subplots(figsize=figure_size, dpi=100)
-    preview_frame = dataframe.loc[:, preview_columns]
 
-    # Use time-role column for x-axis when available
+    # Determine x-axis column
     time_col = _get_time_role_column(resolved_roles)
     if time_col is not None and time_col in dataframe.columns:
-        x_values = pd.to_numeric(dataframe[time_col], errors="coerce")
-        x_label = time_col
+        xcol = time_col
     else:
-        x_values = range(len(preview_frame))
-        x_label = "Index"
+        xcol = "Index"
 
-    for column in preview_columns:
-        numeric_values = pd.to_numeric(preview_frame[column], errors="coerce")
-        role_name = get_column_role(resolved_roles, str(column))
-        axis.plot(
-            x_values,
-            numeric_values,
-            linewidth=1.6,
-            label=str(column),
-            color=get_column_role_plot_color(role_name),
-        )
+    # Build PlotOptions for preview
+    plot_options = PlotOptions(
+        cols_to_plot=preview_columns,
+        xcol=xcol,
+        use_subplots=False,
+    )
 
-    axis.set_title("Role-aware overview", fontsize=10)
-    axis.set_xlabel(x_label, fontsize=9)
-    axis.set_ylabel("Value", fontsize=9)
-    axis.grid(True, alpha=0.28, color="#6b7280")
-    axis.margins(x=0.02)
-    apply_numeric_axis_format(axis, format_x=True, format_y=True)
-    if axis.lines:
-        axis.legend(fontsize=8, loc="upper right")
-    figure.tight_layout()
+    # Use a single dummy file path and data_frames map for compatibility with plot_utils
+    dummy_path = "preview"
+    data_frames = {dummy_path: dataframe}
+    selected_file_paths = [dummy_path]
+
+    figure = create_plot_figure(
+        plot_options=plot_options,
+        selected_file_paths=selected_file_paths,
+        data_frames=data_frames,
+        column_roles=resolved_roles,
+    )
 
     app._preview_plot_figure = figure
     app._preview_plot_canvas = FigureCanvasTkAgg(figure, master=app._preview_plot_container)
@@ -79,8 +72,10 @@ def refresh_preview_plot(
     app._preview_plot_toolbar.pack(side=tk.TOP, fill=tk.X)
     app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    # Attach SpanSelector for visual range picking
-    _attach_span_selector(app, axis)
+    # Attach SpanSelector for visual range picking (use the first axis)
+    axes = figure.get_axes()
+    if axes:
+        _attach_span_selector(app, axes[0])
 
 
 def refresh_preview_plot_signal_controls(
@@ -161,6 +156,7 @@ def clear_preview_plot(app, message: str | None = None) -> None:
     """Clear the preview plot area and optionally show a message."""
 
     if app._preview_plot_figure is not None:
+        import matplotlib.pyplot as plt
         plt.close(app._preview_plot_figure)
         app._preview_plot_figure = None
     app._preview_plot_canvas = None

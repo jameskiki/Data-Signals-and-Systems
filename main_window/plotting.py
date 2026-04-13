@@ -1,6 +1,5 @@
 """Plot dialog and figure window helpers for the main application."""
 
-from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -8,15 +7,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
-
-@dataclass
-class PlotOptions:
-    """User-selected plot configuration."""
-
-    cols_to_plot: list[str]
-    xcol: str
-    use_subplots: bool
-
+from plot_utils import PlotOptions
 
 class PlotOptionsDialog:
     """Modal dialog for choosing plot columns and axis options."""

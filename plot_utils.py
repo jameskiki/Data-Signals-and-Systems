@@ -1,3 +1,12 @@
+from dataclasses import dataclass
+
+# --- PlotOptions dataclass moved from main_window/plotting.py ---
+@dataclass
+class PlotOptions:
+    """User-selected plot configuration."""
+    cols_to_plot: list[str]
+    xcol: str
+    use_subplots: bool
 
 
 """
@@ -9,6 +18,7 @@ subplots, and syncing axes.
 """
 
 from collections.abc import Mapping, Sequence
+# PlotOptions is now defined in this module
 
 
 import matplotlib.pyplot as plt
@@ -25,11 +35,9 @@ XValueList = list[np.ndarray]
 
 
 def create_plot_figure(
+    plot_options: PlotOptions,
     selected_file_paths: Sequence[str],
     data_frames: DataFrameMap,
-    cols_to_plot: list[str],
-    xcol: str,
-    use_subplots: bool = True,
     column_roles: dict[str, str] | None = None,
     plt_module=plt,
 ) -> plt.Figure:
@@ -47,17 +55,17 @@ def create_plot_figure(
     """
     if not selected_file_paths:
         raise ValueError("selected_file_paths must not be empty")
-    if not cols_to_plot:
+    if not plot_options.cols_to_plot:
         raise ValueError("cols_to_plot must not be empty")
     missing_paths = [path for path in selected_file_paths if path not in data_frames]
     if missing_paths:
         raise KeyError(f"Missing data for selected paths: {missing_paths}")
 
-    if use_subplots:
-        n = len(cols_to_plot)
+    if plot_options.use_subplots:
+        n = len(plot_options.cols_to_plot)
         fig, axes, _, _ = create_subplots(n, ncols=2, plt_module=plt_module)
         x_values_by_axis = plot_columns_on_axes(
-            axes, cols_to_plot, selected_file_paths, data_frames, xcol, column_roles=column_roles
+            axes, plot_options.cols_to_plot, selected_file_paths, data_frames, plot_options.xcol, column_roles=column_roles
         )
         hide_unused_subplots(axes, n)
         sync_x_axes(axes, x_values_by_axis, fig)
@@ -66,8 +74,8 @@ def create_plot_figure(
     return create_overlay_figure(
         selected_file_paths,
         data_frames,
-        cols_to_plot,
-        xcol,
+        plot_options.cols_to_plot,
+        plot_options.xcol,
         column_roles=column_roles,
         plt_module=plt_module,
     )

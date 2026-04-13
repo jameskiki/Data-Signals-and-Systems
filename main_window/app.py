@@ -2,7 +2,6 @@
 
 import os
 
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 import tkinter as tk
@@ -218,11 +217,9 @@ class DataAnalysisApp:
             return
 
         figure = create_plot_figure(
+            options,
             selected_file_paths,
             self.data_frames,
-            options.cols_to_plot,
-            options.xcol,
-            use_subplots=options.use_subplots,
             column_roles=(
                 self.dataset_contexts.get(selected_file_paths[0], DatasetContext()).column_roles
                 if len(selected_file_paths) == 1
@@ -231,7 +228,7 @@ class DataAnalysisApp:
         )
         self.render_figure_in_window(figure)
 
-    def render_figure_in_window(self, figure: plt.Figure) -> None:
+    def render_figure_in_window(self, figure) -> None:
         show_figure_in_window(self.root, figure, PLOT_WINDOW_TITLE, PLOT_WINDOW_GEOMETRY)
 
     def merge_selected_files(self) -> None:
