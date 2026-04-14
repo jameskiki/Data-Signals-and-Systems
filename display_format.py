@@ -50,6 +50,7 @@ def apply_numeric_axis_format(axis, *, format_x: bool = False, format_y: bool = 
         axis.xaxis.set_major_formatter(formatter)
     elif format_x:
         axis.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M:%S'))
+        axis.get_figure().autofmt_xdate()
     if format_y and _axis_looks_numeric(axis, "y"):
         axis.yaxis.set_major_formatter(formatter)
 

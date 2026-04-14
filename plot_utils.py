@@ -1,12 +1,3 @@
-from dataclasses import dataclass
-
-# --- PlotOptions dataclass moved from main_window/plotting.py ---
-@dataclass
-class PlotOptions:
-    """User-selected plot configuration."""
-    cols_to_plot: list[str]
-    xcol: str
-    use_subplots: bool
 
 
 """
@@ -18,7 +9,7 @@ subplots, and syncing axes.
 """
 
 from collections.abc import Mapping, Sequence
-# PlotOptions is now defined in this module
+from main_window.plotting import PlotOptions
 
 
 import matplotlib.pyplot as plt
@@ -44,11 +35,10 @@ def create_plot_figure(
     """
     Build a matplotlib figure for the selected files and columns.
     Args:
+        plot_options: PlotOptions dataclass with plot configuration.
         selected_file_paths: List of selected file paths.
         data_frames: Dictionary mapping file paths to pandas DataFrames.
-        cols_to_plot: List of column names to plot.
-        xcol: Name of the x-axis column.
-        use_subplots: Whether to render one subplot per signal or overlay them.
+        column_roles: Optional dict of column roles.
         plt_module: Matplotlib pyplot module (default: plt).
     Returns:
         Matplotlib Figure.

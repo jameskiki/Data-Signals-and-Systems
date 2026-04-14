@@ -2,6 +2,7 @@
 
 import os
 
+from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
 import tkinter as tk
