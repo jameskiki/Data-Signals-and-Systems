@@ -1,5 +1,5 @@
 """Analysis workspace package."""
 
-from .window import AnalysisWorkspace
+from .app import AnalysisWorkspace
 
 __all__ = ["AnalysisWorkspace"]

@@ -1,70 +1,34 @@
+from .actions import (
+    load_files,
+    load_demo_test_signal,
+    load_demo_input_output_signal,
+    load_all_demo_test_signals,
+    plot_selected_data,
+    merge_selected_files,
+    create_prepared_dataset,
+    split_selected_dataset,
+    open_analysis_workspace,
+    unload_selected_files,
+    export_clean_data,
+    apply_selected_column_role,
+)
 """Main GUI application for dataset parsing, structural preparation, plotting, and analysis."""
 
 import os
 
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import pandas as pd
+
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-
-from analysis_app import AnalysisWorkspace
-from data_ops.io_ops import analyze_selected_dataframes, export_clean_dataframes
-from data_ops.models import AnalysisResult
-from data_ops.summary import summarize_dataframe
-from data_parser import DataParser
-from documentation_links import open_documentation_path
-from .demo import (
-    DEMO_DATASET_SPECS,
-    INPUT_OUTPUT_DEMO,
-    SPECTRAL_REFERENCE_DEMO,
-    create_demo_dataset,
-)
-from .datasets import (
-    DatasetContext,
-    apply_literal_role_combobox_style,
-    apply_role_combobox_style,
-    build_virtual_dataset_path,
-    colorize_listbox_by_role,
-    collect_source_paths,
-    format_source_paths,
-    get_available_column_roles,
-    get_column_role_cell_colors,
-    get_preferred_role_column,
-    infer_column_roles,
-    parse_split_ranges,
-    refresh_dataset_table,
-    register_dataset,
-    select_dataset_in_table,
-    summarize_column_roles,
-)
 from .layout import build_main_ui
-from .plotting import PlotOptionsDialog, show_figure_in_window
-from .preparation import (
-    create_prepared_dataset as create_prepared_dataset_workflow,
-    split_selected_dataset as split_selected_dataset_workflow,
+from .state import (
+    APP_TITLE,
+    WINDOW_GEOMETRY,
+    PLOT_WINDOW_TITLE,
+    PLOT_WINDOW_GEOMETRY,
+    LOG_FILE_TYPES,
+    PREVIEW_ROW_LIMIT,
+    PREVIEW_PLOT_MAX_COLUMNS,
+    PREVIEW_PLOT_FIGURE_SIZE,
 )
-from .preview import (
-    clear_preview_plot,
-    clear_preview_table,
-    get_preview_plot_columns,
-    handle_preview_plot_control_changed,
-    refresh_preview_plot,
-    refresh_preview_plot_signal_controls,
-    refresh_preview_table,
-    refresh_selected_dataset_preview_plot,
-)
-from plot_utils import create_plot_figure
-
-
-APP_TITLE = "Dataset Preparation and Analysis"
-WINDOW_GEOMETRY = "1000x900"
-PLOT_WINDOW_TITLE = "Plot"
-PLOT_WINDOW_GEOMETRY = "900x600"
-LOG_FILE_TYPES = [("Log files", "*.txt *.csv *.log"), ("All files", "*.*")]
-PREVIEW_ROW_LIMIT = 200
-PREVIEW_PLOT_MAX_COLUMNS = 3
-PREVIEW_PLOT_FIGURE_SIZE = (7.4, 3.4)
 
 
 class DataAnalysisApp:
@@ -123,58 +87,16 @@ class DataAnalysisApp:
         self._refresh_dataset_preparation_views()
 
     def load_files(self) -> None:
-        files = filedialog.askopenfilenames(filetypes=LOG_FILE_TYPES)
-        loaded_file_paths: list[str] = []
-        parse_info: list[str] = []
-        for file_path in files:
-            try:
-                dataframe, separator, decimal_marker = DataParser.load_file(file_path)
-                register_dataset(
-                    self,
-                    file_path,
-                    dataframe,
-                    source_paths=[file_path],
-                    description="Loaded source dataset",
-                )
-                loaded_file_paths.append(file_path)
-                parse_info.append(f"{os.path.basename(file_path)}: sep='{separator}', decimal='{decimal_marker}'")
-            except Exception as error:
-                messagebox.showerror("Error", f"Failed to load {file_path}: {error}")
-
-        refresh_dataset_table(self)
-        if not loaded_file_paths:
-            return
-
-        analysis_result = analyze_selected_dataframes(loaded_file_paths, self.data_frames)
-        select_dataset_in_table(self, loaded_file_paths[-1])
-        self._refresh_dataset_preparation_views()
-        messagebox.showinfo("Load summary", "\n".join([" | ".join(parse_info), analysis_result.report_text]))
+        return load_files(self)
 
     def load_demo_test_signal(self) -> None:
-        self._load_demo_dataset(SPECTRAL_REFERENCE_DEMO.key)
+        return load_demo_test_signal(self)
 
     def load_demo_input_output_signal(self) -> None:
-        self._load_demo_dataset(INPUT_OUTPUT_DEMO.key)
+        return load_demo_input_output_signal(self)
 
     def load_all_demo_test_signals(self) -> None:
-        loaded_paths: list[str] = []
-        for spec in DEMO_DATASET_SPECS:
-            dataset_path = self._load_demo_dataset(spec.key, show_message=False)
-            loaded_paths.append(dataset_path)
-
-        refresh_dataset_table(self)
-        if loaded_paths:
-            select_dataset_in_table(self, loaded_paths[-1])
-        self._refresh_dataset_preparation_views()
-        messagebox.showinfo(
-            "Demo/Test Signals Loaded",
-            "\n".join(
-                [
-                    f"Loaded {len(loaded_paths)} synthetic validation datasets:",
-                    *[f"- {os.path.basename(path)}" for path in loaded_paths],
-                ]
-            ),
-        )
+        return load_all_demo_test_signals(self)
 
     def _load_demo_dataset(self, demo_key: str, show_message: bool = True) -> str:
         spec, dataframe = create_demo_dataset(demo_key)
@@ -209,83 +131,19 @@ class DataAnalysisApp:
         return dataset_path
 
     def plot_selected_data(self) -> None:
-        selected_file_paths = self._get_multiple_selected_file_paths("Select one or more files first")
-        if not selected_file_paths:
-            return
-
-        options = PlotOptionsDialog(self.root, self.data_frames[selected_file_paths[0]], PLOT_WINDOW_TITLE).show()
-        if options is None or not options.cols_to_plot:
-            return
-
-        figure = create_plot_figure(
-            options,
-            selected_file_paths,
-            self.data_frames,
-            column_roles=(
-                self.dataset_contexts.get(selected_file_paths[0], DatasetContext()).column_roles
-                if len(selected_file_paths) == 1
-                else None
-            ),
-        )
-        self.render_figure_in_window(figure)
+        return plot_selected_data(self)
 
     def render_figure_in_window(self, figure) -> None:
         show_figure_in_window(self.root, figure, PLOT_WINDOW_TITLE, PLOT_WINDOW_GEOMETRY)
 
     def merge_selected_files(self) -> None:
-        selected_file_paths = self._get_multiple_selected_file_paths("Select files to merge")
-        if not selected_file_paths:
-            return
-        if len(selected_file_paths) < 2:
-            messagebox.showwarning("Warning", "Select at least two files to merge")
-            return
-
-        analysis_result: AnalysisResult = analyze_selected_dataframes(selected_file_paths, self.data_frames)
-        save_path = filedialog.asksaveasfilename(
-            title="Save merged CSV",
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-        )
-        if not save_path:
-            return
-
-        register_dataset(
-            self,
-            save_path,
-            analysis_result.merged_frame.copy(),
-            source_paths=collect_source_paths(self, selected_file_paths),
-            description=f"Merged from {len(selected_file_paths)} datasets",
-        )
-        analysis_result.merged_frame.to_csv(save_path, sep=";", index=False)
-        refresh_dataset_table(self)
-        select_dataset_in_table(self, save_path)
-        self._refresh_dataset_preparation_views()
-        messagebox.showinfo("Saved", f"Merged file saved to:\n{save_path}")
+        return merge_selected_files(self)
 
     def create_prepared_dataset(self) -> None:
-        try:
-            prepared_path = create_prepared_dataset_workflow(self)
-        except Exception as error:
-            messagebox.showerror("Create Dataset Error", str(error))
-            return
-        if prepared_path is not None:
-            messagebox.showinfo("Prepared Dataset", f"Created dataset:\n{os.path.basename(prepared_path)}")
+        return create_prepared_dataset(self)
 
     def split_selected_dataset(self) -> None:
-        split_options = self._prompt_split_subframes_options()
-        if split_options is None:
-            return
-
-        try:
-            created_paths = split_selected_dataset_workflow(
-                self,
-                prefix=split_options["prefix"],
-                raw_ranges_text=split_options["ranges_text"],
-            )
-        except Exception as error:
-            messagebox.showerror("Split Error", str(error))
-            return
-        messagebox.showinfo("Split Complete", f"Created {len(created_paths)} subframe dataset(s)")
+        return split_selected_dataset(self)
 
     def _prompt_split_subframes_options(self) -> dict[str, str] | None:
         dialog = tk.Toplevel(self.root)
@@ -357,44 +215,13 @@ class DataAnalysisApp:
         return result
 
     def open_analysis_workspace(self) -> None:
-        selected_path = self._get_single_selected_file_path("Select exactly one file first")
-        if selected_path is None:
-            return
-
-        workspace = AnalysisWorkspace(
-            self.root,
-            selected_path,
-            self.data_frames[selected_path],
-            column_roles=self.dataset_contexts.get(selected_path, DatasetContext()).column_roles,
-            dataset_description=self.dataset_contexts.get(selected_path, DatasetContext()).description,
-            on_close=self._on_analysis_workspace_closed,
-        )
-        self._analysis_workspaces.append(workspace)
+        return open_analysis_workspace(self)
 
     def unload_selected_files(self) -> None:
-        selected_file_paths = self._get_multiple_selected_file_paths("Select files to unload")
-        if not selected_file_paths:
-            return
-
-        for path in selected_file_paths:
-            self.data_frames.pop(path, None)
-            self.dataset_contexts.pop(path, None)
-
-        refresh_dataset_table(self)
-        self._refresh_dataset_preparation_views()
-        messagebox.showinfo("Unloaded", f"Unloaded {len(selected_file_paths)} file(s)")
+        return unload_selected_files(self)
 
     def export_clean_data(self) -> None:
-        if not self.data_frames:
-            messagebox.showwarning("Warning", "No data loaded")
-            return
-
-        output_dir = filedialog.askdirectory(title="Select output directory")
-        if not output_dir:
-            return
-
-        exported_count = export_clean_dataframes(self.data_frames, output_dir)
-        messagebox.showinfo("Success", f"Exported {exported_count} files")
+        return export_clean_data(self)
 
     def open_documentation(self, relative_path: str) -> None:
         try:
@@ -823,23 +650,7 @@ class DataAnalysisApp:
         self._refresh_role_editor_styles(context.column_roles)
 
     def apply_selected_column_role(self) -> None:
-        selected_path = self._get_single_selected_file_path("Select exactly one dataset first")
-        if selected_path is None:
-            return
-
-        column_name = self.role_editor_column_var.get().strip()
-        role_name = self.role_editor_value_var.get().strip()
-        if not column_name or not role_name:
-            messagebox.showwarning("Warning", "Select a column and a role first")
-            return
-
-        context = self.dataset_contexts.get(selected_path)
-        if context is None:
-            return
-
-        context.column_roles[column_name] = role_name
-        self._propagate_role_updates(selected_path, context.column_roles)
-        self._refresh_dataset_preparation_views()
+        return apply_selected_column_role(self)
 
     def reinfer_selected_dataset_roles(self) -> None:
         selected_path = self._get_single_selected_file_path("Select exactly one dataset first")
@@ -956,29 +767,20 @@ class DataAnalysisApp:
         select_dataset_in_table(self, file_path)
 
     def _refresh_preview_plot(self, dataframe: pd.DataFrame) -> None:
-        selected_path = self._get_single_selected_file_path()
-        refresh_preview_plot(
-            self,
-            dataframe,
-            PREVIEW_PLOT_FIGURE_SIZE,
-            PREVIEW_PLOT_MAX_COLUMNS,
-            self.dataset_contexts.get(selected_path or "", DatasetContext()).column_roles,
-        )
+        from .refresh import refresh_preview_plot_app
+        return refresh_preview_plot_app(self, dataframe)
 
     def _refresh_preview_plot_signal_controls(self, dataframe: pd.DataFrame) -> None:
-        selected_path = self._get_single_selected_file_path()
-        refresh_preview_plot_signal_controls(
-            self,
-            dataframe,
-            PREVIEW_PLOT_MAX_COLUMNS,
-            self.dataset_contexts.get(selected_path or "", DatasetContext()).column_roles,
-        )
+        from .refresh import refresh_preview_plot_signal_controls_app
+        return refresh_preview_plot_signal_controls_app(self, dataframe)
 
     def _refresh_selected_dataset_preview_plot(self) -> None:
-        refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
+        from .refresh import refresh_selected_dataset_preview_plot_app
+        return refresh_selected_dataset_preview_plot_app(self)
 
     def _handle_preview_plot_control_changed(self, _event: tk.Event | None = None) -> None:
-        handle_preview_plot_control_changed(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
+        from .refresh import handle_preview_plot_control_changed_app
+        return handle_preview_plot_control_changed_app(self, _event)
 
     def _get_selected_preview_plot_columns(self, dataframe: pd.DataFrame) -> list[str]:
         from .preview import get_selected_preview_plot_columns
@@ -986,15 +788,16 @@ class DataAnalysisApp:
         return get_selected_preview_plot_columns(self, dataframe, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _clear_preview_plot(self, message: str | None = None) -> None:
-        clear_preview_plot(self, message)
+        from .refresh import clear_preview_plot_app
+        return clear_preview_plot_app(self, message)
 
     def _refresh_preview_table(self, dataframe: pd.DataFrame) -> None:
-        selected_path = self._get_single_selected_file_path()
-        column_roles = self.dataset_contexts.get(selected_path, DatasetContext()).column_roles if selected_path else {}
-        refresh_preview_table(self, dataframe, PREVIEW_ROW_LIMIT, column_roles)
+        from .refresh import refresh_preview_table_app
+        return refresh_preview_table_app(self, dataframe)
 
     def _clear_preview_table(self, message: str | None = None) -> None:
-        clear_preview_table(self, message)
+        from .refresh import clear_preview_table_app
+        return clear_preview_table_app(self, message)
 
     def _on_analysis_workspace_closed(self, workspace: AnalysisWorkspace) -> None:
         if workspace in self._analysis_workspaces:
@@ -1002,15 +805,18 @@ class DataAnalysisApp:
 
     @staticmethod
     def _get_preview_plot_columns(dataframe: pd.DataFrame) -> list[str]:
-        return get_preview_plot_columns(dataframe)
+        from .views import get_preview_plot_columns_view
+        return get_preview_plot_columns_view(dataframe)
 
     @staticmethod
     def _format_source_paths(source_paths: list[str]) -> str:
-        return format_source_paths(source_paths)
+        from .views import format_source_paths_view
+        return format_source_paths_view(source_paths)
 
     @staticmethod
     def _parse_split_ranges(raw_text: str) -> list[tuple[int, int]]:
-        return parse_split_ranges(raw_text)
+        from .views import parse_split_ranges_view
+        return parse_split_ranges_view(raw_text)
 
 
 def main() -> None:

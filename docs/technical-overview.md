@@ -1,3 +1,27 @@
+## Standard App Structure for UI Packages
+
+To ensure maintainability and make it easy to add new apps (such as a future systems module), all UI packages should follow a harmonized structure:
+
+**Each app should contain:**
+- `__init__.py` — Exposes the main class for the app/workspace.
+- `app.py` or `main.py` — Entry point for the app (main window or workspace).
+- `layout.py` — Constructs the Tkinter UI layout and menus.
+- `actions.py` — Contains user-triggered operations and workflow logic.
+- `state.py` — Defines session/configuration dataclasses and constants.
+- `views.py` — Reusable rendering and preview helpers (tables, trees, statistics, etc.).
+- `refresh.py` — UI update logic (optional, if the app has dynamic UI updates).
+- `demo.py` — Demo/sample data generation (if relevant).
+- `plotting.py` — Plot dialogs and figure utilities (if relevant).
+- `datasets.py` — Data/metadata helpers (if relevant).
+
+**Guidelines:**
+- Use consistent naming and file roles across all apps, even if some files are minimal in certain apps.
+- Store all Tkinter variable objects in the main class for clarity.
+- Use a dataclass in `state.py` for all per-app/session state.
+- Move shared logic (e.g., column roles, plotting, data summary) to a common module/package (such as `data_ops/` or a new `common/` package) to avoid duplication.
+- Document any app-specific extensions or deviations in this file.
+
+This structure supports modularity, code reuse, and a clear path for future extension.
 # Technical Overview
 
 ## Purpose
