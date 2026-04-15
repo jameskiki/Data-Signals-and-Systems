@@ -8,7 +8,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from analysis_workspace import AnalysisWorkspace
+from analysis_app import AnalysisWorkspace
 from data_ops.io_ops import analyze_selected_dataframes, export_clean_dataframes
 from data_ops.models import AnalysisResult
 from data_ops.summary import summarize_dataframe

@@ -3,7 +3,7 @@
 import os
 
 from .actions import resolve_default_output_names
-from main_window.datasets import (
+from datapreparation_app.datasets import (
     apply_role_combobox_style,
     get_column_role,
     get_preferred_role_column,

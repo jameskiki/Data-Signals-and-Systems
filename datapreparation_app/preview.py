@@ -6,7 +6,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 from plot_utils import create_plot_figure
-from plot_utils import PlotOptions
+from plot_options import PlotOptions
 import pandas as pd
 
 from display_format import format_display_value

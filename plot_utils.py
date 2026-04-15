@@ -9,7 +9,7 @@ subplots, and syncing axes.
 """
 
 from collections.abc import Mapping, Sequence
-from main_window.plotting import PlotOptions
+from plot_options import PlotOptions
 
 
 import matplotlib.pyplot as plt
@@ -18,7 +18,7 @@ import os
 import pandas as pd
 
 from display_format import apply_numeric_axis_format
-from main_window.datasets import get_column_role, get_column_role_plot_color
+from datapreparation_app.datasets import get_column_role, get_column_role_plot_color
 
 
 DataFrameMap = Mapping[str, pd.DataFrame]

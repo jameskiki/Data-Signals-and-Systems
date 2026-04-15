@@ -25,7 +25,7 @@ from data_ops.signals import apply_signal_filter
 from data_ops.signals import add_derived_column
 from data_ops.spectral import compute_fft_spectrum, compute_welch_psd
 from data_ops.summary import summarize_dataframe
-from main_window.demo import INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
+from datapreparation_app.demo import INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 
 
 def _build_demo_frames() -> tuple[pd.DataFrame, pd.DataFrame]:

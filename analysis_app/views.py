@@ -7,7 +7,7 @@ from tkinter import font as tkfont, ttk
 
 import pandas as pd
 from display_format import format_display_value
-from main_window.datasets import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from datapreparation_app.datasets import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
 
 from .state import (
     CORRELATION_DIAGONAL_COLOR,
