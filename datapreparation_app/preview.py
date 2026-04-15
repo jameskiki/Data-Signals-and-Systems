@@ -5,16 +5,13 @@ from tkinter import ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
-from plot_utils import create_plot_figure
-from plot_options import PlotOptions
+from shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
+from shared.plot_utils import create_plot_figure
+from shared.plot_options import PlotOptions
 import pandas as pd
 
-from display_format import format_display_value
 from .datasets import (
     get_column_role,
-    get_column_role_cell_colors,
-    get_column_role_colors,
-    get_column_role_label,
     sort_columns_by_role,
 )
 
@@ -175,66 +172,14 @@ def refresh_preview_table(app, dataframe: pd.DataFrame, row_limit: int, column_r
     if app._preview_table_container is None:
         return
 
-    clear_preview_table(app)
-    preview_frame = dataframe.head(row_limit)
-    if preview_frame.empty:
-        ttk.Label(app._preview_table_container, text="The dataset is empty.", justify=tk.LEFT).pack(
-            anchor="w", padx=5, pady=5
-        )
-        return
-
-    resolved_roles = column_roles or {}
-    outer_frame = ttk.Frame(app._preview_table_container)
-    outer_frame.grid(row=0, column=0, sticky="nsew")
-    outer_frame.rowconfigure(0, weight=1)
-    outer_frame.columnconfigure(0, weight=1)
-
-    canvas = tk.Canvas(outer_frame, highlightthickness=0, borderwidth=0)
-    canvas.grid(row=0, column=0, sticky="nsew")
-    vertical_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
-    vertical_scrollbar.grid(row=0, column=1, sticky="ns")
-    horizontal_scrollbar = ttk.Scrollbar(app._preview_table_container, orient=tk.HORIZONTAL, command=canvas.xview)
-    horizontal_scrollbar.grid(row=1, column=0, sticky="ew")
-    canvas.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
-
-    grid_frame = tk.Frame(canvas)
-    window_id = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
-
-    _build_preview_cell(grid_frame, 0, 0, "#", "#eef2f6", "#444444", bold=True, anchor="center")
-    for column_index, column_name in enumerate(preview_frame.columns, start=1):
-        role_name = get_column_role(resolved_roles, str(column_name))
-        background, foreground = get_column_role_colors(role_name)
-        header_text = f"{column_name}\n[{get_column_role_label(resolved_roles, str(column_name))}]"
-        _build_preview_cell(grid_frame, 0, column_index, header_text, background, foreground, bold=True, anchor="w")
-
-    formatted_frame = preview_frame.astype(object).where(pd.notna(preview_frame), "")
-    for row_index, row_values in enumerate(formatted_frame.itertuples(index=False, name=None), start=1):
-        _build_preview_cell(grid_frame, row_index, 0, str(row_index - 1), "#eef2f6", "#444444", anchor="e")
-        for column_index, value in enumerate(row_values, start=1):
-            column_name = str(preview_frame.columns[column_index - 1])
-            role_name = get_column_role(resolved_roles, column_name)
-            background, foreground = get_column_role_cell_colors(role_name)
-            _build_preview_cell(
-                grid_frame,
-                row_index,
-                column_index,
-                format_display_value(value),
-                background,
-                foreground,
-                anchor="w",
-            )
-
-    def _sync_scroll_region(_event: tk.Event | None = None) -> None:
-        canvas.configure(scrollregion=canvas.bbox("all"))
-
-    def _sync_window_size(event: tk.Event) -> None:
-        canvas.itemconfigure(window_id, height=max(event.height, grid_frame.winfo_reqheight()))
-
-    grid_frame.bind("<Configure>", _sync_scroll_region)
-    canvas.bind("<Configure>", _sync_window_size)
-    app._preview_table_container.rowconfigure(0, weight=1)
-    app._preview_table_container.columnconfigure(0, weight=1)
-    _sync_scroll_region()
+    render_shared_dataframe_preview(
+        app._preview_table_container,
+        dataframe,
+        row_limit,
+        column_roles,
+        layout="grid",
+        empty_message="The dataset is empty.",
+    )
 
 
 def clear_preview_table(app, message: str | None = None) -> None:

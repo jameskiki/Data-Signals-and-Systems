@@ -6,6 +6,7 @@ Utility class for robust log file parsing and datetime handling.
 
 import re
 import warnings
+
 import pandas as pd
 
 
@@ -16,6 +17,7 @@ class DataParser:
     """
     Static utility class for parsing log files and handling date/time columns.
     """
+
     @staticmethod
     def detect_decimal_marker(file_path: str, sep: str, skiprows: int) -> str:
         """
@@ -32,7 +34,7 @@ class DataParser:
         comma_score = 0
         dot_score = 0
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 for _ in range(skiprows):
                     f.readline()
                 lines_read = 0
@@ -51,8 +53,8 @@ class DataParser:
                             dot_score += 1
                     lines_read += 1
         except Exception:
-            return '.'
-        return ',' if comma_score > dot_score else '.'
+            return "."
+        return "," if comma_score > dot_score else "."
 
     @staticmethod
     def parse_datetime_series(series: pd.Series) -> pd.Series:
@@ -113,19 +115,19 @@ class DataParser:
         Returns:
             Tuple of (DataFrame, separator, decimal marker)
         """
-        sep = ';'
+        sep = ";"
         skiprows = 0
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline()
-            if first_line.lower().strip().startswith('sep='):
-                sep = first_line.split('=', 1)[1].strip() or sep
+            if first_line.lower().strip().startswith("sep="):
+                sep = first_line.split("=", 1)[1].strip() or sep
                 skiprows = 1
                 while True:
                     position = f.tell()
                     line = f.readline()
                     if not line:
                         break
-                    if line.strip() == '':
+                    if line.strip() == "":
                         skiprows += 1
                         continue
                     f.seek(position)
@@ -141,7 +143,7 @@ class DataParser:
         )
         if df.columns.size > 0:
             last_col = df.columns[-1]
-            if (last_col == '' or str(last_col).startswith('Unnamed')) and df.iloc[:, -1].isna().all():
+            if (last_col == "" or str(last_col).startswith("Unnamed")) and df.iloc[:, -1].isna().all():
                 df = df.iloc[:, :-1]
         for col in df.columns:
             if re.search(r"(time|date|timestamp)", str(col), re.I):

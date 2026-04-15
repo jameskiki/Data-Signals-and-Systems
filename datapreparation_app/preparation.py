@@ -17,6 +17,8 @@ from .datasets import (
 def get_selected_column_names(app) -> list[str]:
     """Return the currently selected column names from the main window selector."""
 
+    if hasattr(app, "session") and getattr(app.session, "selected_columns", None) is not None:
+        return list(app.session.selected_columns)
     if not hasattr(app, "_get_selected_column_names"):
         return []
     return app._get_selected_column_names()
@@ -52,7 +54,7 @@ def create_prepared_dataset(app) -> str | None:
         prepared_frame = select_dataframe_columns(prepared_frame, selected_columns)
         description_parts.append(f"kept {len(selected_columns)} column(s)")
 
-    output_name = app.column_output_name_var.get().strip() or "prepared_dataset"
+    output_name = app.session.output_dataset_name or "prepared_dataset"
     prepared_path = build_virtual_dataset_path(app.data_frames, selected_path, output_name)
     description = "; ".join(description_parts) or "Prepared dataset"
     register_dataset(
@@ -79,7 +81,7 @@ def split_selected_dataset(app, raw_ranges_text: str, prefix: str | None = None)
     ranges = parse_split_ranges(raw_ranges_text)
     split_frames = split_dataframe_by_index_ranges(app.data_frames[selected_path], ranges)
 
-    resolved_prefix = (prefix or app.split_prefix_var.get()).strip() or "cycle"
+    resolved_prefix = (prefix or app.session.split_prefix).strip() or "cycle"
     created_paths: list[str] = []
     for index, ((start_index, end_index), frame) in enumerate(split_frames, start=1):
         suffix = f"{resolved_prefix}_{index:03d}_{start_index}_{end_index}"

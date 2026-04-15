@@ -10,7 +10,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from documentation_links import open_documentation_path
+from shared.documentation_links import open_documentation_path
 from .actions import (
     build_derived_signal_update,
     build_reset_update,
@@ -45,9 +45,9 @@ from data_ops.cycles import (
     detect_rising_edge_cycle_ranges,
     detect_zero_crossing_cycle_ranges,
 )
-from display_format import apply_numeric_axis_format, format_display_number, format_display_percent
-from datapreparation_app.demo import describe_demo_frequency_expectations, get_demo_frequency_guides
-from datapreparation_app.datasets import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
+from shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
+from shared.column_roles import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
+from shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
 
 from data_ops.filtering import resolve_filtered_column_name
 from data_ops.frame_ops import resample_to_uniform
@@ -62,7 +62,7 @@ from data_ops.spectral import (
     compute_welch_psd,
 )
 from data_ops.summary import summarize_dataframe
-from plot_utils import create_plot_figure
+from shared.plot_utils import create_plot_figure
 
 
 class AnalysisWorkspace:
@@ -267,7 +267,7 @@ class AnalysisWorkspace:
             self._clear_plot_container()
             return
 
-        from plot_options import PlotOptions
+        from shared.plot_options import PlotOptions
         plot_options = PlotOptions(
             cols_to_plot=self.session.selected_y_columns,
             xcol=self.session.selected_x_column,
@@ -551,7 +551,7 @@ class AnalysisWorkspace:
         self.session.selected_y_columns = selected_columns
         self.session.use_subplots = self.plot_subplots_var.get()
 
-        from plot_options import PlotOptions
+        from shared.plot_options import PlotOptions
         plot_options = PlotOptions(
             cols_to_plot=selected_columns,
             xcol=x_column,

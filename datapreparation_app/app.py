@@ -16,15 +16,50 @@ from .actions import (
 
 import os
 
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import pandas as pd
 
 import tkinter as tk
+from tkinter import messagebox, ttk
+
+from analysis_app import AnalysisWorkspace
+from .datasets import (
+    DatasetContext,
+    apply_literal_role_combobox_style,
+    apply_role_combobox_style,
+    build_virtual_dataset_path,
+    format_source_paths,
+    get_available_column_roles,
+    get_column_role_cell_colors,
+    get_preferred_role_column,
+    infer_column_roles,
+    refresh_dataset_table,
+    register_dataset,
+    select_dataset_in_table,
+)
+from .demo import create_demo_dataset
 from .layout import build_main_ui
+from .plotting import show_figure_in_window
+from .preview import (
+    clear_preview_plot,
+    clear_preview_table,
+    get_selected_preview_plot_columns,
+    handle_preview_plot_control_changed,
+    refresh_preview_plot,
+    refresh_preview_plot_signal_controls,
+    refresh_selected_dataset_preview_plot,
+    refresh_preview_table,
+)
+from shared.column_roles import summarize_column_roles
+from shared.documentation_links import open_documentation_path
 from .state import (
     APP_TITLE,
     WINDOW_GEOMETRY,
     PLOT_WINDOW_TITLE,
     PLOT_WINDOW_GEOMETRY,
     LOG_FILE_TYPES,
+    DataPreparationSession,
     PREVIEW_ROW_LIMIT,
     PREVIEW_PLOT_MAX_COLUMNS,
     PREVIEW_PLOT_FIGURE_SIZE,
@@ -38,6 +73,17 @@ class DataAnalysisApp:
         self.root = root
         self.root.title(APP_TITLE)
         self.root.geometry(WINDOW_GEOMETRY)
+        self.session = DataPreparationSession()
+
+        # Preserve the config surface expected by workflow helpers.
+        self.APP_TITLE = APP_TITLE
+        self.WINDOW_GEOMETRY = WINDOW_GEOMETRY
+        self.PLOT_WINDOW_TITLE = PLOT_WINDOW_TITLE
+        self.PLOT_WINDOW_GEOMETRY = PLOT_WINDOW_GEOMETRY
+        self.LOG_FILE_TYPES = LOG_FILE_TYPES
+        self.PREVIEW_ROW_LIMIT = PREVIEW_ROW_LIMIT
+        self.PREVIEW_PLOT_MAX_COLUMNS = PREVIEW_PLOT_MAX_COLUMNS
+        self.PREVIEW_PLOT_FIGURE_SIZE = PREVIEW_PLOT_FIGURE_SIZE
 
         self.data_frames: dict[str, pd.DataFrame] = {}
         self.dataset_contexts: dict[str, DatasetContext] = {}
@@ -52,15 +98,15 @@ class DataAnalysisApp:
         self.dataset_source_var = tk.StringVar(value="")
         self.dataset_note_var = tk.StringVar(value="")
 
-        self.column_output_name_var = tk.StringVar()
-        self.column_selection_summary_var = tk.StringVar(value="No dataset selected")
-        self.role_editor_column_var = tk.StringVar(value="")
-        self.role_editor_value_var = tk.StringVar(value="metadata")
-        self.split_prefix_var = tk.StringVar(value="cycle")
-        self.preview_plot_signal_summary_var = tk.StringVar(value="No dataset selected")
-        self.row_range_start_var = tk.StringVar(value="")
-        self.row_range_end_var = tk.StringVar(value="")
-        self.row_range_label_var = tk.StringVar(value="Row index")
+        self.column_output_name_var = tk.StringVar(value=self.session.output_dataset_name)
+        self.column_selection_summary_var = tk.StringVar(value=self.session.column_selection_summary)
+        self.role_editor_column_var = tk.StringVar(value=self.session.role_editor_column)
+        self.role_editor_value_var = tk.StringVar(value=self.session.role_editor_value)
+        self.split_prefix_var = tk.StringVar(value=self.session.split_prefix)
+        self.preview_plot_signal_summary_var = tk.StringVar(value=self.session.preview_plot_signal_summary)
+        self.row_range_start_var = tk.StringVar(value=self.session.row_range_start)
+        self.row_range_end_var = tk.StringVar(value=self.session.row_range_end)
+        self.row_range_label_var = tk.StringVar(value=self.session.row_range_label)
         self._row_range_update_in_progress = False
         self._row_range_span_selector = None
         self._row_range_debounce_id: str | None = None
@@ -80,11 +126,72 @@ class DataAnalysisApp:
         self._row_range_reset_button: ttk.Button | None = None
 
         build_main_ui(self, PREVIEW_ROW_LIMIT)
+        self.column_output_name_var.trace_add("write", self._handle_output_dataset_name_changed)
         self.role_editor_column_var.trace_add("write", self._handle_role_editor_column_changed)
         self.role_editor_value_var.trace_add("write", self._handle_role_editor_value_changed)
         self.row_range_start_var.trace_add("write", self._handle_row_range_changed)
         self.row_range_end_var.trace_add("write", self._handle_row_range_changed)
         self._refresh_dataset_preparation_views()
+
+    def _set_selected_dataset_path(self, dataset_path: str | None) -> None:
+        self.session.selected_dataset_path = dataset_path
+        display_name = os.path.basename(dataset_path) if dataset_path else ""
+        if self.selected_dataset_var.get() != display_name:
+            self.selected_dataset_var.set(display_name)
+
+    def _set_output_dataset_name(self, output_name: str, *, update_var: bool = True) -> None:
+        self.session.output_dataset_name = output_name.strip()
+        if update_var and self.column_output_name_var.get() != self.session.output_dataset_name:
+            self.column_output_name_var.set(self.session.output_dataset_name)
+
+    def _set_split_prefix(self, split_prefix: str) -> None:
+        self.session.split_prefix = split_prefix.strip() or "cycle"
+        if self.split_prefix_var.get() != self.session.split_prefix:
+            self.split_prefix_var.set(self.session.split_prefix)
+
+    def _set_role_editor_column(self, column_name: str, *, update_var: bool = True) -> None:
+        self.session.role_editor_column = column_name.strip()
+        if update_var and self.role_editor_column_var.get() != self.session.role_editor_column:
+            self.role_editor_column_var.set(self.session.role_editor_column)
+
+    def _set_role_editor_value(self, role_name: str, *, update_var: bool = True) -> None:
+        self.session.role_editor_value = role_name.strip() or "metadata"
+        if update_var and self.role_editor_value_var.get() != self.session.role_editor_value:
+            self.role_editor_value_var.set(self.session.role_editor_value)
+
+    def _set_row_range_label(self, label_text: str) -> None:
+        self.session.row_range_label = label_text
+        if self.row_range_label_var.get() != label_text:
+            self.row_range_label_var.set(label_text)
+
+    def _set_row_range_values(self, start_text: str, end_text: str, *, update_vars: bool = True) -> None:
+        self.session.row_range_start = start_text.strip()
+        self.session.row_range_end = end_text.strip()
+        if not update_vars:
+            return
+        if self.row_range_start_var.get() != self.session.row_range_start:
+            self.row_range_start_var.set(self.session.row_range_start)
+        if self.row_range_end_var.get() != self.session.row_range_end:
+            self.row_range_end_var.set(self.session.row_range_end)
+
+    def _set_selected_columns(self, selected_columns: list[str]) -> None:
+        self.session.selected_columns = list(selected_columns)
+
+    def _set_column_selection_summary(self, summary_text: str) -> None:
+        self.session.column_selection_summary = summary_text
+        if self.column_selection_summary_var.get() != summary_text:
+            self.column_selection_summary_var.set(summary_text)
+
+    def _set_selected_preview_plot_columns(self, selected_columns: list[str]) -> None:
+        self.session.selected_preview_plot_columns = list(selected_columns)
+
+    def _set_preview_plot_signal_summary(self, summary_text: str) -> None:
+        self.session.preview_plot_signal_summary = summary_text
+        if self.preview_plot_signal_summary_var.get() != summary_text:
+            self.preview_plot_signal_summary_var.set(summary_text)
+
+    def _handle_output_dataset_name_changed(self, *_args: object) -> None:
+        self._set_output_dataset_name(self.column_output_name_var.get(), update_var=False)
 
     def load_files(self) -> None:
         return load_files(self)
@@ -197,7 +304,7 @@ class DataAnalysisApp:
                 "prefix": prefix_var.get().strip() or "cycle",
                 "ranges_text": ranges_text.get("1.0", "end").strip(),
             }
-            self.split_prefix_var.set(result["prefix"])
+            self._set_split_prefix(result["prefix"])
             dialog.destroy()
 
         def _cancel() -> None:
@@ -239,7 +346,7 @@ class DataAnalysisApp:
         dataframe = self.data_frames[selected_path]
         context = self.dataset_contexts.get(selected_path, DatasetContext(source_paths=[selected_path], description=""))
 
-        self.selected_dataset_var.set(os.path.basename(selected_path))
+        self._set_selected_dataset_path(selected_path)
         self.dataset_shape_var.set(f"{dataframe.shape[0]} rows x {dataframe.shape[1]} columns")
         self.dataset_source_var.set(format_source_paths(context.source_paths))
         note_parts = [part for part in [context.description, summarize_column_roles(context.column_roles)] if part]
@@ -253,7 +360,7 @@ class DataAnalysisApp:
 
     def _clear_preparation_views(self) -> None:
         message = "Select a dataset to preview or prepare it."
-        self.selected_dataset_var.set("")
+        self._set_selected_dataset_path(None)
         self.dataset_shape_var.set(message)
         self.dataset_source_var.set("")
         self.dataset_note_var.set("")
@@ -274,21 +381,21 @@ class DataAnalysisApp:
         """Set the range label and placeholder text based on the reference column."""
         time_col = self._get_time_column(column_roles)
         if time_col is not None:
-            self.row_range_label_var.set(f"Range ({time_col})")
+            self._set_row_range_label(f"Range ({time_col})")
         else:
-            self.row_range_label_var.set("Range (row index)")
+            self._set_row_range_label("Range (row index)")
 
     def _reset_row_range(self) -> None:
         """Clear the row range entries back to empty (= full dataset)."""
         self._row_range_update_in_progress = True
-        self.row_range_start_var.set("")
-        self.row_range_end_var.set("")
+        self._set_row_range_values("", "")
         self._row_range_update_in_progress = False
 
     def _handle_row_range_changed(self, *_args: object) -> None:
         """Called whenever start or end entry text changes — debounced."""
         if self._row_range_update_in_progress:
             return
+        self._set_row_range_values(self.row_range_start_var.get(), self.row_range_end_var.get(), update_vars=False)
         if self._row_range_debounce_id is not None:
             self.root.after_cancel(self._row_range_debounce_id)
         self._row_range_debounce_id = self.root.after(350, self._apply_row_range_to_preview)
@@ -309,8 +416,8 @@ class DataAnalysisApp:
 
     def _get_row_range_filtered_frame(self, dataframe: pd.DataFrame, column_roles: dict[str, str]) -> pd.DataFrame:
         """Return the dataframe sliced to the current row range controls."""
-        start_text = self.row_range_start_var.get().strip()
-        end_text = self.row_range_end_var.get().strip()
+        start_text = self.session.row_range_start
+        end_text = self.session.row_range_end
         if not start_text and not end_text:
             return dataframe
 
@@ -377,11 +484,9 @@ class DataAnalysisApp:
 
         self._row_range_update_in_progress = True
         if time_col is not None:
-            self.row_range_start_var.set(f"{start_val:.6g}")
-            self.row_range_end_var.set(f"{end_val:.6g}")
+            self._set_row_range_values(f"{start_val:.6g}", f"{end_val:.6g}")
         else:
-            self.row_range_start_var.set(str(int(round(start_val))))
-            self.row_range_end_var.set(str(int(round(end_val))))
+            self._set_row_range_values(str(int(round(start_val))), str(int(round(end_val))))
         self._row_range_update_in_progress = False
 
         # Update only the table preview, not the plot
@@ -402,7 +507,7 @@ class DataAnalysisApp:
 
     def get_row_range_for_preparation(self) -> tuple[str, str]:
         """Return the current (start, end) range text for use during dataset creation."""
-        return self.row_range_start_var.get().strip(), self.row_range_end_var.get().strip()
+        return self.session.row_range_start, self.session.row_range_end
 
     def _refresh_dataset_controls(self, dataframe: pd.DataFrame) -> None:
         if self._column_selector_menu is None:
@@ -423,8 +528,8 @@ class DataAnalysisApp:
             self.dataset_contexts.get(selected_path or "", DatasetContext()).column_roles,
         )
 
-        if not self.column_output_name_var.get().strip():
-            self.column_output_name_var.set("prepared_dataset")
+        if not self.session.output_dataset_name:
+            self._set_output_dataset_name("prepared_dataset")
 
     def _populate_column_selector(self, columns: list[str], column_roles: dict[str, str]) -> None:
         if self._column_selector_menu is None or self._column_selector_button is None:
@@ -467,7 +572,8 @@ class DataAnalysisApp:
             self._column_selector_menu.delete(0, tk.END)
         if self._column_selector_button is not None:
             self._column_selector_button.state(["disabled"])
-        self.column_selection_summary_var.set("No columns available")
+        self._set_selected_columns([])
+        self._set_column_selection_summary("No columns available")
 
     def _set_preview_plot_signal_options(
         self,
@@ -522,7 +628,8 @@ class DataAnalysisApp:
             self._preview_plot_signal_selector_menu.delete(0, tk.END)
         if self._preview_plot_signal_selector_button is not None:
             self._preview_plot_signal_selector_button.state(["disabled"])
-        self.preview_plot_signal_summary_var.set("No channels available")
+        self._set_selected_preview_plot_columns([])
+        self._set_preview_plot_signal_summary("No channels available")
 
     def _handle_preview_plot_signal_selector_changed(self, *_args: object) -> None:
         self._update_preview_plot_signal_summary()
@@ -531,17 +638,18 @@ class DataAnalysisApp:
 
     def _update_preview_plot_signal_summary(self) -> None:
         selected_columns = self._get_selected_preview_plot_columns_from_selector()
+        self._set_selected_preview_plot_columns(selected_columns)
         if not self._preview_plot_signal_vars:
-            self.preview_plot_signal_summary_var.set("No channels available")
+            self._set_preview_plot_signal_summary("No channels available")
             return
         if not selected_columns:
-            self.preview_plot_signal_summary_var.set("Choose channels")
+            self._set_preview_plot_signal_summary("Choose channels")
             return
         if len(selected_columns) <= 2:
-            self.preview_plot_signal_summary_var.set(", ".join(selected_columns))
+            self._set_preview_plot_signal_summary(", ".join(selected_columns))
             return
         shown_columns = ", ".join(selected_columns[:2])
-        self.preview_plot_signal_summary_var.set(
+        self._set_preview_plot_signal_summary(
             f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}"
         )
 
@@ -569,17 +677,18 @@ class DataAnalysisApp:
 
     def _update_column_selection_summary(self) -> None:
         selected_columns = self._get_selected_column_names()
+        self._set_selected_columns(selected_columns)
         if not self._column_selection_vars:
-            self.column_selection_summary_var.set("No columns available")
+            self._set_column_selection_summary("No columns available")
             return
         if not selected_columns:
-            self.column_selection_summary_var.set("Choose columns")
+            self._set_column_selection_summary("Choose columns")
             return
         if len(selected_columns) <= 2:
-            self.column_selection_summary_var.set(", ".join(selected_columns))
+            self._set_column_selection_summary(", ".join(selected_columns))
             return
         shown_columns = ", ".join(selected_columns[:2])
-        self.column_selection_summary_var.set(f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}")
+        self._set_column_selection_summary(f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}")
 
     def _select_all_columns(self) -> None:
         for variable in self._column_selection_vars.values():
@@ -612,11 +721,11 @@ class DataAnalysisApp:
         selected_column = self.role_editor_column_var.get().strip()
         if selected_column not in columns:
             selected_column = columns[0] if columns else ""
-            self.role_editor_column_var.set(selected_column)
+            self._set_role_editor_column(selected_column)
 
         selected_role = column_roles.get(selected_column, "metadata") if selected_column else "metadata"
         if self.role_editor_value_var.get().strip() != selected_role:
-            self.role_editor_value_var.set(selected_role)
+            self._set_role_editor_value(selected_role)
 
         self._refresh_role_editor_styles(column_roles)
 
@@ -625,8 +734,8 @@ class DataAnalysisApp:
             self.role_editor_column_combo.configure(values=[])
         if self.role_editor_value_combo is not None:
             self.role_editor_value_combo.configure(values=get_available_column_roles())
-        self.role_editor_column_var.set("")
-        self.role_editor_value_var.set("metadata")
+        self._set_role_editor_column("")
+        self._set_role_editor_value("metadata")
         self._refresh_role_editor_styles({})
 
     def _refresh_role_editor_styles(self, column_roles: dict[str, str]) -> None:
@@ -634,6 +743,7 @@ class DataAnalysisApp:
         apply_literal_role_combobox_style(self.role_editor_value_combo, self.role_editor_value_var.get().strip() or "metadata")
 
     def _handle_role_editor_column_changed(self, *_args: object) -> None:
+        self._set_role_editor_column(self.role_editor_column_var.get(), update_var=False)
         selected_path = self._get_single_selected_file_path()
         if selected_path is None:
             self._refresh_role_editor_styles({})
@@ -641,10 +751,11 @@ class DataAnalysisApp:
         context = self.dataset_contexts.get(selected_path, DatasetContext())
         column_name = self.role_editor_column_var.get().strip()
         if column_name:
-            self.role_editor_value_var.set(context.column_roles.get(column_name, "metadata"))
+            self._set_role_editor_value(context.column_roles.get(column_name, "metadata"))
         self._refresh_role_editor_styles(context.column_roles)
 
     def _handle_role_editor_value_changed(self, *_args: object) -> None:
+        self._set_role_editor_value(self.role_editor_value_var.get(), update_var=False)
         selected_path = self._get_single_selected_file_path()
         context = self.dataset_contexts.get(selected_path, DatasetContext()) if selected_path else DatasetContext()
         self._refresh_role_editor_styles(context.column_roles)
@@ -766,57 +877,18 @@ class DataAnalysisApp:
     def _select_file_in_listbox(self, file_path: str) -> None:
         select_dataset_in_table(self, file_path)
 
-    def _refresh_preview_plot(self, dataframe: pd.DataFrame) -> None:
-        from .refresh import refresh_preview_plot_app
-        return refresh_preview_plot_app(self, dataframe)
-
-    def _refresh_preview_plot_signal_controls(self, dataframe: pd.DataFrame) -> None:
-        from .refresh import refresh_preview_plot_signal_controls_app
-        return refresh_preview_plot_signal_controls_app(self, dataframe)
-
     def _refresh_selected_dataset_preview_plot(self) -> None:
-        from .refresh import refresh_selected_dataset_preview_plot_app
-        return refresh_selected_dataset_preview_plot_app(self)
+        refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _handle_preview_plot_control_changed(self, _event: tk.Event | None = None) -> None:
-        from .refresh import handle_preview_plot_control_changed_app
-        return handle_preview_plot_control_changed_app(self, _event)
+        handle_preview_plot_control_changed(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _get_selected_preview_plot_columns(self, dataframe: pd.DataFrame) -> list[str]:
-        from .preview import get_selected_preview_plot_columns
-
         return get_selected_preview_plot_columns(self, dataframe, PREVIEW_PLOT_MAX_COLUMNS)
-
-    def _clear_preview_plot(self, message: str | None = None) -> None:
-        from .refresh import clear_preview_plot_app
-        return clear_preview_plot_app(self, message)
-
-    def _refresh_preview_table(self, dataframe: pd.DataFrame) -> None:
-        from .refresh import refresh_preview_table_app
-        return refresh_preview_table_app(self, dataframe)
-
-    def _clear_preview_table(self, message: str | None = None) -> None:
-        from .refresh import clear_preview_table_app
-        return clear_preview_table_app(self, message)
 
     def _on_analysis_workspace_closed(self, workspace: AnalysisWorkspace) -> None:
         if workspace in self._analysis_workspaces:
             self._analysis_workspaces.remove(workspace)
-
-    @staticmethod
-    def _get_preview_plot_columns(dataframe: pd.DataFrame) -> list[str]:
-        from .views import get_preview_plot_columns_view
-        return get_preview_plot_columns_view(dataframe)
-
-    @staticmethod
-    def _format_source_paths(source_paths: list[str]) -> str:
-        from .views import format_source_paths_view
-        return format_source_paths_view(source_paths)
-
-    @staticmethod
-    def _parse_split_ranges(raw_text: str) -> list[tuple[int, int]]:
-        from .views import parse_split_ranges_view
-        return parse_split_ranges_view(raw_text)
 
 
 def main() -> None:

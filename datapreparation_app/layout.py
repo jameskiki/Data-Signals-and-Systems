@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from documentation_links import DOCUMENTATION_LINKS
+from shared.documentation_links import DOCUMENTATION_LINKS
 from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
 

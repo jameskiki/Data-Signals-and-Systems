@@ -7,7 +7,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
-from plot_options import PlotOptions
+from shared.plot_options import PlotOptions
 
 class PlotOptionsDialog:
     """Modal dialog for choosing plot columns and axis options."""

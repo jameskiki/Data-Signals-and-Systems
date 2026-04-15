@@ -1,0 +1,1 @@
+"""Shared application helpers used across UI, plotting, and docs."""

@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from tkinter import font as tkfont, ttk
 
 import pandas as pd
-from display_format import format_display_value
-from datapreparation_app.datasets import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from shared.column_roles import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
+from shared.display_format import format_display_value
 
 from .state import (
     CORRELATION_DIAGONAL_COLOR,
@@ -71,61 +72,7 @@ def render_dataframe_preview(
 ) -> tk.Canvas:
     """Render a scrollable, role-colored preview of the first rows of the dataframe."""
 
-    _clear_container(container)
-
-    preview_frame = dataframe.head(row_limit)
-    columns = [str(column) for column in preview_frame.columns]
-    resolved_roles = column_roles or {}
-
-    outer_frame = ttk.Frame(container)
-    outer_frame.pack(fill=tk.BOTH, expand=True)
-    outer_frame.rowconfigure(0, weight=1)
-    outer_frame.columnconfigure(0, weight=1)
-
-    canvas = tk.Canvas(outer_frame, highlightthickness=0, borderwidth=0)
-    canvas.grid(row=0, column=0, sticky="nsew")
-    vertical_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
-    vertical_scrollbar.grid(row=0, column=1, sticky="ns")
-    horizontal_scrollbar = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=canvas.xview)
-    horizontal_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-    canvas.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
-
-    grid_frame = tk.Frame(canvas)
-    window_id = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
-
-    _build_preview_cell(grid_frame, 0, 0, "#", "#eef2f6", "#444444", bold=True, anchor="center")
-    for column_index, column_name in enumerate(columns, start=1):
-        role_name = get_column_role(resolved_roles, column_name)
-        background, foreground = get_column_role_colors(role_name)
-        header_text = f"{column_name}\n[{get_column_role_label(resolved_roles, column_name)}]"
-        _build_preview_cell(grid_frame, 0, column_index, header_text, background, foreground, bold=True, anchor="w")
-
-    for row_index, row in enumerate(preview_frame.iterrows(), start=1):
-        _, row_values = row
-        _build_preview_cell(grid_frame, row_index, 0, str(row_index - 1), "#eef2f6", "#444444", anchor="e")
-        for column_index, column_name in enumerate(preview_frame.columns, start=1):
-            role_name = get_column_role(resolved_roles, str(column_name))
-            background, foreground = get_column_role_cell_colors(role_name)
-            _build_preview_cell(
-                grid_frame,
-                row_index,
-                column_index,
-                _format_preview_value(row_values[column_name]),
-                background,
-                foreground,
-                anchor="w",
-            )
-
-    def _sync_scroll_region(_event: tk.Event | None = None) -> None:
-        canvas.configure(scrollregion=canvas.bbox("all"))
-
-    def _sync_window_size(event: tk.Event) -> None:
-        canvas.itemconfigure(window_id, height=max(event.height, grid_frame.winfo_reqheight()))
-
-    grid_frame.bind("<Configure>", _sync_scroll_region)
-    canvas.bind("<Configure>", _sync_window_size)
-    _sync_scroll_region()
-    return canvas
+    return render_shared_dataframe_preview(container, dataframe, row_limit, column_roles, layout="pack")
 
 
 def render_statistics_tree(
