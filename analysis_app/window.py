@@ -717,59 +717,93 @@ class AnalysisWorkspace:
         self._render_cycle_plot(result)
 
     def _render_cycle_plot(self, result: CycleAnalysisResult) -> None:
+        # Always use all cycles for representative and C2C plots
+        all_cycles = result.cycles_frame.to_numpy()
+        max_cycle_len = all_cycles.shape[1]
+        all_cycle_count = all_cycles.shape[0]
+
+        # Pad all cycles to max length (should already be the case, but ensure)
+        def pad_to_max(arr, maxlen):
+            if arr.shape[1] == maxlen:
+                return arr
+            out = np.full((arr.shape[0], maxlen), np.nan)
+            out[:, :arr.shape[1]] = arr
+            return out
+
+        # Top: only selected cycles, padded
         selected_indices = self._get_selected_cycle_indices()
         if not selected_indices:
-            selected_indices = list(range(result.cycle_count))
-
-        cycle_values = result.cycles_frame.iloc[selected_indices].to_numpy()
-        representative_frame = pd.DataFrame(
-            {
-                "step": result.representative_frame["step"],
-                "mean": cycle_values.mean(axis=0),
-                "std": cycle_values.std(axis=0, ddof=1) if len(selected_indices) > 1 else np.zeros(cycle_values.shape[1]),
-            }
-        )
-        figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.4), dpi=100, sharex=False)
-        step_values = representative_frame["step"].to_numpy()
+            selected_indices = list(range(all_cycle_count))
+        selected_cycles = result.cycles_frame.iloc[selected_indices].to_numpy()
+        selected_cycles = pad_to_max(selected_cycles, max_cycle_len)
         max_plotted_cycles = min(len(selected_indices), 20)
+
+        # X axis for cycles
+        step_values = np.arange(max_cycle_len)
+
+        # Reuse or create the figure and axes (OO-API)
+        if self._cycle_figure is not None:
+            self._cycle_figure.clf()
+            axes = self._cycle_figure.subplots(3, 1, sharex=False)
+        else:
+            self._cycle_figure, axes = plt.subplots(3, 1, figsize=(6.2, 6.2), dpi=100, sharex=False)
+
+        # Top: Individual cycles (selected only)
+        ax_top = axes[0]
+        ax_top.clear()
         for cycle_index in range(max_plotted_cycles):
-            axes[0].plot(step_values, cycle_values[cycle_index], color="#94a3b8", alpha=0.22, linewidth=0.9)
-        mean_values = representative_frame["mean"].to_numpy()
-        std_values = representative_frame["std"].fillna(0).to_numpy()
-        axes[0].fill_between(step_values, mean_values - std_values, mean_values + std_values, color="#14b8a6", alpha=0.18)
-        axes[0].plot(step_values, mean_values, color="#0f766e", linewidth=2.0)
-        if len(selected_indices) >= 4:
-            half = max(1, len(selected_indices) // 2)
-            early_mean = cycle_values[:half].mean(axis=0)
-            late_mean = cycle_values[-half:].mean(axis=0)
-            axes[0].plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
-            axes[0].plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
-            axes[0].legend(fontsize=8, loc="best")
-        axes[0].set_title("Representative cycle", fontsize=10)
-        axes[0].set_xlabel("Sample within cycle", fontsize=9)
-        axes[0].set_ylabel(result.source_column, fontsize=9)
-        axes[0].grid(True, alpha=0.3)
-        apply_numeric_axis_format(axes[0], format_x=True, format_y=True)
+            ax_top.plot(step_values, selected_cycles[cycle_index], color="#94a3b8", alpha=0.5, linewidth=1.0)
+        ax_top.set_title("Selected Individual Cycles", fontsize=10)
+        ax_top.set_xlabel("Sample within cycle", fontsize=9)
+        ax_top.set_ylabel(result.source_column, fontsize=9)
+        ax_top.grid(True, alpha=0.3)
+        apply_numeric_axis_format(ax_top, format_x=True, format_y=True)
 
-        selected_metrics = result.metrics_frame.iloc[selected_indices]
-        axes[1].plot(selected_metrics["cycle"], selected_metrics["mean"], label="mean", linewidth=1.4)
-        axes[1].plot(selected_metrics["cycle"], selected_metrics["rms"], label="rms", linewidth=1.4)
-        axes[1].plot(selected_metrics["cycle"], selected_metrics["peak_to_peak"], label="p2p", linewidth=1.2)
-        axes[1].set_title("Cycle-to-cycle trend", fontsize=10)
-        axes[1].set_xlabel("Cycle", fontsize=9)
-        axes[1].set_ylabel("Metric", fontsize=9)
-        axes[1].grid(True, alpha=0.3)
-        axes[1].legend(fontsize=8, loc="best")
-        apply_numeric_axis_format(axes[1], format_x=True, format_y=True)
-        figure.tight_layout()
+        # Middle: Representative cycle (all cycles, mean ± std, early/late means)
+        ax_mid = axes[1]
+        ax_mid.clear()
+        mean_values = np.nanmean(all_cycles, axis=0)
+        std_values = np.nanstd(all_cycles, axis=0, ddof=1) if all_cycle_count > 1 else np.zeros(max_cycle_len)
+        ax_mid.fill_between(step_values, mean_values - std_values, mean_values + std_values, color="#14b8a6", alpha=0.18)
+        ax_mid.plot(step_values, mean_values, color="#0f766e", linewidth=2.0, label="mean")
+        if all_cycle_count >= 4:
+            half = max(1, all_cycle_count // 2)
+            early_mean = np.nanmean(all_cycles[:half], axis=0)
+            late_mean = np.nanmean(all_cycles[-half:], axis=0)
+            ax_mid.plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
+            ax_mid.plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
+            ax_mid.legend(fontsize=8, loc="best")
+        ax_mid.set_title("Representative Cycle (mean ± std)", fontsize=10)
+        ax_mid.set_xlabel("Sample within cycle", fontsize=9)
+        ax_mid.set_ylabel(result.source_column, fontsize=9)
+        ax_mid.grid(True, alpha=0.3)
+        apply_numeric_axis_format(ax_mid, format_x=True, format_y=True)
 
-        self._cycle_figure = figure
-        self._cycle_canvas = FigureCanvasTkAgg(figure, master=self.cycle_plot_container)
-        self._cycle_canvas.draw()
-        self._cycle_toolbar = NavigationToolbar2Tk(self._cycle_canvas, self.cycle_plot_container)
-        self._cycle_toolbar.update()
-        self._cycle_toolbar.pack(side=tk.TOP, fill=tk.X)
-        self._cycle_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        # Bottom: Cycle-to-cycle statistics (all cycles)
+        ax_bot = axes[2]
+        ax_bot.clear()
+        metrics = result.metrics_frame
+        ax_bot.plot(metrics["cycle"], metrics["mean"], label="mean", linewidth=1.4)
+        ax_bot.plot(metrics["cycle"], metrics["rms"], label="rms", linewidth=1.4)
+        ax_bot.plot(metrics["cycle"], metrics["peak_to_peak"], label="p2p", linewidth=1.2)
+        ax_bot.set_title("Cycle-to-Cycle Statistics", fontsize=10)
+        ax_bot.set_xlabel("Cycle", fontsize=9)
+        ax_bot.set_ylabel("Metric", fontsize=9)
+        ax_bot.grid(True, alpha=0.3)
+        ax_bot.legend(fontsize=8, loc="best")
+        apply_numeric_axis_format(ax_bot, format_x=True, format_y=True)
+
+        self._cycle_figure.tight_layout()
+
+        # Canvas and toolbar management
+        if self._cycle_canvas is None:
+            self._cycle_canvas = FigureCanvasTkAgg(self._cycle_figure, master=self.cycle_plot_container)
+            self._cycle_toolbar = NavigationToolbar2Tk(self._cycle_canvas, self.cycle_plot_container)
+            self._cycle_toolbar.update()
+            self._cycle_toolbar.pack(side=tk.TOP, fill=tk.X)
+            self._cycle_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        else:
+            self._cycle_canvas.draw()
         self.notebook.select(self.cycles_tab)
         self.plot_notebook.select(self.cycle_plot_tab)
 
