@@ -548,17 +548,65 @@ def build_cycles_tab(workspace) -> None:
     selection_row.grid(row=7, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
     selection_row.columnconfigure(0, weight=1)
     selection_row.columnconfigure(1, weight=1)
-    ttk.Button(selection_row, text="Select All Cycles", command=workspace._select_all_cycles).grid(
+    selection_row.columnconfigure(2, weight=1)
+    selection_row.columnconfigure(3, weight=1)
+    ttk.Button(selection_row, text="Exclude Selected", command=workspace._exclude_selected_cycles).grid(
         row=0,
         column=0,
         sticky="ew",
         padx=(0, 4),
     )
-    ttk.Button(selection_row, text="Clear Selection", command=workspace._clear_selected_cycles).grid(
+    ttk.Button(selection_row, text="Restore Selected", command=workspace._restore_selected_cycles).grid(
         row=0,
         column=1,
         sticky="ew",
+        padx=4,
+    )
+    ttk.Button(selection_row, text="Restore All", command=workspace._restore_all_cycles).grid(
+        row=0,
+        column=2,
+        sticky="ew",
+        padx=4,
+    )
+    ttk.Button(selection_row, text="Clear Selection", command=workspace._clear_selected_cycles).grid(
+        row=0,
+        column=3,
+        sticky="ew",
         padx=(4, 0),
+    )
+
+    metrics_toggle_frame = ttk.LabelFrame(controls, text="C2C Metrics")
+    metrics_toggle_frame.grid(row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(0, 8))
+    for column_index in range(3):
+        metrics_toggle_frame.columnconfigure(column_index, weight=1)
+    metric_toggle_specs = [
+        ("mean", "Mean"),
+        ("rms", "RMS"),
+        ("peak_to_peak", "P2P"),
+        ("min", "Min"),
+        ("max", "Max"),
+        ("span", "Span"),
+    ]
+    for metric_index, (metric_key, metric_label) in enumerate(metric_toggle_specs):
+        ttk.Checkbutton(
+            metrics_toggle_frame,
+            text=metric_label,
+            variable=workspace.cycle_metric_toggle_vars[metric_key],
+        ).grid(
+            row=metric_index // 3,
+            column=metric_index % 3,
+            sticky="w",
+            padx=5,
+            pady=3,
+        )
+
+    ttk.Button(controls, text="Apply Kept Cycles To Working Data", command=workspace._apply_kept_cycles_to_working_data).grid(
+        row=9,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        padx=5,
+        pady=(0, 8),
     )
 
     ttk.Label(
@@ -566,7 +614,7 @@ def build_cycles_tab(workspace) -> None:
         text="Fixed length: equal row blocks. Rising edge: threshold crossings. Zero crossing: sign-change points. Peak: successive signal peaks (set prominence to filter weak peaks).",
         justify=tk.LEFT,
         wraplength=380,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.cycles_tab, textvariable=workspace.cycle_summary_var, wraplength=680, justify=tk.LEFT).pack(
         anchor="w",
@@ -579,6 +627,13 @@ def build_cycles_tab(workspace) -> None:
 
     metrics_frame = ttk.LabelFrame(pane, text="Cycle Metrics")
     pane.add(metrics_frame, weight=1)
+
+    metrics_legend = ttk.Frame(metrics_frame)
+    metrics_legend.pack(fill=tk.X, padx=5, pady=(5, 0))
+    ttk.Label(metrics_legend, text="Legend:").pack(side=tk.LEFT)
+    tk.Label(metrics_legend, text=" outlier ", bg="#fff7d6", fg="#7c2d12").pack(side=tk.LEFT, padx=(6, 4))
+    tk.Label(metrics_legend, text=" excluded ", bg="#f1f5f9", fg="#64748b").pack(side=tk.LEFT, padx=4)
+    tk.Label(metrics_legend, text=" excluded + outlier ", bg="#f8efe4", fg="#7c2d12").pack(side=tk.LEFT, padx=4)
 
     workspace.cycle_metrics_container = ttk.Frame(metrics_frame)
     workspace.cycle_metrics_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)

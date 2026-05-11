@@ -153,6 +153,8 @@ This repository is not meaningfully validated.
 
 Editor diagnostics, ad-hoc import checks, and compile-time checks help catch syntax and packaging failures, but they do not prove correct parsing, correct transformations, correct spectra, correct exports, or trustworthy engineering interpretation. A test suite with 131 tests covers the `data_ops` modules and helps catch regressions, but passing tests are not a substitute for domain-specific validation. The demo datasets are useful control cases for exploration, not evidence of general correctness. Manual exploration during development is likewise not a validation program.
 
+For a structured manual control-case pass with the built-in demos, see [demo-validation.md](demo-validation.md).
+
 ## Documentation Notes
 
 This technical overview is meant to stay aligned with the current code layout in `EvalData.py`, `main_window/`, `analysis_workspace/`, and `data_ops/`.

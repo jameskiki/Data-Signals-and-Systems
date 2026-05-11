@@ -44,13 +44,21 @@ from data_ops.cycles import (
     detect_peak_cycle_ranges,
     detect_rising_edge_cycle_ranges,
     detect_zero_crossing_cycle_ranges,
+    rebuild_cycle_analysis_result,
 )
 from shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
-from shared.column_roles import apply_literal_role_combobox_style, get_column_role, get_column_role_cell_colors, summarize_column_roles, update_projected_column_roles
+from shared.column_roles import (
+    apply_literal_role_combobox_style,
+    get_column_role,
+    get_column_role_cell_colors,
+    get_preferred_role_column,
+    summarize_column_roles,
+    update_projected_column_roles,
+)
 from shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
 
 from data_ops.filtering import resolve_filtered_column_name
-from data_ops.frame_ops import resample_to_uniform
+from data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
 from data_ops.spectral import (
     FrequencySpectrumResult,
@@ -162,6 +170,14 @@ class AnalysisWorkspace:
         self.cycle_max_cycles_var = tk.StringVar(value="")
         self.cycle_prominence_var = tk.StringVar(value="0.0")
         self.cycle_summary_var = tk.StringVar(value="Analyze equal-length cycles for the active column.")
+        self.cycle_metric_toggle_vars: dict[str, tk.BooleanVar] = {
+            "mean": tk.BooleanVar(value=True),
+            "rms": tk.BooleanVar(value=True),
+            "peak_to_peak": tk.BooleanVar(value=True),
+            "min": tk.BooleanVar(value=True),
+            "max": tk.BooleanVar(value=True),
+            "span": tk.BooleanVar(value=True),
+        }
 
         self._plot_figure: plt.Figure | None = None
         self._plot_canvas: FigureCanvasTkAgg | None = None
@@ -177,6 +193,10 @@ class AnalysisWorkspace:
         self._cycle_canvas: FigureCanvasTkAgg | None = None
         self._cycle_toolbar: NavigationToolbar2Tk | None = None
         self._cycle_metrics_tree: ttk.Treeview | None = None
+        self._cycle_tree_item_to_result_index: dict[str, int] = {}
+        self._cycle_tree_item_to_full_index: dict[str, int] = {}
+        self._kept_cycle_full_indices: list[int] = []
+        self._full_cycle_result: CycleAnalysisResult | None = None
         self._latest_cycle_result: CycleAnalysisResult | None = None
         self.plot_y_selector_button: ttk.Menubutton | None = None
         self.plot_y_selector_menu: tk.Menu | None = None
@@ -194,6 +214,8 @@ class AnalysisWorkspace:
         self.signal_filter_operation_var.trace_add("write", self._handle_output_defaults_changed)
         self.derived_operation_var.trace_add("write", self._handle_output_defaults_changed)
         self.cycle_mode_var.trace_add("write", lambda *_: self._refresh_cycle_method_controls())
+        for metric_toggle_var in self.cycle_metric_toggle_vars.values():
+            metric_toggle_var.trace_add("write", self._handle_cycle_metric_toggle_changed)
         self._refresh_all_views()
         self._refresh_cycle_method_controls()
         self._refresh_live_plot()
@@ -465,6 +487,8 @@ class AnalysisWorkspace:
             messagebox.showwarning("Warning", "Select an active analysis column")
             return
 
+        time_column = self._get_cycle_time_column()
+
         try:
             cycle_length = int(self.cycle_length_var.get().strip() or "0")
             max_cycles_text = self.cycle_max_cycles_var.get().strip()
@@ -487,6 +511,7 @@ class AnalysisWorkspace:
                     cycle_ranges=cycle_ranges,
                     method="rising_edge",
                     reference_column=resolved_reference,
+                    time_column=time_column,
                 )
             elif cycle_mode == "zero_crossing":
                 reference_column = self.cycle_reference_var.get().strip() or "Index"
@@ -504,6 +529,7 @@ class AnalysisWorkspace:
                     cycle_ranges=cycle_ranges,
                     method="zero_crossing",
                     reference_column=resolved_reference,
+                    time_column=time_column,
                 )
             elif cycle_mode == "peak":
                 reference_column = self.cycle_reference_var.get().strip() or "Index"
@@ -522,6 +548,7 @@ class AnalysisWorkspace:
                     cycle_ranges=cycle_ranges,
                     method="peak",
                     reference_column=resolved_reference,
+                    time_column=time_column,
                 )
             else:
                 result = compute_fixed_length_cycle_analysis(
@@ -529,6 +556,7 @@ class AnalysisWorkspace:
                     source_column=source_column,
                     cycle_length=cycle_length,
                     max_cycles=max_cycles,
+                    time_column=time_column,
                 )
         except Exception as error:
             messagebox.showerror("Cycle Analysis Error", str(error))
@@ -695,9 +723,24 @@ class AnalysisWorkspace:
         self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
         self.plot_notebook.select(self.frequency_plot_tab)
 
-    def _render_cycle_result(self, result: CycleAnalysisResult) -> None:
+    def _render_cycle_result(
+        self,
+        result: CycleAnalysisResult,
+        full_result: CycleAnalysisResult | None = None,
+        kept_cycle_full_indices: list[int] | None = None,
+    ) -> None:
+        preserved_full_result = full_result if full_result is not None else result
+        resolved_kept_full_indices = (
+            list(kept_cycle_full_indices)
+            if kept_cycle_full_indices is not None
+            else list(range(preserved_full_result.cycle_count))
+        )
         self._clear_cycle_results()
+        self._full_cycle_result = preserved_full_result
+        self._kept_cycle_full_indices = resolved_kept_full_indices
         self._latest_cycle_result = result
+        excluded_cycles = max(0, preserved_full_result.cycle_count - result.cycle_count)
+        cycle_axis_label = self._get_cycle_length_axis_label(result.metrics_frame)
         self.cycle_summary_var.set(
             " | ".join(
                 [
@@ -705,15 +748,23 @@ class AnalysisWorkspace:
                     f"Mode: {result.method}",
                     f"Ref: {result.reference_column}",
                     f"Cycle length: {result.cycle_length}",
+                    f"C2C length axis: {cycle_axis_label}",
                     f"Cycles: {result.cycle_count}",
+                    f"Excluded: {excluded_cycles}",
                     f"Dropped rows: {result.dropped_rows}",
                 ]
             )
         )
 
-        self._cycle_metrics_tree = render_cycle_metrics_tree(self.cycle_metrics_container, result.metrics_frame)
+        display_metrics = self._build_cycle_metrics_display_frame(preserved_full_result, resolved_kept_full_indices)
+        self._cycle_metrics_tree = render_cycle_metrics_tree(self.cycle_metrics_container, display_metrics)
         if self._cycle_metrics_tree is not None:
+            self._cycle_tree_item_to_result_index = self._build_cycle_tree_index_map(
+                self._cycle_metrics_tree,
+                resolved_kept_full_indices,
+            )
             self._cycle_metrics_tree.bind("<<TreeviewSelect>>", self._handle_cycle_metrics_selection_changed)
+            self._cycle_tree_item_to_full_index = self._build_cycle_tree_full_index_map(self._cycle_metrics_tree)
         self._render_cycle_plot(result)
 
     def _render_cycle_plot(self, result: CycleAnalysisResult) -> None:
@@ -762,8 +813,10 @@ class AnalysisWorkspace:
         # Middle: Representative cycle (all cycles, mean ± std, early/late means)
         ax_mid = axes[1]
         ax_mid.clear()
-        mean_values = np.nanmean(all_cycles, axis=0)
-        std_values = np.nanstd(all_cycles, axis=0, ddof=1) if all_cycle_count > 1 else np.zeros(max_cycle_len)
+        representative = result.representative_frame
+        mean_values = representative["mean"].to_numpy(dtype=float)
+        std_values = representative["std"].fillna(0.0).to_numpy(dtype=float)
+        support_values = representative["support_count"].to_numpy(dtype=float) if "support_count" in representative.columns else None
         ax_mid.fill_between(step_values, mean_values - std_values, mean_values + std_values, color="#14b8a6", alpha=0.18)
         ax_mid.plot(step_values, mean_values, color="#0f766e", linewidth=2.0, label="mean")
         if all_cycle_count >= 4:
@@ -772,26 +825,80 @@ class AnalysisWorkspace:
             late_mean = np.nanmean(all_cycles[-half:], axis=0)
             ax_mid.plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
             ax_mid.plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
-            ax_mid.legend(fontsize=8, loc="best")
+        support_axis = None
+        if support_values is not None and np.nanmin(support_values) < np.nanmax(support_values):
+            support_axis = ax_mid.twinx()
+            support_axis.plot(
+                step_values,
+                support_values,
+                color="#475569",
+                linewidth=1.1,
+                linestyle=":",
+                label="support",
+            )
+            support_axis.set_ylabel("Support [cycles]", fontsize=9, color="#475569")
+            support_axis.tick_params(axis="y", colors="#475569")
         ax_mid.set_title("Representative Cycle (mean ± std)", fontsize=10)
         ax_mid.set_xlabel("Sample within cycle", fontsize=9)
         ax_mid.set_ylabel(result.source_column, fontsize=9)
         ax_mid.grid(True, alpha=0.3)
         apply_numeric_axis_format(ax_mid, format_x=True, format_y=True)
+        if support_axis is not None:
+            apply_numeric_axis_format(support_axis, format_x=False, format_y=True)
+        mid_handles, mid_labels = ax_mid.get_legend_handles_labels()
+        if support_axis is not None:
+            support_handles, support_labels = support_axis.get_legend_handles_labels()
+            ax_mid.legend(mid_handles + support_handles, mid_labels + support_labels, fontsize=8, loc="best")
+        elif mid_handles:
+            ax_mid.legend(mid_handles, mid_labels, fontsize=8, loc="best")
 
         # Bottom: Cycle-to-cycle statistics (all cycles)
         ax_bot = axes[2]
         ax_bot.clear()
         metrics = result.metrics_frame
-        ax_bot.plot(metrics["cycle"], metrics["mean"], label="mean", linewidth=1.4)
-        ax_bot.plot(metrics["cycle"], metrics["rms"], label="rms", linewidth=1.4)
-        ax_bot.plot(metrics["cycle"], metrics["peak_to_peak"], label="p2p", linewidth=1.2)
+        c2c_metric_specs = [
+            ("mean", "mean", metrics["mean"], 1.4, None),
+            ("rms", "rms", metrics["rms"], 1.4, None),
+            ("peak_to_peak", "p2p", metrics["peak_to_peak"], 1.2, None),
+            ("min", "min", metrics["min"], 1.1, "#2563eb"),
+            ("max", "max", metrics["max"], 1.1, "#dc2626"),
+            ("span", "span", metrics["max"] - metrics["min"], 1.1, "#7c3aed"),
+        ]
+        for metric_key, label, values, linewidth, color in c2c_metric_specs:
+            if not self.cycle_metric_toggle_vars[metric_key].get():
+                continue
+            plot_kwargs = {"label": label, "linewidth": linewidth}
+            if color is not None:
+                plot_kwargs["color"] = color
+            ax_bot.plot(metrics["cycle"], values, **plot_kwargs)
+        ax_bot_right = ax_bot.twinx()
+        ax_bot_right.clear()
+        length_series = metrics["length"]
+        right_axis_values = length_series
+        right_axis_label = self._get_cycle_length_axis_label(metrics)
+        right_axis_legend = "len"
+        if "duration_seconds" in metrics.columns and metrics["duration_seconds"].notna().any():
+            right_axis_values = metrics["duration_seconds"]
+            right_axis_legend = "dur [s]"
+        ax_bot_right.plot(
+            metrics["cycle"],
+            right_axis_values,
+            label=right_axis_legend,
+            linewidth=1.4,
+            color="#b45309",
+            linestyle="--",
+        )
         ax_bot.set_title("Cycle-to-Cycle Statistics", fontsize=10)
         ax_bot.set_xlabel("Cycle", fontsize=9)
         ax_bot.set_ylabel("Metric", fontsize=9)
+        ax_bot_right.set_ylabel(right_axis_label, fontsize=9, color="#b45309")
+        ax_bot_right.tick_params(axis="y", colors="#b45309")
         ax_bot.grid(True, alpha=0.3)
-        ax_bot.legend(fontsize=8, loc="best")
+        left_handles, left_labels = ax_bot.get_legend_handles_labels()
+        right_handles, right_labels = ax_bot_right.get_legend_handles_labels()
+        ax_bot.legend(left_handles + right_handles, left_labels + right_labels, fontsize=8, loc="best")
         apply_numeric_axis_format(ax_bot, format_x=True, format_y=True)
+        apply_numeric_axis_format(ax_bot_right, format_x=False, format_y=True)
 
         self._cycle_figure.tight_layout()
 
@@ -807,16 +914,71 @@ class AnalysisWorkspace:
         self.notebook.select(self.cycles_tab)
         self.plot_notebook.select(self.cycle_plot_tab)
 
+    def _get_cycle_time_column(self) -> str | None:
+        preferred_time_column = get_preferred_role_column(self.column_roles, "time", available_columns=list(self.session.working_frame.columns))
+        candidate_columns = [
+            preferred_time_column or "",
+            self.plot_x_var.get().strip(),
+            getattr(self.session, "selected_x_column", "").strip(),
+        ]
+        for column_name in candidate_columns:
+            if column_name and column_name != "Index" and column_name in self.session.working_frame.columns:
+                return column_name
+        return None
+
+    def _get_cycle_length_axis_label(self, metrics_frame: pd.DataFrame) -> str:
+        if "duration_seconds" in metrics_frame.columns and metrics_frame["duration_seconds"].notna().any():
+            return "Cycle duration [s]"
+        return "Cycle length [samples]"
+
+    def _build_cycle_metrics_display_frame(
+        self,
+        full_result: CycleAnalysisResult,
+        kept_cycle_full_indices: list[int],
+    ) -> pd.DataFrame:
+        display_frame = full_result.metrics_frame.copy()
+        kept_index_set = set(kept_cycle_full_indices)
+        display_frame.insert(1, "status", ["kept" if index in kept_index_set else "excluded" for index in range(len(display_frame))])
+        return display_frame
+
+    def _build_cycle_tree_index_map(
+        self,
+        tree: ttk.Treeview,
+        kept_cycle_full_indices: list[int],
+    ) -> dict[str, int]:
+        full_to_active_index = {full_index: active_index for active_index, full_index in enumerate(kept_cycle_full_indices)}
+        item_to_result_index: dict[str, int] = {}
+        for full_index, item_id in enumerate(tree.get_children()):
+            if full_index in full_to_active_index:
+                item_to_result_index[item_id] = full_to_active_index[full_index]
+        return item_to_result_index
+
     def _get_selected_cycle_indices(self) -> list[int]:
         if self._cycle_metrics_tree is None:
             return []
         selected_items = self._cycle_metrics_tree.selection()
         if not selected_items:
             return []
-        item_to_index = {item_id: index for index, item_id in enumerate(self._cycle_metrics_tree.get_children())}
-        return [item_to_index[item_id] for item_id in selected_items if item_id in item_to_index]
+        selected_indices = [self._cycle_tree_item_to_result_index[item_id] for item_id in selected_items if item_id in self._cycle_tree_item_to_result_index]
+        return sorted(set(selected_indices))
+
+    def _build_cycle_tree_full_index_map(self, tree: ttk.Treeview) -> dict[str, int]:
+        return {item_id: full_index for full_index, item_id in enumerate(tree.get_children())}
+
+    def _get_selected_cycle_full_indices(self) -> list[int]:
+        if self._cycle_metrics_tree is None:
+            return []
+        selected_items = self._cycle_metrics_tree.selection()
+        if not selected_items:
+            return []
+        selected_full_indices = [self._cycle_tree_item_to_full_index[item_id] for item_id in selected_items if item_id in self._cycle_tree_item_to_full_index]
+        return sorted(set(selected_full_indices))
 
     def _handle_cycle_metrics_selection_changed(self, _event: tk.Event | None = None) -> None:
+        if self._latest_cycle_result is not None:
+            self._render_cycle_plot(self._latest_cycle_result)
+
+    def _handle_cycle_metric_toggle_changed(self, *_args: object) -> None:
         if self._latest_cycle_result is not None:
             self._render_cycle_plot(self._latest_cycle_result)
 
@@ -835,6 +997,114 @@ class AnalysisWorkspace:
         if self._latest_cycle_result is not None:
             self._render_cycle_plot(self._latest_cycle_result)
 
+    def _exclude_selected_cycles(self) -> None:
+        if self._cycle_metrics_tree is None or self._latest_cycle_result is None or self._full_cycle_result is None:
+            return
+
+        selected_indices = self._get_selected_cycle_indices()
+        if not selected_indices:
+            messagebox.showwarning("Warning", "Select at least one kept cycle to exclude")
+            return
+
+        selected_index_set = set(selected_indices)
+        kept_full_indices = [
+            full_index
+            for active_index, full_index in enumerate(self._kept_cycle_full_indices)
+            if active_index not in selected_index_set
+        ]
+        if not kept_full_indices:
+            messagebox.showwarning("Warning", "At least one cycle must remain after exclusion")
+            return
+
+        try:
+            updated_result = rebuild_cycle_analysis_result(
+                self.session.working_frame,
+                self._full_cycle_result,
+                kept_full_indices,
+            )
+        except Exception as error:
+            messagebox.showerror("Cycle Analysis Error", str(error))
+            return
+
+        self._render_cycle_result(
+            updated_result,
+            full_result=self._full_cycle_result,
+            kept_cycle_full_indices=kept_full_indices,
+        )
+
+    def _restore_all_cycles(self) -> None:
+        if self._full_cycle_result is None:
+            return
+        self._render_cycle_result(
+            self._full_cycle_result,
+            full_result=self._full_cycle_result,
+            kept_cycle_full_indices=list(range(self._full_cycle_result.cycle_count)),
+        )
+
+    def _restore_selected_cycles(self) -> None:
+        if self._full_cycle_result is None or self._latest_cycle_result is None:
+            return
+
+        selected_full_indices = self._get_selected_cycle_full_indices()
+        if not selected_full_indices:
+            messagebox.showwarning("Warning", "Select at least one excluded cycle to restore")
+            return
+
+        kept_full_index_set = set(self._kept_cycle_full_indices)
+        excluded_selected_indices = [full_index for full_index in selected_full_indices if full_index not in kept_full_index_set]
+        if not excluded_selected_indices:
+            messagebox.showwarning("Warning", "Select at least one excluded cycle to restore")
+            return
+
+        kept_full_indices = sorted(kept_full_index_set.union(excluded_selected_indices))
+        try:
+            updated_result = rebuild_cycle_analysis_result(
+                self.session.working_frame,
+                self._full_cycle_result,
+                kept_full_indices,
+            )
+        except Exception as error:
+            messagebox.showerror("Cycle Analysis Error", str(error))
+            return
+
+        self._render_cycle_result(
+            updated_result,
+            full_result=self._full_cycle_result,
+            kept_cycle_full_indices=kept_full_indices,
+        )
+
+    def _apply_kept_cycles_to_working_data(self) -> None:
+        if self._latest_cycle_result is None:
+            messagebox.showwarning("Warning", "Run cycle analysis before applying kept cycles")
+            return
+
+        try:
+            kept_frame = keep_dataframe_index_ranges(self.session.working_frame, self._latest_cycle_result.cycle_ranges)
+        except Exception as error:
+            messagebox.showerror("Cycle Analysis Error", str(error))
+            return
+
+        should_apply = messagebox.askyesno(
+            "Apply Kept Cycles",
+            (
+                f"Replace the working dataframe with the currently kept cycles?\n\n"
+                f"Kept cycles: {self._latest_cycle_result.cycle_count}\n"
+                f"Rows retained: {len(kept_frame)}\n\n"
+                f"Excluded cycles and non-cycle rows will be removed from the working data."
+            ),
+        )
+        if not should_apply:
+            return
+
+        self._replace_working_frame(
+            kept_frame,
+            history_entry=(
+                f"Applied kept cycles to working data: "
+                f"{self._latest_cycle_result.cycle_count} cycles, {len(kept_frame)} rows retained"
+            ),
+            focus_column=self._latest_cycle_result.source_column,
+        )
+
     def _clear_cycle_results(self, message: str | None = None) -> None:
         if self._cycle_figure is not None:
             plt.close(self._cycle_figure)
@@ -842,6 +1112,10 @@ class AnalysisWorkspace:
         self._cycle_canvas = None
         self._cycle_toolbar = None
         self._cycle_metrics_tree = None
+        self._cycle_tree_item_to_result_index = {}
+        self._cycle_tree_item_to_full_index = {}
+        self._kept_cycle_full_indices = []
+        self._full_cycle_result = None
         self._latest_cycle_result = None
         for container in (self.cycle_plot_container, self.cycle_metrics_container):
             for widget in container.winfo_children():

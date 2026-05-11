@@ -20,6 +20,7 @@ class CycleAnalysisResult:
     representative_frame: pd.DataFrame
     cycles_frame: pd.DataFrame
     cycle_ranges: list[tuple[int, int]]
+    time_column: str | None = None
 
 
 def compute_cycle_analysis_from_ranges(
@@ -28,19 +29,24 @@ def compute_cycle_analysis_from_ranges(
     cycle_ranges: list[tuple[int, int]],
     method: str,
     reference_column: str,
+    time_column: str | None = None,
 ) -> CycleAnalysisResult:
     """Compute cycle metrics from explicit half-open row ranges."""
 
     if source_column not in dataframe.columns:
         raise KeyError(f"Unknown source column: {source_column}")
+    if time_column is not None and time_column not in dataframe.columns:
+        raise KeyError(f"Unknown time column: {time_column}")
     if not cycle_ranges:
         raise ValueError("No valid cycles available")
 
     numeric_series = pd.to_numeric(dataframe[source_column], errors="coerce")
+    duration_values = _compute_cycle_duration_seconds(dataframe, cycle_ranges=cycle_ranges, time_column=time_column)
     normalized_ranges: list[tuple[int, int]] = []
     cycle_values: list[np.ndarray] = []
     cycle_lengths: list[int] = []
-    for start_index, end_index in cycle_ranges:
+    cycle_durations: list[float] = []
+    for cycle_duration, (start_index, end_index) in zip(duration_values, cycle_ranges):
         start_index = int(start_index)
         end_index = int(end_index)
         if end_index <= start_index:
@@ -51,15 +57,19 @@ def compute_cycle_analysis_from_ranges(
         normalized_ranges.append((start_index, end_index))
         cycle_values.append(cycle_array)
         cycle_lengths.append(int(cycle_array.size))
+        cycle_durations.append(cycle_duration)
 
     if not cycle_values:
         raise ValueError("No valid cycles available")
 
-    aligned_length = min(cycle_lengths)
-    cycle_matrix = np.vstack([cycle_array[:aligned_length] for cycle_array in cycle_values])
+    representative_length = max(cycle_lengths)
+    cycle_matrix = np.full((len(cycle_values), representative_length), np.nan, dtype=float)
+    for cycle_index, cycle_array in enumerate(cycle_values):
+        cycle_matrix[cycle_index, : cycle_array.size] = cycle_array
     cycles_frame = pd.DataFrame(cycle_matrix)
     total_used_rows = sum(cycle_lengths)
     dropped_rows = len(dataframe) - total_used_rows
+    support_count = cycles_frame.notna().sum(axis=0).astype(int)
 
     metrics_frame = pd.DataFrame(
         {
@@ -67,6 +77,7 @@ def compute_cycle_analysis_from_ranges(
             "start": [start_index for start_index, _ in normalized_ranges],
             "end": [end_index for _, end_index in normalized_ranges],
             "length": cycle_lengths,
+            "duration_seconds": cycle_durations,
             "mean": [float(np.nanmean(cycle_array)) for cycle_array in cycle_values],
             "std": [float(np.nanstd(cycle_array, ddof=1)) if cycle_array.size > 1 else 0.0 for cycle_array in cycle_values],
             "min": [float(np.nanmin(cycle_array)) for cycle_array in cycle_values],
@@ -78,11 +89,12 @@ def compute_cycle_analysis_from_ranges(
 
     representative_frame = pd.DataFrame(
         {
-            "step": np.arange(aligned_length),
+            "step": np.arange(representative_length),
             "mean": cycles_frame.mean(axis=0),
             "std": cycles_frame.std(axis=0),
             "min": cycles_frame.min(axis=0),
             "max": cycles_frame.max(axis=0),
+            "support_count": support_count.to_numpy(),
         }
     )
 
@@ -90,13 +102,14 @@ def compute_cycle_analysis_from_ranges(
         source_column=source_column,
         method=method,
         reference_column=reference_column,
-        cycle_length=aligned_length,
+        cycle_length=representative_length,
         cycle_count=len(cycle_values),
         dropped_rows=max(0, int(dropped_rows)),
         metrics_frame=metrics_frame,
         representative_frame=representative_frame,
         cycles_frame=cycles_frame,
         cycle_ranges=normalized_ranges,
+        time_column=time_column,
     )
 
 
@@ -218,6 +231,7 @@ def compute_fixed_length_cycle_analysis(
     source_column: str,
     cycle_length: int,
     max_cycles: int | None = None,
+    time_column: str | None = None,
 ) -> CycleAnalysisResult:
     """Split one signal into equal-length cycles and compute basic metrics."""
 
@@ -243,4 +257,69 @@ def compute_fixed_length_cycle_analysis(
         cycle_ranges=cycle_ranges,
         method="fixed_length",
         reference_column="Index",
+        time_column=time_column,
     )
+
+
+def rebuild_cycle_analysis_result(
+    dataframe: pd.DataFrame,
+    base_result: CycleAnalysisResult,
+    kept_cycle_indices: list[int],
+) -> CycleAnalysisResult:
+    """Rebuild a cycle-analysis result from a kept subset of detected cycles."""
+
+    if not kept_cycle_indices:
+        raise ValueError("At least one cycle must remain selected")
+
+    normalized_indices = sorted({int(index) for index in kept_cycle_indices})
+    if normalized_indices[0] < 0 or normalized_indices[-1] >= len(base_result.cycle_ranges):
+        raise IndexError("Cycle index out of range")
+
+    kept_ranges = [base_result.cycle_ranges[index] for index in normalized_indices]
+    return compute_cycle_analysis_from_ranges(
+        dataframe,
+        source_column=base_result.source_column,
+        cycle_ranges=kept_ranges,
+        method=base_result.method,
+        reference_column=base_result.reference_column,
+        time_column=base_result.time_column,
+    )
+
+
+def _compute_cycle_duration_seconds(
+    dataframe: pd.DataFrame,
+    cycle_ranges: list[tuple[int, int]],
+    time_column: str | None,
+) -> list[float]:
+    if time_column is None:
+        return [float("nan")] * len(cycle_ranges)
+
+    time_series = dataframe[time_column]
+    if pd.api.types.is_datetime64_any_dtype(time_series):
+        time_values = pd.to_datetime(time_series, errors="coerce")
+        return [_duration_from_datetimes(time_values, start_index, end_index) for start_index, end_index in cycle_ranges]
+
+    numeric_time = pd.to_numeric(time_series, errors="coerce")
+    return [_duration_from_numeric(numeric_time, start_index, end_index) for start_index, end_index in cycle_ranges]
+
+
+def _duration_from_numeric(time_values: pd.Series, start_index: int, end_index: int) -> float:
+    if end_index - start_index < 2:
+        return float("nan")
+
+    start_value = time_values.iloc[start_index]
+    end_value = time_values.iloc[end_index - 1]
+    if pd.isna(start_value) or pd.isna(end_value):
+        return float("nan")
+    return float(end_value - start_value)
+
+
+def _duration_from_datetimes(time_values: pd.Series, start_index: int, end_index: int) -> float:
+    if end_index - start_index < 2:
+        return float("nan")
+
+    start_value = time_values.iloc[start_index]
+    end_value = time_values.iloc[end_index - 1]
+    if pd.isna(start_value) or pd.isna(end_value):
+        return float("nan")
+    return float((end_value - start_value).total_seconds())

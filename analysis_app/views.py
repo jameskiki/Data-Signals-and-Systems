@@ -212,40 +212,103 @@ def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame)
         ttk.Label(container, text="No cycle metrics available.", justify=tk.LEFT).pack(anchor="w")
         return None
 
-    col_specs = [
-        TreeColumnSpec("cycle", "#", 45, 45, anchor="center"),
-        TreeColumnSpec("start", "start", 68, 60),
-        TreeColumnSpec("end", "end", 68, 60),
-        TreeColumnSpec("length", "len", 68, 60),
-        TreeColumnSpec("mean", "mean", 82, 72),
-        TreeColumnSpec("std", "sd", 82, 72),
-        TreeColumnSpec("min", "min", 82, 72),
-        TreeColumnSpec("max", "max", 82, 72),
-        TreeColumnSpec("rms", "rms", 82, 72),
-        TreeColumnSpec("peak_to_peak", "p2p", 82, 72),
-    ]
+    col_specs = [TreeColumnSpec("cycle", "#", 45, 45, anchor="center")]
+    if "status" in metrics_frame.columns:
+        col_specs.append(TreeColumnSpec("status", "status", 78, 70, anchor="center"))
+    col_specs.extend(
+        [
+            TreeColumnSpec("start", "start", 68, 60),
+            TreeColumnSpec("end", "end", 68, 60),
+            TreeColumnSpec("length", "len", 68, 60),
+        ]
+    )
+    if "duration_seconds" in metrics_frame.columns:
+        col_specs.append(TreeColumnSpec("duration_seconds", "dur [s]", 82, 72))
+    col_specs.extend(
+        [
+            TreeColumnSpec("mean", "mean", 82, 72),
+            TreeColumnSpec("std", "sd", 82, 72),
+            TreeColumnSpec("min", "min", 82, 72),
+            TreeColumnSpec("max", "max", 82, 72),
+            TreeColumnSpec("rms", "rms", 82, 72),
+            TreeColumnSpec("peak_to_peak", "p2p", 82, 72),
+        ]
+    )
 
     tree = build_data_tree(container, col_specs, selectmode="extended", clear=False)
+    outlier_row_mask = _compute_cycle_outlier_row_mask(metrics_frame)
+    tree.tag_configure("cycle-excluded", background="#f1f5f9", foreground="#64748b")
+    tree.tag_configure("cycle-outlier", background="#fff7d6", foreground="#7c2d12")
+    tree.tag_configure("cycle-excluded-outlier", background="#f8efe4", foreground="#7c2d12")
 
-    for row in metrics_frame.itertuples(index=False):
-        tree.insert(
-            "",
-            tk.END,
-            values=(
-                int(row.cycle),
+    for row_index, row in enumerate(metrics_frame.itertuples(index=False)):
+        row_values = [int(row.cycle)]
+        if "status" in metrics_frame.columns:
+            row_values.append(str(row.status))
+        row_values.extend(
+            [
                 int(row.start),
                 int(row.end),
                 int(row.length),
+            ]
+        )
+        if "duration_seconds" in metrics_frame.columns:
+            row_values.append(_format_stat_value(row.duration_seconds))
+        row_values.extend(
+            [
                 _format_stat_value(row.mean),
                 _format_stat_value(row.std),
                 _format_stat_value(row.min),
                 _format_stat_value(row.max),
                 _format_stat_value(row.rms),
                 _format_stat_value(row.peak_to_peak),
-            ),
+            ]
+        )
+        tree.insert(
+            "",
+            tk.END,
+            values=tuple(row_values),
+            tags=_get_cycle_tree_tags(row, outlier_row_mask.iloc[row_index]),
         )
 
     return tree
+
+
+def _compute_cycle_outlier_row_mask(metrics_frame: pd.DataFrame) -> pd.Series:
+    metric_columns = [
+        column_name
+        for column_name in ["length", "duration_seconds", "mean", "std", "min", "max", "rms", "peak_to_peak"]
+        if column_name in metrics_frame.columns
+    ]
+    if not metric_columns:
+        return pd.Series(False, index=metrics_frame.index, dtype=bool)
+
+    outlier_mask = pd.Series(False, index=metrics_frame.index, dtype=bool)
+    for column_name in metric_columns:
+        numeric_values = pd.to_numeric(metrics_frame[column_name], errors="coerce")
+        valid_values = numeric_values.dropna()
+        if len(valid_values) < 4:
+            continue
+        first_quartile = float(valid_values.quantile(0.25))
+        third_quartile = float(valid_values.quantile(0.75))
+        iqr = third_quartile - first_quartile
+        if iqr <= 0.0:
+            continue
+        lower_bound = first_quartile - 1.5 * iqr
+        upper_bound = third_quartile + 1.5 * iqr
+        outlier_mask |= (numeric_values < lower_bound) | (numeric_values > upper_bound)
+    return outlier_mask.fillna(False)
+
+
+def _get_cycle_tree_tags(row: object, is_outlier: bool) -> tuple[str, ...]:
+    status_value = str(getattr(row, "status", "")).strip().lower()
+    if status_value == "excluded" and is_outlier:
+        return ("cycle-excluded-outlier",)
+    if status_value == "excluded":
+        return ("cycle-excluded",)
+    if is_outlier:
+        return ("cycle-outlier",)
+    return ()
 
 
 def _clear_container(container: ttk.Frame) -> None:

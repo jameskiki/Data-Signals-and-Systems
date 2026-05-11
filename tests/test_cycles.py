@@ -10,6 +10,7 @@ from data_ops.cycles import (
     detect_peak_cycle_ranges,
     detect_rising_edge_cycle_ranges,
     detect_zero_crossing_cycle_ranges,
+    rebuild_cycle_analysis_result,
 )
 
 
@@ -157,3 +158,83 @@ class TestCycleAnalysisFromRanges:
         df = pd.DataFrame({"sig": np.arange(50)})
         with pytest.raises(ValueError, match="No valid"):
             compute_cycle_analysis_from_ranges(df, "sig", [], method="test", reference_column="Index")
+
+    def test_adds_duration_seconds_for_numeric_time_column(self):
+        df = pd.DataFrame({
+            "time_s": np.arange(12, dtype=float) * 0.5,
+            "sig": np.arange(12, dtype=float),
+        })
+        ranges = [(0, 4), (4, 8), (8, 12)]
+
+        result = compute_cycle_analysis_from_ranges(
+            df,
+            "sig",
+            ranges,
+            method="manual",
+            reference_column="Index",
+            time_column="time_s",
+        )
+
+        assert "duration_seconds" in result.metrics_frame.columns
+        assert result.metrics_frame["duration_seconds"].tolist() == pytest.approx([1.5, 1.5, 1.5])
+
+    def test_fixed_length_analysis_keeps_duration_nan_without_time_column(self):
+        df = pd.DataFrame({"sig": np.arange(20, dtype=float)})
+
+        result = compute_fixed_length_cycle_analysis(df, "sig", cycle_length=5)
+
+        assert "duration_seconds" in result.metrics_frame.columns
+        assert result.metrics_frame["duration_seconds"].isna().all()
+
+    def test_rebuild_cycle_analysis_from_kept_cycle_subset(self):
+        df = pd.DataFrame({
+            "time_s": np.arange(12, dtype=float) * 0.25,
+            "sig": np.arange(12, dtype=float),
+        })
+        base_result = compute_cycle_analysis_from_ranges(
+            df,
+            "sig",
+            [(0, 4), (4, 8), (8, 12)],
+            method="manual",
+            reference_column="Index",
+            time_column="time_s",
+        )
+
+        rebuilt_result = rebuild_cycle_analysis_result(df, base_result, [0, 2])
+
+        assert rebuilt_result.cycle_count == 2
+        assert rebuilt_result.metrics_frame["cycle"].tolist() == [1, 2]
+        assert rebuilt_result.metrics_frame["start"].tolist() == [0, 8]
+        assert rebuilt_result.metrics_frame["duration_seconds"].tolist() == pytest.approx([0.75, 0.75])
+
+    def test_rebuild_cycle_analysis_requires_kept_cycles(self):
+        df = pd.DataFrame({"sig": np.arange(12, dtype=float)})
+        base_result = compute_cycle_analysis_from_ranges(
+            df,
+            "sig",
+            [(0, 4), (4, 8), (8, 12)],
+            method="manual",
+            reference_column="Index",
+        )
+
+        with pytest.raises(ValueError, match="At least one cycle"):
+            rebuild_cycle_analysis_result(df, base_result, [])
+
+    def test_representative_frame_keeps_full_cycle_length_and_support(self):
+        df = pd.DataFrame({
+            "sig": np.arange(15, dtype=float),
+        })
+
+        result = compute_cycle_analysis_from_ranges(
+            df,
+            "sig",
+            [(0, 4), (4, 9), (9, 15)],
+            method="manual",
+            reference_column="Index",
+        )
+
+        assert result.cycle_length == 6
+        assert len(result.representative_frame) == 6
+        assert result.cycles_frame.shape == (3, 6)
+        assert result.cycles_frame.iloc[0, 4] != result.cycles_frame.iloc[0, 4]
+        assert result.representative_frame["support_count"].tolist() == [3, 3, 3, 3, 2, 1]

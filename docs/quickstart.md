@@ -44,5 +44,6 @@ For the formal difference between the two spectrum methods, see [docs/latex/fft_
 ## Next
 
 - [docs/user-guide.md](docs/user-guide.md) for the normal workflow
+- [docs/demo-validation.md](docs/demo-validation.md) for a reproducible manual validation pass on all built-in demo datasets
 - [docs/which-tool-when.md](docs/which-tool-when.md) to decide which window to use
 - [docs/faq.md](docs/faq.md) if something behaves differently than expected

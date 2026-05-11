@@ -92,6 +92,26 @@ def split_dataframe_by_index_ranges(
     return split_frames
 
 
+def keep_dataframe_index_ranges(
+    dataframe: pd.DataFrame,
+    ranges: Sequence[tuple[int, int]],
+) -> pd.DataFrame:
+    """Return one dataframe containing the concatenated half-open row ranges [start, end)."""
+
+    if not ranges:
+        raise ValueError("Provide at least one index range")
+
+    kept_parts: list[pd.DataFrame] = []
+    for start_index, end_index in ranges:
+        normalized_start, normalized_end = normalize_index_range(len(dataframe), start_index, end_index)
+        kept_parts.append(dataframe.iloc[normalized_start:normalized_end])
+
+    kept_frame = pd.concat(kept_parts, ignore_index=True)
+    if kept_frame.empty:
+        raise ValueError("Keeping these index ranges would leave an empty dataframe")
+    return kept_frame
+
+
 def normalize_index_range(row_count: int, start_index: int, end_index: int) -> tuple[int, int]:
     """Validate and normalize one half-open row interval [start, end)."""
 

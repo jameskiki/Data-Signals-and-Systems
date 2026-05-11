@@ -7,6 +7,7 @@ import pytest
 from data_ops.frame_ops import (
     drop_dataframe_columns,
     drop_dataframe_index_range,
+    keep_dataframe_index_ranges,
     normalize_index_range,
     resample_to_uniform,
     select_dataframe_columns,
@@ -98,6 +99,20 @@ class TestSplitByIndexRanges:
     def test_empty_raises(self, linear_ramp):
         with pytest.raises(ValueError):
             split_dataframe_by_index_ranges(linear_ramp, [])
+
+
+class TestKeepIndexRanges:
+    def test_concatenates_requested_ranges(self, linear_ramp):
+        result = keep_dataframe_index_ranges(linear_ramp, [(0, 3), (5, 8)])
+
+        assert len(result) == 6
+        assert result.index.tolist() == list(range(6))
+        expected_time_values = linear_ramp.iloc[[0, 1, 2, 5, 6, 7]]["time_s"].tolist()
+        assert result["time_s"].tolist() == pytest.approx(expected_time_values)
+
+    def test_empty_ranges_raise(self, linear_ramp):
+        with pytest.raises(ValueError):
+            keep_dataframe_index_ranges(linear_ramp, [])
 
 
 # ── Resampling ───────────────────────────────────────────────────────

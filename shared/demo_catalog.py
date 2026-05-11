@@ -65,7 +65,59 @@ INPUT_OUTPUT_DEMO = DemoDatasetSpec(
     },
 )
 
-DEMO_DATASET_SPECS = (SPECTRAL_REFERENCE_DEMO, INPUT_OUTPUT_DEMO)
+CYCLE_VALIDATION_DEMO = DemoDatasetSpec(
+    key="cycle_validation",
+    menu_label="Cycle Validation Drift Signal",
+    basename="demo_cycle_validation_signal.csv",
+    suffix="synthetic_cycle_validation",
+    description="Synthetic cycle-analysis dataset with drifting duration, baseline, amplitude, and contextual metadata.",
+    summary=(
+        "Main channel: drifting cycle process with upward mean drift and breathing amplitude; references: clean trigger pulse for "
+        "rising-edge detection and a zero-centered periodic reference for zero-crossing validation."
+    ),
+    column_roles={
+        "time_s": "time",
+        "cycle_process": "signal",
+        "cycle_reference_zero": "signal",
+        "trigger_pulse": "signal",
+        "cycle_phase_norm": "metadata",
+        "true_cycle_index": "metadata",
+        "true_cycle_duration_s": "metadata",
+        "baseline_drift": "metadata",
+        "amplitude_scale": "metadata",
+        "temperature_c": "metadata",
+        "load_pct": "metadata",
+    },
+)
+
+CYCLE_EXCLUSION_STRESS_DEMO = DemoDatasetSpec(
+    key="cycle_exclusion_stress",
+    menu_label="Cycle Exclusion Stress Signal",
+    basename="demo_cycle_exclusion_stress_signal.csv",
+    suffix="synthetic_cycle_exclusion_stress",
+    description="Synthetic cycle-analysis dataset with deliberate abnormal cycles for exclusion and restore workflow testing.",
+    summary=(
+        "Mostly stable cycles with a few intentional faults: one low-amplitude cycle, one shortened cycle, one high-mean cycle, and one "
+        "spike-contaminated cycle."
+    ),
+    column_roles={
+        "time_s": "time",
+        "cycle_process": "signal",
+        "cycle_reference_zero": "signal",
+        "trigger_pulse": "signal",
+        "cycle_phase_norm": "metadata",
+        "true_cycle_index": "metadata",
+        "true_cycle_duration_s": "metadata",
+        "is_outlier_cycle": "metadata",
+        "outlier_label": "metadata",
+        "baseline_drift": "metadata",
+        "amplitude_scale": "metadata",
+        "temperature_c": "metadata",
+        "load_pct": "metadata",
+    },
+)
+
+DEMO_DATASET_SPECS = (SPECTRAL_REFERENCE_DEMO, CYCLE_VALIDATION_DEMO, CYCLE_EXCLUSION_STRESS_DEMO, INPUT_OUTPUT_DEMO)
 DEMO_DATASET_SPEC_BY_KEY = {spec.key: spec for spec in DEMO_DATASET_SPECS}
 
 
@@ -86,6 +138,22 @@ def build_demo_menu_description_lines(spec: DemoDatasetSpec) -> list[str]:
             "Input: 2.0, 12.0, 28.0 Hz content",
             "Output: delayed, low-pass, 12 Hz resonance",
             "Test with FFT, Welch PSD, filtering, and derived signals",
+        ]
+
+    if spec.key == CYCLE_VALIDATION_DEMO.key:
+        return [
+            "100 Hz drifting-cycle validation dataset",
+            "Cycle duration grows from about 1.25 s to 2.05 s",
+            "Mean, RMS, and P2P all vary on purpose",
+            "Test with cycle metrics, exclusions, and C2C plots",
+        ]
+
+    if spec.key == CYCLE_EXCLUSION_STRESS_DEMO.key:
+        return [
+            "100 Hz stable-cycle dataset with deliberate faults",
+            "Outliers: low amp, short cycle, high mean, spike",
+            "Designed for exclude/restore workflow checks",
+            "Use the metadata columns to confirm which cycles should stand out",
         ]
 
     return [spec.description, spec.summary]
@@ -189,6 +257,178 @@ def create_input_output_demo_dataset() -> pd.DataFrame:
     )
 
 
+def create_cycle_validation_demo_dataset() -> pd.DataFrame:
+    """Create a deterministic dataset for cycle-analysis validation and UI checks."""
+
+    sample_rate_hz = 100.0
+    cycle_count = 28
+    base_durations_s = np.linspace(1.25, 2.05, cycle_count)
+    duration_modulation_s = 0.12 * np.sin(np.linspace(0.0, 3.5 * np.pi, cycle_count))
+    cycle_durations_s = np.clip(base_durations_s + duration_modulation_s, 1.05, None)
+    sample_counts = np.maximum(80, np.round(cycle_durations_s * sample_rate_hz).astype(int))
+    row_count = int(sample_counts.sum())
+
+    time_s = np.arange(row_count, dtype=float) / sample_rate_hz
+    cycle_process = np.zeros(row_count, dtype=float)
+    cycle_reference_zero = np.zeros(row_count, dtype=float)
+    trigger_pulse = np.zeros(row_count, dtype=float)
+    cycle_phase_norm = np.zeros(row_count, dtype=float)
+    true_cycle_index = np.zeros(row_count, dtype=int)
+    true_cycle_duration_s = np.zeros(row_count, dtype=float)
+    baseline_drift = np.zeros(row_count, dtype=float)
+    amplitude_scale = np.zeros(row_count, dtype=float)
+    temperature_c = np.zeros(row_count, dtype=float)
+    load_pct = np.zeros(row_count, dtype=float)
+
+    start_index = 0
+    for cycle_index, sample_count in enumerate(sample_counts, start=1):
+        end_index = start_index + int(sample_count)
+        index_slice = slice(start_index, end_index)
+        phase = np.arange(sample_count, dtype=float) / sample_count
+        local_time_s = time_s[index_slice]
+
+        baseline = 3.8 + 0.08 * cycle_index + 0.18 * np.sin(2.0 * np.pi * cycle_index / 9.0)
+        amplitude = 1.35 + 0.015 * cycle_index + 0.22 * np.sin(2.0 * np.pi * cycle_index / 6.0 + 0.3)
+        harmonic_weight = 0.18 + 0.03 * np.cos(2.0 * np.pi * cycle_index / 5.0)
+
+        reference_zero = np.sin(2.0 * np.pi * phase - 0.35 * np.pi)
+        primary_shape = np.sin(2.0 * np.pi * phase - 0.55)
+        harmonic_shape = harmonic_weight * np.sin(4.0 * np.pi * phase - 0.9)
+        ramp_shape = 0.16 * (phase - 0.5)
+        transient_shape = 0.14 * np.exp(-16.0 * phase)
+        deterministic_noise = 0.025 * np.sin(2.0 * np.pi * (10.5 + 0.08 * cycle_index) * local_time_s)
+        deterministic_noise += 0.01 * np.cos(2.0 * np.pi * 17.0 * local_time_s)
+
+        cycle_process[index_slice] = baseline + amplitude * (primary_shape + harmonic_shape + ramp_shape + transient_shape)
+        cycle_process[index_slice] += deterministic_noise
+        cycle_reference_zero[index_slice] = reference_zero
+        trigger_pulse[index_slice] = ((phase >= 0.02) & (phase < 0.08)).astype(float)
+        cycle_phase_norm[index_slice] = phase
+        true_cycle_index[index_slice] = cycle_index
+        true_cycle_duration_s[index_slice] = cycle_durations_s[cycle_index - 1]
+        baseline_drift[index_slice] = baseline
+        amplitude_scale[index_slice] = amplitude
+        temperature_c[index_slice] = 22.0 + 0.16 * cycle_index + 0.5 * np.sin(2.0 * np.pi * cycle_index / 8.0)
+        load_pct[index_slice] = 48.0 + 1.15 * cycle_index + 4.0 * np.cos(2.0 * np.pi * cycle_index / 7.0)
+
+        start_index = end_index
+
+    return pd.DataFrame(
+        {
+            "time_s": time_s,
+            "cycle_process": cycle_process,
+            "cycle_reference_zero": cycle_reference_zero,
+            "trigger_pulse": trigger_pulse,
+            "cycle_phase_norm": cycle_phase_norm,
+            "true_cycle_index": true_cycle_index,
+            "true_cycle_duration_s": true_cycle_duration_s,
+            "baseline_drift": baseline_drift,
+            "amplitude_scale": amplitude_scale,
+            "temperature_c": temperature_c,
+            "load_pct": load_pct,
+        }
+    )
+
+
+def create_cycle_exclusion_stress_demo_dataset() -> pd.DataFrame:
+    """Create a deterministic cycle dataset with obvious anomalous cycles for review workflows."""
+
+    sample_rate_hz = 100.0
+    cycle_count = 24
+    base_duration_s = 1.6
+    duration_wobble_s = 0.05 * np.sin(np.linspace(0.0, 2.5 * np.pi, cycle_count))
+    cycle_durations_s = base_duration_s + duration_wobble_s
+
+    outlier_labels = {
+        6: "low_amplitude",
+        11: "short_cycle",
+        17: "high_mean",
+        22: "spike_outlier",
+    }
+    cycle_durations_s[10] = 1.02
+    sample_counts = np.maximum(80, np.round(cycle_durations_s * sample_rate_hz).astype(int))
+    row_count = int(sample_counts.sum())
+
+    time_s = np.arange(row_count, dtype=float) / sample_rate_hz
+    cycle_process = np.zeros(row_count, dtype=float)
+    cycle_reference_zero = np.zeros(row_count, dtype=float)
+    trigger_pulse = np.zeros(row_count, dtype=float)
+    cycle_phase_norm = np.zeros(row_count, dtype=float)
+    true_cycle_index = np.zeros(row_count, dtype=int)
+    true_cycle_duration_s = np.zeros(row_count, dtype=float)
+    is_outlier_cycle = np.zeros(row_count, dtype=int)
+    outlier_label = np.full(row_count, "normal", dtype=object)
+    baseline_drift = np.zeros(row_count, dtype=float)
+    amplitude_scale = np.zeros(row_count, dtype=float)
+    temperature_c = np.zeros(row_count, dtype=float)
+    load_pct = np.zeros(row_count, dtype=float)
+
+    start_index = 0
+    for cycle_index, sample_count in enumerate(sample_counts, start=1):
+        end_index = start_index + int(sample_count)
+        index_slice = slice(start_index, end_index)
+        phase = np.arange(sample_count, dtype=float) / sample_count
+        local_time_s = time_s[index_slice]
+
+        baseline = 4.2 + 0.04 * np.sin(2.0 * np.pi * cycle_index / 10.0)
+        amplitude = 1.55 + 0.06 * np.cos(2.0 * np.pi * cycle_index / 8.0)
+        anomaly_label = outlier_labels.get(cycle_index, "normal")
+
+        if anomaly_label == "low_amplitude":
+            amplitude *= 0.34
+        elif anomaly_label == "high_mean":
+            baseline += 0.95
+
+        reference_zero = np.sin(2.0 * np.pi * phase - 0.35 * np.pi)
+        primary_shape = np.sin(2.0 * np.pi * phase - 0.45)
+        harmonic_shape = 0.16 * np.sin(4.0 * np.pi * phase - 0.7)
+        ramp_shape = 0.11 * (phase - 0.5)
+        settling_shape = 0.08 * np.exp(-11.0 * phase)
+        deterministic_noise = 0.018 * np.sin(2.0 * np.pi * 9.0 * local_time_s)
+        deterministic_noise += 0.008 * np.cos(2.0 * np.pi * 13.5 * local_time_s)
+
+        process = baseline + amplitude * (primary_shape + harmonic_shape + ramp_shape + settling_shape) + deterministic_noise
+        if anomaly_label == "spike_outlier":
+            spike_center = int(round(sample_count * 0.58))
+            spike_width = max(2, int(round(sample_count * 0.03)))
+            spike_start = max(0, spike_center - spike_width // 2)
+            spike_end = min(sample_count, spike_start + spike_width)
+            process[spike_start:spike_end] += 3.0
+
+        cycle_process[index_slice] = process
+        cycle_reference_zero[index_slice] = reference_zero
+        trigger_pulse[index_slice] = ((phase >= 0.025) & (phase < 0.075)).astype(float)
+        cycle_phase_norm[index_slice] = phase
+        true_cycle_index[index_slice] = cycle_index
+        true_cycle_duration_s[index_slice] = cycle_durations_s[cycle_index - 1]
+        is_outlier_cycle[index_slice] = int(anomaly_label != "normal")
+        outlier_label[index_slice] = anomaly_label
+        baseline_drift[index_slice] = baseline
+        amplitude_scale[index_slice] = amplitude
+        temperature_c[index_slice] = 21.5 + 0.12 * cycle_index + 0.22 * np.sin(2.0 * np.pi * cycle_index / 9.0)
+        load_pct[index_slice] = 51.0 + 1.8 * np.cos(2.0 * np.pi * cycle_index / 6.0)
+
+        start_index = end_index
+
+    return pd.DataFrame(
+        {
+            "time_s": time_s,
+            "cycle_process": cycle_process,
+            "cycle_reference_zero": cycle_reference_zero,
+            "trigger_pulse": trigger_pulse,
+            "cycle_phase_norm": cycle_phase_norm,
+            "true_cycle_index": true_cycle_index,
+            "true_cycle_duration_s": true_cycle_duration_s,
+            "is_outlier_cycle": is_outlier_cycle,
+            "outlier_label": outlier_label,
+            "baseline_drift": baseline_drift,
+            "amplitude_scale": amplitude_scale,
+            "temperature_c": temperature_c,
+            "load_pct": load_pct,
+        }
+    )
+
+
 def create_demo_dataset(demo_key: str) -> tuple[DemoDatasetSpec, pd.DataFrame]:
     """Create one deterministic demo dataset by key."""
 
@@ -197,6 +437,10 @@ def create_demo_dataset(demo_key: str) -> tuple[DemoDatasetSpec, pd.DataFrame]:
         raise KeyError(f"Unknown demo dataset key: {demo_key}")
     if demo_key == SPECTRAL_REFERENCE_DEMO.key:
         return spec, create_demo_signal_dataset()
+    if demo_key == CYCLE_VALIDATION_DEMO.key:
+        return spec, create_cycle_validation_demo_dataset()
+    if demo_key == CYCLE_EXCLUSION_STRESS_DEMO.key:
+        return spec, create_cycle_exclusion_stress_demo_dataset()
     if demo_key == INPUT_OUTPUT_DEMO.key:
         return spec, create_input_output_demo_dataset()
     raise KeyError(f"Unsupported demo dataset key: {demo_key}")

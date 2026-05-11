@@ -95,6 +95,8 @@ Use one of these entry points from the main window:
 - `Files -> Load Files` for your own data files
 - `Files -> Load Demo/Test Signal` for built-in examples
 
+If you want a structured manual validation pass using the built-in demos, see [demo-validation.md](demo-validation.md).
+
 Supported source file types are documented in `data-formats.md`.
 
 After loading, the dataset appears in the dataset list on the right side of the main window.
