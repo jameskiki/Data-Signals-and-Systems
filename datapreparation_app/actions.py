@@ -7,7 +7,7 @@ from .datasets import DatasetContext, register_dataset, select_dataset_in_table,
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog, show_figure_in_window
 from .preview import refresh_preview_table, clear_preview_plot, clear_preview_table, refresh_preview_plot, refresh_preview_plot_signal_controls
-from data_ops.io_ops import analyze_selected_dataframes, export_clean_dataframes
+from data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes
 from data_ops.models import AnalysisResult
 from shared.plot_utils import create_plot_figure
 
@@ -134,16 +134,16 @@ def merge_selected_files(app) -> None:
 	if not save_path:
 		return
 
-	analysis_result: AnalysisResult = analyze_selected_dataframes(selected_file_paths, app.data_frames)
+	merged_frame = merge_selected_dataframes(selected_file_paths, app.data_frames)
 	register_dataset(
 		app,
 		save_path,
-		analysis_result.merged_frame,
+		merged_frame,
 		source_paths=collect_source_paths(app, selected_file_paths),
 		description=f"Merged from {len(selected_file_paths)} datasets",
 	)
 	try:
-		analysis_result.merged_frame.to_csv(save_path, sep=";", index=False)
+		merged_frame.to_csv(save_path, sep=";", index=False)
 	except OSError as error:
 		messagebox.showerror("Save Error", f"Could not write merged file:\n{error}\n\nCheck the path is valid and the file is not open elsewhere.")
 		return
