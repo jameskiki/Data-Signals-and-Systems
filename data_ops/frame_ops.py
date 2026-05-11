@@ -50,7 +50,7 @@ def slice_dataframe_by_index_range(
     """Return a row slice using a half-open interval [start, end)."""
 
     normalized_start, normalized_end = normalize_index_range(len(dataframe), start_index, end_index)
-    return dataframe.iloc[normalized_start:normalized_end].reset_index(drop=True).copy()
+    return dataframe.iloc[normalized_start:normalized_end].reset_index(drop=True)
 
 
 def drop_dataframe_index_range(
@@ -67,7 +67,7 @@ def drop_dataframe_index_range(
     )
     if kept_frame.empty:
         raise ValueError("Dropping this row range would leave an empty dataframe")
-    return kept_frame.copy()
+    return kept_frame
 
 
 def split_dataframe_by_index_ranges(
@@ -85,7 +85,7 @@ def split_dataframe_by_index_ranges(
         split_frames.append(
             (
                 (normalized_start, normalized_end),
-                dataframe.iloc[normalized_start:normalized_end].reset_index(drop=True).copy(),
+                dataframe.iloc[normalized_start:normalized_end].reset_index(drop=True),
             )
         )
 

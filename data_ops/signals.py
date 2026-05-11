@@ -22,21 +22,20 @@ def add_derived_column(
     if not new_column.strip():
         raise ValueError("Provide a name for the new column")
 
-    working_frame = dataframe.copy()
-    source_series = pd.to_numeric(working_frame[source_column], errors="coerce")
+    source_series = pd.to_numeric(dataframe[source_column], errors="coerce")
 
     if operation == "delta":
         derived_series = source_series.diff()
     elif operation == "ratio":
-        if second_column not in working_frame.columns:
+        if second_column not in dataframe.columns:
             raise KeyError("Select a valid denominator column")
-        denominator = pd.to_numeric(working_frame[second_column], errors="coerce").replace(0, np.nan)
+        denominator = pd.to_numeric(dataframe[second_column], errors="coerce").replace(0, np.nan)
         derived_series = source_series / denominator
     elif operation == "rolling_mean":
         normalized_window = max(1, int(window_size))
         derived_series = source_series.rolling(window=normalized_window, min_periods=1).mean()
     elif operation == "derivative":
-        reference_series = _get_reference_series(working_frame, second_column)
+        reference_series = _get_reference_series(dataframe, second_column)
         derived_series = source_series.diff() / reference_series.diff().replace(0, np.nan)
     elif operation == "normalized":
         mean_value = source_series.mean()
@@ -53,7 +52,7 @@ def add_derived_column(
         trend = np.polyval(coeffs, x_values)
         derived_series = source_series - pd.Series(trend, index=source_series.index)
     elif operation == "integrate":
-        reference_series = _get_reference_series(working_frame, second_column)
+        reference_series = _get_reference_series(dataframe, second_column)
         dt = reference_series.diff()
         integrand = source_series * dt
         derived_series = integrand.cumsum().fillna(0.0)
@@ -70,8 +69,9 @@ def add_derived_column(
     else:
         raise ValueError(f"Unsupported operation: {operation}")
 
-    working_frame[new_column.strip()] = derived_series
-    return working_frame
+    result = dataframe.copy()
+    result[new_column.strip()] = derived_series
+    return result
 
 
 def apply_signal_filter(

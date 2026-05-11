@@ -50,7 +50,7 @@ def subset_dataframe_rows(
 
     series = dataframe[source_column]
     mask = _build_filter_mask(series, minimum_value, maximum_value, keep_missing)
-    return dataframe.loc[mask].reset_index(drop=True).copy()
+    return dataframe.loc[mask].reset_index(drop=True)
 
 
 def _build_range_mask(series: pd.Series, minimum_value: str, maximum_value: str) -> pd.Series:
