@@ -135,10 +135,11 @@ def merge_selected_files(app) -> None:
 	if not save_path:
 		return
 
+	analysis_result: AnalysisResult = analyze_selected_dataframes(selected_file_paths, app.data_frames)
 	register_dataset(
 		app,
 		save_path,
-		analysis_result.merged_frame.copy(),
+		analysis_result.merged_frame,
 		source_paths=collect_source_paths(app, selected_file_paths),
 		description=f"Merged from {len(selected_file_paths)} datasets",
 	)

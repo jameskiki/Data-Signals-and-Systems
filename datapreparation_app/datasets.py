@@ -49,7 +49,7 @@ def register_dataset(
 ) -> None:
     """Register or replace a dataset and its lineage context."""
 
-    app.data_frames[dataset_path] = dataframe.copy()
+    app.data_frames[dataset_path] = dataframe
     app.dataset_contexts[dataset_path] = DatasetContext(
         source_paths=list(dict.fromkeys(source_paths or [dataset_path])),
         description=description,

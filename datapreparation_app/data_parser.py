@@ -67,6 +67,8 @@ class DataParser:
         """
         if pd.api.types.is_datetime64_any_dtype(series):
             return series
+        if pd.api.types.is_numeric_dtype(series):
+            return series
         candidate_mask = series.notna()
         stripped = series[candidate_mask].astype(str).str.strip()
         stripped = stripped[stripped != ""]
