@@ -126,7 +126,6 @@ def merge_selected_files(app) -> None:
 		messagebox.showwarning("Warning", "Select at least two files to merge")
 		return
 
-	analysis_result: AnalysisResult = analyze_selected_dataframes(selected_file_paths, app.data_frames)
 	save_path = filedialog.asksaveasfilename(
 		title="Save merged CSV",
 		defaultextension=".csv",
@@ -143,7 +142,11 @@ def merge_selected_files(app) -> None:
 		source_paths=collect_source_paths(app, selected_file_paths),
 		description=f"Merged from {len(selected_file_paths)} datasets",
 	)
-	analysis_result.merged_frame.to_csv(save_path, sep=";", index=False)
+	try:
+		analysis_result.merged_frame.to_csv(save_path, sep=";", index=False)
+	except OSError as error:
+		messagebox.showerror("Save Error", f"Could not write merged file:\n{error}\n\nCheck the path is valid and the file is not open elsewhere.")
+		return
 	refresh_dataset_table(app)
 	select_dataset_in_table(app, save_path)
 	app._refresh_dataset_preparation_views()
