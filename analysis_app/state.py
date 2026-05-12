@@ -41,7 +41,6 @@ class AnalysisSession:
     source_path: str
     original_frame: pd.DataFrame
     working_frame: pd.DataFrame
-    history: list[str] = field(default_factory=list)
     selected_x_column: str = "Index"
     selected_y_columns: list[str] = field(default_factory=list)
     use_subplots: bool = True

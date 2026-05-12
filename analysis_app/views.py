@@ -1,6 +1,5 @@
 """Reusable Tk rendering helpers for the analysis workspace."""
 
-import math
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import font as tkfont, ttk
@@ -40,8 +39,9 @@ def build_data_tree(
     *,
     selectmode: str = "browse",
     clear: bool = True,
+    horizontal_scrollbar: bool = False,
 ) -> ttk.Treeview:
-    """Create a headed Treeview with vertical scrollbar inside *container*.
+    """Create a headed Treeview with scrollbars inside *container*.
 
     Returns the tree ready for row insertion.
     """
@@ -50,16 +50,23 @@ def build_data_tree(
         _clear_container(container)
 
     column_keys = [col.key for col in columns]
-    tree = ttk.Treeview(container, columns=column_keys, show="headings", selectmode=selectmode)
+    body = ttk.Frame(container)
+    body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    tree = ttk.Treeview(body, columns=column_keys, show="headings", selectmode=selectmode)
     tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     for col in columns:
         tree.heading(col.key, text=col.label)
         tree.column(col.key, width=col.width, minwidth=col.min_width, anchor=col.anchor, stretch=col.stretch)
 
-    scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+    scrollbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=tree.yview)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     tree.config(yscrollcommand=scrollbar.set)
+
+    if horizontal_scrollbar:
+        xscrollbar = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+        xscrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        tree.config(xscrollcommand=xscrollbar.set)
 
     return tree
 
@@ -161,7 +168,7 @@ def render_correlation_view(container: ttk.Frame, correlation_frame: pd.DataFram
                 relief="solid",
                 padx=8,
                 pady=5,
-                width=max(7, math.ceil(len(str(column)) * 0.85)),
+                width=7,
                 anchor="e",
             )
             label.grid(row=row_index, column=column_index, sticky="nsew")
@@ -235,11 +242,17 @@ def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame)
         ]
     )
 
-    tree = build_data_tree(container, col_specs, selectmode="extended", clear=False)
+    tree = build_data_tree(container, col_specs, selectmode="extended", clear=False, horizontal_scrollbar=True)
     outlier_row_mask = _compute_cycle_outlier_row_mask(metrics_frame)
     tree.tag_configure("cycle-excluded", background="#f1f5f9", foreground="#64748b")
     tree.tag_configure("cycle-outlier", background="#fff7d6", foreground="#7c2d12")
     tree.tag_configure("cycle-excluded-outlier", background="#f8efe4", foreground="#7c2d12")
+
+    tree_font = tkfont.nametofont("TkDefaultFont")
+    column_widths = {
+        spec.key: max(spec.min_width, tree_font.measure(spec.label) + 18)
+        for spec in col_specs
+    }
 
     for row_index, row in enumerate(metrics_frame.itertuples(index=False)):
         row_values = [int(row.cycle)]
@@ -264,12 +277,20 @@ def render_cycle_metrics_tree(container: ttk.Frame, metrics_frame: pd.DataFrame)
                 _format_stat_value(row.peak_to_peak),
             ]
         )
+
+        for spec, cell_value in zip(col_specs, row_values, strict=True):
+            column_widths[spec.key] = max(column_widths[spec.key], tree_font.measure(str(cell_value)) + 18)
+
         tree.insert(
             "",
             tk.END,
             values=tuple(row_values),
             tags=_get_cycle_tree_tags(row, outlier_row_mask.iloc[row_index]),
         )
+
+    for spec in col_specs:
+        width = max(spec.min_width, column_widths[spec.key])
+        tree.column(spec.key, width=width, minwidth=width, stretch=False)
 
     return tree
 

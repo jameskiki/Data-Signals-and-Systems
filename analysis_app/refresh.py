@@ -25,14 +25,7 @@ def refresh_sidebar(workspace) -> None:
     workspace.role_summary_var.set(summarize_column_roles(workspace.column_roles))
 
 
-def refresh_history(workspace) -> None:
-    """Refresh the displayed analysis history."""
 
-    workspace.history_listbox.delete(0, "end")
-    for item in workspace.session.history:
-        workspace.history_listbox.insert("end", item)
-    if workspace.session.history:
-        workspace.history_listbox.see("end")
 
 
 def refresh_overview(workspace) -> None:

@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from shared.documentation_links import DOCUMENTATION_LINKS
+from shared.status_widget import StatusBar
 from .state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
 
@@ -21,22 +22,33 @@ def build_analysis_workspace_ui(workspace) -> None:
     menu_bar.add_cascade(label="Help", menu=help_menu)
     workspace.window.config(menu=menu_bar)
 
-    main_pane = ttk.Panedwindow(workspace.window, orient=tk.HORIZONTAL)
-    main_pane.pack(fill=tk.BOTH, expand=True)
+    main_frame = ttk.Frame(workspace.window, padding=5)
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
-    sidebar = ttk.LabelFrame(main_pane, text="Workspace Context", padding=5)
-    notebook_container = ttk.LabelFrame(main_pane, text="Analysis Tools", padding=5)
-    plot_panel = ttk.LabelFrame(main_pane, text="Live Plot", padding=5)
-    main_pane.add(sidebar, weight=1)
-    main_pane.add(notebook_container, weight=1)
-    main_pane.add(plot_panel, weight=2)
+    main_frame.columnconfigure(0, weight=1)
+    main_frame.columnconfigure(1, weight=1)
+    main_frame.columnconfigure(2, weight=2)
+    main_frame.rowconfigure(0, weight=1)
+    main_frame.rowconfigure(1, weight=2)
 
-    build_sidebar(workspace, sidebar)
+    context_panel = ttk.LabelFrame(main_frame, text="Workspace Context", padding=5)
+    notebook_container = ttk.LabelFrame(main_frame, text="Analysis Tools", padding=5)
+    plot_panel = ttk.LabelFrame(main_frame, text="Live Plot", padding=5)
+
+    context_panel.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=(0, 5), pady=(0, 5))
+    notebook_container.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=(0, 5))
+    plot_panel.grid(row=0, column=2, rowspan=2, sticky="nsew")
+
+    build_context_panel(workspace, context_panel)
     build_notebook(workspace, notebook_container)
     build_plot_panel(workspace, plot_panel)
 
+    # Create and attach the status bar at the bottom
+    workspace.status_bar = StatusBar(workspace.window, workspace.notifications)
+    workspace.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-def build_sidebar(workspace, parent: ttk.Frame) -> None:
+
+def build_context_panel(workspace, parent: ttk.Frame) -> None:
     info_frame = ttk.LabelFrame(parent, text="Dataset")
     info_frame.pack(fill=tk.X, padx=5, pady=5)
     ttk.Label(info_frame, textvariable=workspace.dataset_label_var, wraplength=220).pack(anchor="w", padx=5, pady=(5, 2))
@@ -54,25 +66,14 @@ def build_sidebar(workspace, parent: ttk.Frame) -> None:
     ttk.Button(action_frame, text="Export Current View", command=workspace._export_current_view).pack(fill=tk.X, padx=5, pady=2)
     ttk.Button(action_frame, text="Refresh Statistics", command=workspace._refresh_summary_views).pack(fill=tk.X, padx=5, pady=(2, 5))
 
-    context_pane = ttk.Panedwindow(parent, orient=tk.VERTICAL)
-    context_pane.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    overview_frame = ttk.LabelFrame(parent, text="Overview")
+    overview_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    overview_frame = ttk.LabelFrame(context_pane, text="Overview")
-    history_frame = ttk.LabelFrame(context_pane, text="History")
-    context_pane.add(overview_frame, weight=1)
-    context_pane.add(history_frame, weight=1)
-
-    workspace.sidebar_overview_text = tk.Text(overview_frame, wrap="word", height=12)
+    workspace.sidebar_overview_text = tk.Text(overview_frame, wrap="word", height=8)
     workspace.sidebar_overview_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
     overview_scrollbar = ttk.Scrollbar(overview_frame, orient=tk.VERTICAL, command=workspace.sidebar_overview_text.yview)
     overview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=5)
     workspace.sidebar_overview_text.config(yscrollcommand=overview_scrollbar.set, state=tk.DISABLED)
-
-    workspace.history_listbox = tk.Listbox(history_frame, height=20)
-    workspace.history_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
-    history_scrollbar = ttk.Scrollbar(history_frame, orient=tk.VERTICAL, command=workspace.history_listbox.yview)
-    history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=5)
-    workspace.history_listbox.config(yscrollcommand=history_scrollbar.set)
 
 
 def build_notebook(workspace, parent: ttk.Frame) -> None:
@@ -173,9 +174,9 @@ def build_filter_tab(workspace) -> None:
     simple_filter_tab = ttk.Frame(filter_notebook)
     signal_filter_tab = ttk.Frame(filter_notebook)
     resample_tab = ttk.Frame(filter_notebook)
-    filter_notebook.add(simple_filter_tab, text="Simple Filtering")
     filter_notebook.add(signal_filter_tab, text="Signal Processing")
     filter_notebook.add(resample_tab, text="Resample")
+    filter_notebook.add(simple_filter_tab, text="Simple Filtering")
 
     build_simple_filter_tab(workspace, simple_filter_tab)
     build_signal_filter_tab(workspace, signal_filter_tab)
@@ -585,7 +586,6 @@ def build_cycles_tab(workspace) -> None:
         ("peak_to_peak", "P2P"),
         ("min", "Min"),
         ("max", "Max"),
-        ("span", "Span"),
     ]
     for metric_index, (metric_key, metric_label) in enumerate(metric_toggle_specs):
         ttk.Checkbutton(

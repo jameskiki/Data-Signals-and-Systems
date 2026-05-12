@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from shared.documentation_links import open_documentation_path
+from shared.notifications import NotificationManager
 from .actions import (
     build_derived_signal_update,
     build_reset_update,
@@ -20,7 +21,6 @@ from .actions import (
 from .layout import build_analysis_workspace_ui
 from .refresh import (
     refresh_filter_controls,
-    refresh_history,
     refresh_overview,
     refresh_plot_controls,
     refresh_role_widget_styles,
@@ -111,11 +111,11 @@ class AnalysisWorkspace:
         self.on_close = on_close
         self.column_roles = dict(column_roles or {})
         self.dataset_description = dataset_description
+        self.notifications = NotificationManager()
         self.session = AnalysisSession(
             source_path=dataset_path,
             original_frame=dataframe.copy(),
             working_frame=dataframe.copy(),
-            history=[f"Opened analysis workspace for {os.path.basename(dataset_path)}"],
         )
         self.window = tk.Toplevel(parent)
         self.window.title(f"Analysis Workspace - {os.path.basename(dataset_path)}")
@@ -176,7 +176,6 @@ class AnalysisWorkspace:
             "peak_to_peak": tk.BooleanVar(value=True),
             "min": tk.BooleanVar(value=True),
             "max": tk.BooleanVar(value=True),
-            "span": tk.BooleanVar(value=True),
         }
 
         self._plot_figure: plt.Figure | None = None
@@ -250,7 +249,6 @@ class AnalysisWorkspace:
         if refresh_summary:
             self._ensure_current_summary()
         refresh_sidebar(self)
-        refresh_history(self)
         refresh_overview(self)
         self._refresh_preview()
         refresh_filter_controls(self)
@@ -445,11 +443,10 @@ class AnalysisWorkspace:
                     overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
                 )
                 self._render_spectrogram_result(spectrogram_result)
-                self.session.history.append(
+                self.notifications.success(
                     f"Computed Spectrogram for {source_column} "
                     f"(segment={spectrogram_result.segment_length}, fs={spectrogram_result.sampling_frequency:.1f} Hz)"
                 )
-                refresh_history(self)
                 return
             elif analysis_name == "Welch PSD":
                 result = compute_welch_psd(
@@ -478,10 +475,9 @@ class AnalysisWorkspace:
             return
 
         self._render_fft_result(result)
-        self.session.history.append(
+        self.notifications.success(
             f"Computed {result.analysis_name} for {source_column} using {reference_column} with {result.window} window"
         )
-        refresh_history(self)
 
     def _compute_cycle_analysis(self) -> None:
         source_column = self.active_column_var.get().strip()
@@ -565,10 +561,9 @@ class AnalysisWorkspace:
             return
 
         self._render_cycle_result(result)
-        self.session.history.append(
+        self.notifications.success(
             f"Analyzed {result.cycle_count} cycles of length {result.cycle_length} for {source_column}"
         )
-        refresh_history(self)
 
     def _update_plot(self) -> None:
         selected_columns = self._get_selected_plot_y_columns()
@@ -602,7 +597,8 @@ class AnalysisWorkspace:
             self._plot_figure = figure
             self._plot_canvas.figure = figure
             figure.canvas = self._plot_canvas
-            self._plot_canvas.draw_idle()
+            self._sync_plot_canvas_size()
+            self._plot_canvas.draw()
             if self._plot_toolbar is not None:
                 self._plot_toolbar.update()
         else:
@@ -614,6 +610,18 @@ class AnalysisWorkspace:
             self._plot_toolbar.update()
             self._plot_toolbar.pack(side=tk.TOP, fill=tk.X)
             self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+            self.window.after_idle(self._sync_plot_canvas_size)
+            self.window.after_idle(self._plot_canvas.draw)
+
+    def _sync_plot_canvas_size(self) -> None:
+        if self._plot_canvas is None or self._plot_figure is None:
+            return
+        canvas_widget = self._plot_canvas.get_tk_widget()
+        canvas_widget.update_idletasks()
+        width = max(canvas_widget.winfo_width(), 1)
+        height = max(canvas_widget.winfo_height(), 1)
+        dpi = float(self._plot_figure.get_dpi() or 100.0)
+        self._plot_figure.set_size_inches(width / dpi, height / dpi, forward=True)
 
     def _clear_plot_container(self) -> None:
         if self._plot_figure is not None:
@@ -831,7 +839,6 @@ class AnalysisWorkspace:
             selected_indices = list(range(all_cycle_count))
         selected_cycles = result.cycles_frame.iloc[selected_indices].to_numpy()
         selected_cycles = pad_to_max(selected_cycles, max_cycle_len)
-        max_plotted_cycles = min(len(selected_indices), 20)
 
         # X axis for cycles
         step_values = np.arange(max_cycle_len)
@@ -846,7 +853,7 @@ class AnalysisWorkspace:
         # Top: Individual cycles (selected only)
         ax_top = axes[0]
         ax_top.clear()
-        for cycle_index in range(max_plotted_cycles):
+        for cycle_index in range(len(selected_cycles)):
             ax_top.plot(step_values, selected_cycles[cycle_index], color="#94a3b8", alpha=0.5, linewidth=1.0)
         ax_top.set_title("Selected Individual Cycles", fontsize=10)
         ax_top.set_xlabel("Sample within cycle", fontsize=9)
@@ -911,7 +918,6 @@ class AnalysisWorkspace:
             ("peak_to_peak", "p2p", metrics["peak_to_peak"], 1.2, None),
             ("min", "min", metrics["min"], 1.1, "#2563eb"),
             ("max", "max", metrics["max"], 1.1, "#dc2626"),
-            ("span", "span", metrics["max"] - metrics["min"], 1.1, "#7c3aed"),
         ]
         for metric_key, label, values, linewidth, color in c2c_metric_specs:
             if not self.cycle_metric_toggle_vars[metric_key].get():
@@ -940,7 +946,9 @@ class AnalysisWorkspace:
         ax_bot.set_title("Cycle-to-Cycle Statistics", fontsize=10)
         ax_bot.set_xlabel("Cycle", fontsize=9)
         ax_bot.set_ylabel("Metric", fontsize=9)
-        ax_bot_right.set_ylabel(right_axis_label, fontsize=9, color="#b45309")
+        ax_bot_right.set_ylabel(right_axis_label, fontsize=9, color="#b45309", labelpad=12)
+        ax_bot_right.yaxis.set_label_position("right")
+        ax_bot_right.yaxis.tick_right()
         ax_bot_right.tick_params(axis="y", colors="#b45309")
         ax_bot.grid(True, alpha=0.3)
         left_handles, left_labels = ax_bot.get_legend_handles_labels()
@@ -1187,8 +1195,7 @@ class AnalysisWorkspace:
             return
 
         self.session.working_frame.to_csv(save_path, sep=";", index=False)
-        self.session.history.append(f"Exported current working dataframe to {os.path.basename(save_path)}")
-        refresh_history(self)
+        self.notifications.success(f"Exported to {os.path.basename(save_path)}")
         messagebox.showinfo("Exported", f"Saved current view to:\n{save_path}")
 
     def open_documentation(self, relative_path: str) -> None:
@@ -1208,7 +1215,7 @@ class AnalysisWorkspace:
         self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
         self.session.working_revision += 1
         self.session.last_summary = None
-        self.session.history.append(history_entry)
+        self.notifications.success(history_entry)
         self.fft_summary_var.set(self._default_frequency_summary_text())
         self._clear_fft_results("Recompute the frequency analysis after data changes.")
         self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
