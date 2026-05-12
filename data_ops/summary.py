@@ -8,7 +8,7 @@ from shared.display_format import format_display_value
 from .models import DataSummary
 
 
-def summarize_dataframe(dataframe: pd.DataFrame) -> DataSummary:
+def summarize_dataframe(dataframe: pd.DataFrame, include_details: bool = True) -> DataSummary:
     """Return overview text, engineering statistics, and correlations for one dataframe."""
 
     row_count, col_count = dataframe.shape
@@ -41,6 +41,9 @@ def summarize_dataframe(dataframe: pd.DataFrame) -> DataSummary:
         missing_columns_text = ", ".join(missing_columns)
         info_lines.append("Missing " + missing_columns_text)
 
+    statistics_frame = build_statistics_frame(dataframe) if include_details else pd.DataFrame()
+    correlation_frame = build_correlation_frame(dataframe) if include_details else pd.DataFrame()
+
     return DataSummary(
         overview_text="\n".join(info_lines),
         row_count=row_count,
@@ -50,8 +53,8 @@ def summarize_dataframe(dataframe: pd.DataFrame) -> DataSummary:
         total_missing_count=total_missing,
         time_range_text=time_range_text,
         missing_columns_text=missing_columns_text,
-        statistics_frame=build_statistics_frame(dataframe),
-        correlation_frame=build_correlation_frame(dataframe),
+        statistics_frame=statistics_frame,
+        correlation_frame=correlation_frame,
     )
 
 
@@ -63,16 +66,21 @@ def build_statistics_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
     if numeric_frame.empty:
         return pd.DataFrame(columns=stats_columns)
 
+    clean_frame = numeric_frame.apply(pd.to_numeric, errors="coerce")
+    missing_counts = clean_frame.isna().sum()
+    desc = clean_frame.describe()  # single pass: count, mean, std, min, 25%, 50%, 75%, max
+    rms_values = np.sqrt((clean_frame ** 2).mean())  # vectorised; .mean() skips NaN
+
     statistics_rows: list[dict[str, float | int | str]] = []
-    for column in numeric_frame.columns:
-        numeric_series = pd.to_numeric(numeric_frame[column], errors="coerce")
-        clean_series = numeric_series.dropna()
-        if clean_series.empty:
+    for column in clean_frame.columns:
+        col_desc = desc[column]
+        n = int(col_desc["count"])
+        if n == 0:
             statistics_rows.append(
                 {
                     "column": column,
                     "count": 0,
-                    "missing": int(numeric_series.isna().sum()),
+                    "missing": int(missing_counts[column]),
                     "min": np.nan,
                     "max": np.nan,
                     "mean": np.nan,
@@ -83,18 +91,19 @@ def build_statistics_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
             )
             continue
 
-        values = clean_series.to_numpy(dtype=float, copy=False)
+        col_min = float(col_desc["min"])
+        col_max = float(col_desc["max"])
         statistics_rows.append(
             {
                 "column": column,
-                "count": int(clean_series.count()),
-                "missing": int(numeric_series.isna().sum()),
-                "min": float(clean_series.min()),
-                "max": float(clean_series.max()),
-                "mean": float(clean_series.mean()),
-                "std": float(clean_series.std(ddof=1)) if len(clean_series) > 1 else 0.0,
-                "rms": float(np.sqrt(np.mean(np.square(values)))),
-                "peak_to_peak": float(clean_series.max() - clean_series.min()),
+                "count": n,
+                "missing": int(missing_counts[column]),
+                "min": col_min,
+                "max": col_max,
+                "mean": float(col_desc["mean"]),
+                "std": float(col_desc["std"]) if n > 1 else 0.0,
+                "rms": float(rms_values[column]),
+                "peak_to_peak": col_max - col_min,
             }
         )
 

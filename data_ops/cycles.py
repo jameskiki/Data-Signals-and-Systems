@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,13 @@ def compute_cycle_analysis_from_ranges(
     dropped_rows = len(dataframe) - total_used_rows
     support_count = cycles_frame.notna().sum(axis=0).astype(int)
 
+    cycle_lengths_arr = np.array(cycle_lengths)
+    col_means = np.nanmean(cycle_matrix, axis=1)
+    col_stds = np.where(cycle_lengths_arr > 1, np.nanstd(cycle_matrix, axis=1, ddof=1), 0.0)
+    col_mins = np.nanmin(cycle_matrix, axis=1)
+    col_maxs = np.nanmax(cycle_matrix, axis=1)
+    col_rms = np.sqrt(np.nanmean(cycle_matrix ** 2, axis=1))
+
     metrics_frame = pd.DataFrame(
         {
             "cycle": np.arange(1, len(cycle_values) + 1),
@@ -78,12 +86,12 @@ def compute_cycle_analysis_from_ranges(
             "end": [end_index for _, end_index in normalized_ranges],
             "length": cycle_lengths,
             "duration_seconds": cycle_durations,
-            "mean": [float(np.nanmean(cycle_array)) for cycle_array in cycle_values],
-            "std": [float(np.nanstd(cycle_array, ddof=1)) if cycle_array.size > 1 else 0.0 for cycle_array in cycle_values],
-            "min": [float(np.nanmin(cycle_array)) for cycle_array in cycle_values],
-            "max": [float(np.nanmax(cycle_array)) for cycle_array in cycle_values],
-            "rms": [float(np.sqrt(np.nanmean(cycle_array**2))) for cycle_array in cycle_values],
-            "peak_to_peak": [float(np.nanmax(cycle_array) - np.nanmin(cycle_array)) for cycle_array in cycle_values],
+            "mean": col_means,
+            "std": col_stds,
+            "min": col_mins,
+            "max": col_maxs,
+            "rms": col_rms,
+            "peak_to_peak": col_maxs - col_mins,
         }
     )
 
@@ -129,9 +137,9 @@ def detect_rising_edge_cycle_ranges(
     if max_cycles is not None and max_cycles <= 0:
         raise ValueError("Maximum cycle count must be positive")
 
-    reference_series = pd.to_numeric(dataframe[reference_column], errors="coerce")
-    above_threshold = reference_series >= float(threshold)
-    rising_edges = np.flatnonzero(above_threshold.to_numpy() & ~above_threshold.shift(1, fill_value=False).to_numpy())
+    reference_values = pd.to_numeric(dataframe[reference_column], errors="coerce").to_numpy(dtype=float)
+    above = reference_values >= float(threshold)
+    rising_edges = np.flatnonzero(above & ~np.concatenate(([False], above[:-1])))
     if rising_edges.size < 2:
         raise ValueError("Need at least two rising-edge crossings to define cycles")
 
@@ -197,8 +205,6 @@ def detect_peak_cycle_ranges(
     max_cycles: int | None = None,
 ) -> list[tuple[int, int]]:
     """Detect cycles between successive peaks of a reference signal."""
-
-    from scipy.signal import find_peaks
 
     if reference_column not in dataframe.columns:
         raise KeyError(f"Unknown reference column: {reference_column}")

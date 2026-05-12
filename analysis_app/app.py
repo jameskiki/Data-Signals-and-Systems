@@ -202,6 +202,8 @@ class AnalysisWorkspace:
         self.plot_y_selector_menu: tk.Menu | None = None
         self.plot_y_selection_vars: dict[str, tk.BooleanVar] = {}
         self._plot_y_selector_sync_in_progress = False
+        self._frame_replacing = False
+        self._refreshing_frequency_controls = False
 
         build_analysis_workspace_ui(self)
         self.active_column_var.trace_add("write", self._handle_active_column_changed)
@@ -594,15 +596,24 @@ class AnalysisWorkspace:
         self._render_plot_figure(figure)
 
     def _render_plot_figure(self, figure: plt.Figure) -> None:
-        self._clear_plot_container()
-
-        self._plot_figure = figure
-        self._plot_canvas = FigureCanvasTkAgg(figure, master=self.plot_container)
-        self._plot_canvas.draw()
-        self._plot_toolbar = NavigationToolbar2Tk(self._plot_canvas, self.plot_container)
-        self._plot_toolbar.update()
-        self._plot_toolbar.pack(side=tk.TOP, fill=tk.X)
-        self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        if self._plot_canvas is not None:
+            if self._plot_figure is not None:
+                plt.close(self._plot_figure)
+            self._plot_figure = figure
+            self._plot_canvas.figure = figure
+            figure.canvas = self._plot_canvas
+            self._plot_canvas.draw_idle()
+            if self._plot_toolbar is not None:
+                self._plot_toolbar.update()
+        else:
+            self._clear_plot_container()
+            self._plot_figure = figure
+            self._plot_canvas = FigureCanvasTkAgg(figure, master=self.plot_container)
+            self._plot_canvas.draw()
+            self._plot_toolbar = NavigationToolbar2Tk(self._plot_canvas, self.plot_container)
+            self._plot_toolbar.update()
+            self._plot_toolbar.pack(side=tk.TOP, fill=tk.X)
+            self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
 
     def _clear_plot_container(self) -> None:
         if self._plot_figure is not None:
@@ -614,7 +625,17 @@ class AnalysisWorkspace:
             widget.destroy()
 
     def _render_fft_result(self, result: FrequencySpectrumResult) -> None:
-        self._clear_fft_results()
+        # Partial clear: preserve the canvas widget for reuse; only destroy peaks
+        # tree children and (first time) any stale message labels in the plot container.
+        for widget in self.fft_peaks_container.winfo_children():
+            widget.destroy()
+        self._fft_peaks_tree = None
+        if self._fft_canvas is None:
+            for widget in self.frequency_plot_container.winfo_children():
+                widget.destroy()
+        if self._fft_figure is not None:
+            plt.close(self._fft_figure)
+            self._fft_figure = None
         self.fft_summary_var.set(self._build_frequency_summary(result))
 
         self._fft_peaks_tree = render_fft_peaks_tree(
@@ -667,12 +688,19 @@ class AnalysisWorkspace:
         figure.tight_layout()
 
         self._fft_figure = figure
-        self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
-        self._fft_canvas.draw()
-        self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
-        self._fft_toolbar.update()
-        self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
-        self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        if self._fft_canvas is not None:
+            self._fft_canvas.figure = figure
+            figure.canvas = self._fft_canvas
+            self._fft_canvas.draw_idle()
+            if self._fft_toolbar is not None:
+                self._fft_toolbar.update()
+        else:
+            self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
+            self._fft_canvas.draw()
+            self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
+            self._fft_toolbar.update()
+            self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
+            self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
         self.plot_notebook.select(self.frequency_plot_tab)
 
     def _clear_fft_results(self, message: str | None = None) -> None:
@@ -689,7 +717,16 @@ class AnalysisWorkspace:
             ttk.Label(self.frequency_plot_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
 
     def _render_spectrogram_result(self, result: SpectrogramResult) -> None:
-        self._clear_fft_results()
+        # Partial clear: preserve canvas for reuse.
+        if self._fft_canvas is None:
+            for widget in self.frequency_plot_container.winfo_children():
+                widget.destroy()
+        for widget in self.fft_peaks_container.winfo_children():
+            widget.destroy()
+        self._fft_peaks_tree = None
+        if self._fft_figure is not None:
+            plt.close(self._fft_figure)
+            self._fft_figure = None
         self.fft_summary_var.set(
             f"Spectrogram | {result.source_column} | "
             f"fs = {result.sampling_frequency:.2f} Hz | "
@@ -715,12 +752,19 @@ class AnalysisWorkspace:
         figure.tight_layout()
 
         self._fft_figure = figure
-        self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
-        self._fft_canvas.draw()
-        self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
-        self._fft_toolbar.update()
-        self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
-        self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+        if self._fft_canvas is not None:
+            self._fft_canvas.figure = figure
+            figure.canvas = self._fft_canvas
+            self._fft_canvas.draw_idle()
+            if self._fft_toolbar is not None:
+                self._fft_toolbar.update()
+        else:
+            self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
+            self._fft_canvas.draw()
+            self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
+            self._fft_toolbar.update()
+            self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
+            self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
         self.plot_notebook.select(self.frequency_plot_tab)
 
     def _render_cycle_result(
@@ -808,6 +852,9 @@ class AnalysisWorkspace:
         ax_top.set_xlabel("Sample within cycle", fontsize=9)
         ax_top.set_ylabel(result.source_column, fontsize=9)
         ax_top.grid(True, alpha=0.3)
+        # Keep top and middle cycle plots on the same x-domain even when selected cycles are shorter.
+        if max_cycle_len > 0:
+            ax_top.set_xlim(0, max_cycle_len - 1)
         apply_numeric_axis_format(ax_top, format_x=True, format_y=True)
 
         # Middle: Representative cycle (all cycles, mean ± std, early/late means)
@@ -842,6 +889,8 @@ class AnalysisWorkspace:
         ax_mid.set_xlabel("Sample within cycle", fontsize=9)
         ax_mid.set_ylabel(result.source_column, fontsize=9)
         ax_mid.grid(True, alpha=0.3)
+        if max_cycle_len > 0:
+            ax_mid.set_xlim(0, max_cycle_len - 1)
         apply_numeric_axis_format(ax_mid, format_x=True, format_y=True)
         if support_axis is not None:
             apply_numeric_axis_format(support_axis, format_x=False, format_y=True)
@@ -1164,14 +1213,25 @@ class AnalysisWorkspace:
         self._clear_fft_results("Recompute the frequency analysis after data changes.")
         self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
         self._clear_cycle_results("Recompute cycle analysis after data changes.")
-        self._refresh_all_views()
         if focus_column and focus_column in self.session.working_frame.columns:
+            # Set focus column before refresh so a single _refresh_all_views call uses it;
+            # suppress the trace-driven handler to avoid a redundant second refresh pass.
+            self._frame_replacing = True
+            self.filter_output_name_var.set("")
+            self.signal_filter_name_var.set("")
+            self.derived_name_var.set("")
             self.active_column_var.set(focus_column)
+            self._frame_replacing = False
+        self._refresh_all_views()
+        self._set_default_output_names()
+        self._refresh_role_widget_styles()
 
     def _set_default_output_names(self) -> None:
         set_default_output_names(self)
 
     def _handle_active_column_changed(self, *_args: object) -> None:
+        if self._frame_replacing:
+            return
         self.filter_output_name_var.set("")
         self.signal_filter_name_var.set("")
         self.derived_name_var.set("")
@@ -1186,10 +1246,16 @@ class AnalysisWorkspace:
         self._refresh_role_widget_styles()
 
     def _handle_frequency_expectation_changed(self, *_args: object) -> None:
-        self.fft_summary_var.set(self._default_frequency_summary_text())
-        self._refresh_frequency_method_controls()
-        self._refresh_frequency_expectation()
-        self._refresh_role_widget_styles()
+        if self._refreshing_frequency_controls:
+            return
+        self._refreshing_frequency_controls = True
+        try:
+            self.fft_summary_var.set(self._default_frequency_summary_text())
+            self._refresh_frequency_method_controls()
+            self._refresh_frequency_expectation()
+            self._refresh_role_widget_styles()
+        finally:
+            self._refreshing_frequency_controls = False
 
     def _handle_output_defaults_changed(self, *_args: object) -> None:
         self._set_default_output_names()

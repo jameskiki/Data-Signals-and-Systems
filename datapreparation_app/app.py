@@ -337,6 +337,53 @@ class DataAnalysisApp:
             messagebox.showerror("Documentation Error", str(error))
             return
 
+    def create_loading_dialog(
+        self,
+        title: str,
+        total_steps: int,
+        overall_label: str = "Overall Progress",
+        detail_label: str = "Current Step",
+        initial_status: str = "Preparing...",
+        initial_detail_status: str = "Waiting for first step...",
+    ) -> tuple[tk.Toplevel, tk.StringVar, tk.DoubleVar, tk.StringVar, tk.DoubleVar]:
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.geometry("480x230")
+
+        container = ttk.Frame(dialog, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+        container.columnconfigure(0, weight=1)
+
+        ttk.Label(container, text=title, font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w")
+
+        ttk.Label(container, text=overall_label).grid(row=1, column=0, sticky="w", pady=(10, 4))
+        status_var = tk.StringVar(value=initial_status)
+        ttk.Label(container, textvariable=status_var, wraplength=440).grid(row=2, column=0, sticky="w", pady=(0, 6))
+
+        progress_var = tk.DoubleVar(value=0.0)
+        progressbar = ttk.Progressbar(container, mode="determinate", maximum=max(1, total_steps), variable=progress_var)
+        progressbar.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+
+        ttk.Label(container, text=detail_label).grid(row=4, column=0, sticky="w", pady=(0, 4))
+        step_status_var = tk.StringVar(value=initial_detail_status)
+        ttk.Label(container, textvariable=step_status_var, wraplength=440).grid(row=5, column=0, sticky="w", pady=(0, 6))
+
+        step_progress_var = tk.DoubleVar(value=0.0)
+        step_progressbar = ttk.Progressbar(container, mode="determinate", maximum=100.0, variable=step_progress_var)
+        step_progressbar.grid(row=6, column=0, sticky="ew")
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        dialog.update_idletasks()
+        return dialog, status_var, progress_var, step_status_var, step_progress_var
+
+    def close_loading_dialog(self, dialog: tk.Toplevel) -> None:
+        if dialog.winfo_exists():
+            dialog.grab_release()
+            dialog.destroy()
+
     def _refresh_dataset_preparation_views(self) -> None:
         selected_path = self._get_single_selected_file_path()
         if selected_path is None:

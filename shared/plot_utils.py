@@ -110,7 +110,7 @@ def create_overlay_figure(
     ax.set_xlabel(x_label, fontsize=11)
     ax.set_ylabel("Value", fontsize=11)
     if ax.lines:
-        ax.legend(fontsize=10)
+        ax.legend(fontsize=10, loc="upper right")
     ax.grid(True)
     apply_numeric_axis_format(ax, format_x=True, format_y=True)
 
@@ -200,7 +200,7 @@ def plot_columns_on_axes(
         ax.set_xlabel(x_label, fontsize=11)
         ax.set_ylabel("Value", fontsize=11)
         if ax.lines:
-            ax.legend(fontsize=10)
+            ax.legend(fontsize=10, loc="upper right")
         ax.grid(True)
         apply_numeric_axis_format(ax, format_x=True, format_y=True)
     return x_values_by_axis

@@ -168,25 +168,29 @@ def compute_welch_psd(
         raise ValueError("Invalid Welch window configuration")
 
     working_values = values - values.mean() if detrend else values.copy()
-    segments = [working_values[start : start + normalized_segment_length] for start in range(0, values.size - normalized_segment_length + 1, step)]
-    if not segments:
-        segments = [working_values[:normalized_segment_length]]
+    segment_starts = list(range(0, values.size - normalized_segment_length + 1, step))
+    if not segment_starts:
+        segment_starts = [0]
 
-    segment_spectra = []
-    for segment in segments:
+    n_freqs = normalized_segment_length // 2 + 1
+    segment_spectra = np.empty((len(segment_starts), n_freqs))
+    valid_count = 0
+    for start in segment_starts:
+        segment = working_values[start : start + normalized_segment_length]
         if segment.size != normalized_segment_length:
             continue
         fft_values = np.fft.rfft(segment * window_values)
         power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
         if power_density.size > 2:
             power_density[1:-1] *= 2.0
-        segment_spectra.append(power_density)
+        segment_spectra[valid_count] = power_density
+        valid_count += 1
 
-    if not segment_spectra:
+    if valid_count == 0:
         raise ValueError("Unable to build Welch segments from the selected data")
 
     frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
-    amplitudes = np.mean(np.vstack(segment_spectra), axis=0)
+    amplitudes = np.mean(segment_spectra[:valid_count], axis=0)
     dominant_index = _get_dominant_frequency_index(amplitudes)
     peaks_frame = _build_peak_frame(frequencies, amplitudes, peak_count)
 
@@ -395,8 +399,10 @@ def compute_spectrogram(
     if not segment_starts:
         raise ValueError("Unable to build spectrogram segments from the selected data")
 
-    segment_spectra = []
-    times = []
+    n_freqs = normalized_segment_length // 2 + 1
+    power = np.empty((len(segment_starts), n_freqs))
+    times = np.empty(len(segment_starts))
+    valid_count = 0
     for start in segment_starts:
         segment = working_values[start : start + normalized_segment_length]
         if segment.size != normalized_segment_length:
@@ -405,12 +411,13 @@ def compute_spectrogram(
         power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
         if power_density.size > 2:
             power_density[1:-1] *= 2.0
-        segment_spectra.append(power_density)
-        center_sample = start + normalized_segment_length // 2
-        times.append(center_sample * resolved_sample_spacing)
+        power[valid_count] = power_density
+        times[valid_count] = (start + normalized_segment_length // 2) * resolved_sample_spacing
+        valid_count += 1
 
     frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
-    power = np.array(segment_spectra)  # shape: (n_times, n_freqs)
+    power = power[:valid_count]  # shape: (n_times, n_freqs)
+    times = times[:valid_count]
     fs = 1.0 / resolved_sample_spacing
 
     return SpectrogramResult(
@@ -541,9 +548,11 @@ def _prepare_dual_signal_spectra(
     working_output = output_values - output_values.mean() if detrend else output_values.copy()
     working_input = input_values - input_values.mean() if detrend else input_values.copy()
 
-    cross_spectra: list[np.ndarray] = []
-    auto_input_spectra: list[np.ndarray] = []
-    auto_output_spectra: list[np.ndarray] = []
+    n_freqs = normalized_segment_length // 2 + 1
+    cross_sum = np.zeros(n_freqs, dtype=complex)
+    auto_input_sum = np.zeros(n_freqs, dtype=float)
+    auto_output_sum = np.zeros(n_freqs, dtype=float)
+    segment_count = 0
     for start in range(0, output_values.size - normalized_segment_length + 1, step):
         output_segment = working_output[start : start + normalized_segment_length]
         input_segment = working_input[start : start + normalized_segment_length]
@@ -551,11 +560,12 @@ def _prepare_dual_signal_spectra(
             continue
         output_fft = np.fft.rfft(output_segment * window_values)
         input_fft = np.fft.rfft(input_segment * window_values)
-        cross_spectra.append(output_fft * np.conjugate(input_fft))
-        auto_input_spectra.append(input_fft * np.conjugate(input_fft))
-        auto_output_spectra.append(output_fft * np.conjugate(output_fft))
+        cross_sum += output_fft * np.conjugate(input_fft)
+        auto_input_sum += np.real(input_fft * np.conjugate(input_fft))
+        auto_output_sum += np.real(output_fft * np.conjugate(output_fft))
+        segment_count += 1
 
-    if not cross_spectra:
+    if segment_count == 0:
         raise ValueError("Unable to build Welch segments from the selected data")
 
     frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
@@ -566,7 +576,7 @@ def _prepare_dual_signal_spectra(
         "spacing_source_text": spacing_source_text,
         "uniformity_ratio": float(uniformity_ratio),
         "frequencies": frequencies,
-        "cross_spectrum": np.mean(np.vstack(cross_spectra), axis=0),
-        "auto_input": np.mean(np.vstack(auto_input_spectra), axis=0),
-        "auto_output": np.mean(np.vstack(auto_output_spectra), axis=0),
+        "cross_spectrum": cross_sum / segment_count,
+        "auto_input": auto_input_sum / segment_count,
+        "auto_output": auto_output_sum / segment_count,
     }

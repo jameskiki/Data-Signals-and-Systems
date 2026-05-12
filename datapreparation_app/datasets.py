@@ -88,7 +88,7 @@ def refresh_dataset_table(app) -> None:
     for path, dataframe in app.data_frames.items():
         context = app.dataset_contexts.get(path, DatasetContext(source_paths=[path], description="", column_roles={}))
         if context.cached_summary is None:
-            context.cached_summary = summarize_dataframe(dataframe)
+            context.cached_summary = summarize_dataframe(dataframe, include_details=False)
         summary = context.cached_summary
         app.dataset_table.insert(
             "",

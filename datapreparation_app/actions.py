@@ -1,5 +1,7 @@
 """User-triggered operations and workflow logic for datapreparation_app."""
 import os
+import queue
+import threading
 from tkinter import filedialog, messagebox
 from .demo import DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 from .data_parser import DataParser
@@ -7,37 +9,109 @@ from .datasets import DatasetContext, register_dataset, select_dataset_in_table,
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog, show_figure_in_window
 from .preview import refresh_preview_table, clear_preview_plot, clear_preview_table, refresh_preview_plot, refresh_preview_plot_signal_controls
-from data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes
+from data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
 from data_ops.models import AnalysisResult
 from shared.plot_utils import create_plot_figure
 
 def load_files(app) -> None:
 	files = filedialog.askopenfilenames(filetypes=app.LOG_FILE_TYPES)
-	loaded_file_paths: list[str] = []
-	parse_info: list[str] = []
-	for file_path in files:
-		try:
-			dataframe, separator, decimal_marker = DataParser.load_file(file_path)
-			register_dataset(
-				app,
-				file_path,
-				dataframe,
-				source_paths=[file_path],
-				description="Loaded source dataset",
-			)
-			loaded_file_paths.append(file_path)
-			parse_info.append(f"{os.path.basename(file_path)}: sep='{separator}', decimal='{decimal_marker}'")
-		except Exception as error:
-			messagebox.showerror("Error", f"Failed to load {file_path}: {error}")
-
-	refresh_dataset_table(app)
-	if not loaded_file_paths:
+	if not files:
 		return
 
-	analysis_result = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
-	select_dataset_in_table(app, loaded_file_paths[-1])
-	app._refresh_dataset_preparation_views()
-	messagebox.showinfo("Load summary", "\n".join([" | ".join(parse_info), analysis_result.report_text]))
+	(
+		progress_dialog,
+		overall_status_var,
+		overall_progress_var,
+		file_step_status_var,
+		file_step_progress_var,
+	) = app.create_loading_dialog("Loading Files", len(files))
+	load_queue: queue.Queue[tuple[object, ...]] = queue.Queue()
+	loaded_file_paths: list[str] = []
+	parse_info: list[str] = []
+	error_messages: list[str] = []
+	worker_done = False
+	finalized = False
+
+	def _worker() -> None:
+		for index, file_path in enumerate(files, start=1):
+			def _on_parse_progress(current: float, total: float, label: str) -> None:
+				load_queue.put(("file_progress", index, file_path, current, total, label))
+
+			try:
+				dataframe, separator, decimal_marker = DataParser.load_file(file_path, progress_callback=_on_parse_progress)
+				load_queue.put(("loaded", index, file_path, separator, decimal_marker, dataframe))
+			except Exception as error:
+				load_queue.put(("error", index, file_path, str(error)))
+		load_queue.put(("done",))
+
+	threading.Thread(target=_worker, daemon=True).start()
+
+	def _finalize_load() -> None:
+		nonlocal finalized
+		if finalized:
+			return
+		finalized = True
+		app.close_loading_dialog(progress_dialog)
+		refresh_dataset_table(app)
+		if not loaded_file_paths:
+			if error_messages:
+				messagebox.showerror("Error", "\n\n".join(error_messages))
+			return
+
+		analysis_result = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
+		select_dataset_in_table(app, loaded_file_paths[-1])
+		app._refresh_dataset_preparation_views()
+
+		summary_lines = [" | ".join(parse_info), analysis_result.report_text]
+		if error_messages:
+			summary_lines.extend(["", "Warnings:", *error_messages])
+		messagebox.showinfo("Load summary", "\n".join(summary_lines))
+
+	def _poll_load_queue() -> None:
+		nonlocal worker_done
+		while True:
+			try:
+				message = load_queue.get_nowait()
+			except queue.Empty:
+				break
+
+			message_type = message[0]
+			if message_type == "loaded":
+				_, index, file_path, separator, decimal_marker, dataframe = message
+				register_dataset(
+					app,
+					file_path,
+					dataframe,
+					source_paths=[file_path],
+					description="Loaded source dataset",
+				)
+				loaded_file_paths.append(file_path)
+				parse_info.append(f"{os.path.basename(file_path)}: sep='{separator}', decimal='{decimal_marker}'")
+				overall_progress_var.set(float(index))
+				overall_status_var.set(f"Loaded {index} of {len(files)}: {os.path.basename(file_path)}")
+				file_step_progress_var.set(100.0)
+				file_step_status_var.set(f"Done: {os.path.basename(file_path)}")
+			elif message_type == "error":
+				_, index, file_path, error_text = message
+				error_messages.append(f"Failed to load {file_path}: {error_text}")
+				overall_status_var.set(f"Skipped {index} of {len(files)}: {os.path.basename(file_path)}")
+				file_step_progress_var.set(0.0)
+				file_step_status_var.set(f"Failed: {os.path.basename(file_path)}")
+			elif message_type == "file_progress":
+				_, index, file_path, current, total, label = message
+				progress_percent = (float(current) / max(float(total), 1.0)) * 100.0
+				file_step_progress_var.set(max(0.0, min(100.0, progress_percent)))
+				file_step_status_var.set(f"{os.path.basename(file_path)} | {label}")
+				overall_status_var.set(f"Processing {index} of {len(files)}: {os.path.basename(file_path)}")
+			elif message_type == "done":
+				worker_done = True
+
+		if worker_done:
+			_finalize_load()
+		else:
+			app.root.after(75, _poll_load_queue)
+
+	_poll_load_queue()
 
 def load_demo_test_signal(app) -> None:
 	_load_demo_dataset(app, SPECTRAL_REFERENCE_DEMO.key)
@@ -134,23 +208,127 @@ def merge_selected_files(app) -> None:
 	if not save_path:
 		return
 
-	merged_frame = merge_selected_dataframes(selected_file_paths, app.data_frames)
-	register_dataset(
-		app,
-		save_path,
-		merged_frame,
-		source_paths=collect_source_paths(app, selected_file_paths),
-		description=f"Merged from {len(selected_file_paths)} datasets",
+	(
+		progress_dialog,
+		overall_status_var,
+		overall_progress_var,
+		detail_status_var,
+		detail_progress_var,
+	) = app.create_loading_dialog(
+		"Merging Datasets",
+		3,
+		overall_label="Overall Merge Progress",
+		detail_label="Current Step Progress",
+		initial_status="Starting merge...",
+		initial_detail_status="Preparing selected datasets...",
 	)
-	try:
-		merged_frame.to_csv(save_path, sep=";", index=False)
-	except OSError as error:
-		messagebox.showerror("Save Error", f"Could not write merged file:\n{error}\n\nCheck the path is valid and the file is not open elsewhere.")
-		return
-	refresh_dataset_table(app)
-	select_dataset_in_table(app, save_path)
-	app._refresh_dataset_preparation_views()
-	messagebox.showinfo("Saved", f"Merged file saved to:\n{save_path}")
+
+	merge_queue: queue.Queue[tuple[object, ...]] = queue.Queue()
+	worker_done = False
+	finalized = False
+	merged_result: object | None = None
+	error_message: str | None = None
+
+	def _worker() -> None:
+		try:
+			merge_queue.put(("merge_started",))
+			merged_frame = merge_selected_dataframes(selected_file_paths, app.data_frames)
+			merge_queue.put(("merge_done",))
+
+			def _on_write_progress(written_rows: int, total_rows: int) -> None:
+				merge_queue.put(("write_progress", written_rows, total_rows))
+
+			write_dataframe_csv_with_progress(
+				merged_frame,
+				save_path,
+				sep=";",
+				progress_callback=_on_write_progress,
+			)
+			merge_queue.put(("write_done",))
+			merge_queue.put(("result", merged_frame))
+		except OSError as error:
+			merge_queue.put(("error", f"Could not write merged file:\n{error}\n\nCheck the path is valid and the file is not open elsewhere."))
+		except Exception as error:
+			merge_queue.put(("error", str(error)))
+		finally:
+			merge_queue.put(("done",))
+
+	threading.Thread(target=_worker, daemon=True).start()
+
+	def _finalize_merge() -> None:
+		nonlocal finalized
+		if finalized:
+			return
+		finalized = True
+		app.close_loading_dialog(progress_dialog)
+
+		if error_message is not None:
+			messagebox.showerror("Save Error", error_message)
+			return
+
+		if merged_result is None:
+			messagebox.showerror("Merge Error", "Merge did not produce a result.")
+			return
+
+		merged_frame = merged_result
+		register_dataset(
+			app,
+			save_path,
+			merged_frame,
+			source_paths=collect_source_paths(app, selected_file_paths),
+			description=f"Merged from {len(selected_file_paths)} datasets",
+		)
+		refresh_dataset_table(app)
+		select_dataset_in_table(app, save_path)
+		app._refresh_dataset_preparation_views()
+		messagebox.showinfo("Saved", f"Merged file saved to:\n{save_path}")
+
+	def _poll_merge_queue() -> None:
+		nonlocal worker_done, merged_result, error_message
+		while True:
+			try:
+				message = merge_queue.get_nowait()
+			except queue.Empty:
+				break
+
+			message_type = message[0]
+			if message_type == "merge_started":
+				overall_status_var.set("Merging selected dataframes...")
+				detail_status_var.set("Building merged dataframe")
+				detail_progress_var.set(0.0)
+			elif message_type == "merge_done":
+				overall_progress_var.set(1.0)
+				overall_status_var.set("Merge complete. Writing CSV...")
+				detail_status_var.set("Writing merged data to disk")
+			elif message_type == "write_progress":
+				_, written_rows, total_rows = message
+				if total_rows <= 0:
+					detail_progress_var.set(100.0)
+					detail_status_var.set("Writing rows: 0 / 0")
+				else:
+					percent = (float(written_rows) / float(total_rows)) * 100.0
+					detail_progress_var.set(max(0.0, min(100.0, percent)))
+					detail_status_var.set(f"Writing rows: {written_rows:,} / {total_rows:,}")
+			elif message_type == "write_done":
+				overall_progress_var.set(2.0)
+				detail_progress_var.set(100.0)
+				detail_status_var.set("CSV write complete")
+				overall_status_var.set("Finalizing merged dataset...")
+			elif message_type == "result":
+				_, merged_result = message
+				overall_progress_var.set(3.0)
+				overall_status_var.set("Done")
+			elif message_type == "error":
+				_, error_message = message
+			elif message_type == "done":
+				worker_done = True
+
+		if worker_done:
+			_finalize_merge()
+		else:
+			app.root.after(75, _poll_merge_queue)
+
+	_poll_merge_queue()
 
 def create_prepared_dataset(app) -> None:
 	try:

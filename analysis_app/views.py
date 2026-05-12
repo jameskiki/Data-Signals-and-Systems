@@ -289,8 +289,9 @@ def _compute_cycle_outlier_row_mask(metrics_frame: pd.DataFrame) -> pd.Series:
         valid_values = numeric_values.dropna()
         if len(valid_values) < 4:
             continue
-        first_quartile = float(valid_values.quantile(0.25))
-        third_quartile = float(valid_values.quantile(0.75))
+        quartiles = valid_values.quantile([0.25, 0.75])
+        first_quartile = float(quartiles.iloc[0])
+        third_quartile = float(quartiles.iloc[1])
         iqr = third_quartile - first_quartile
         if iqr <= 0.0:
             continue
