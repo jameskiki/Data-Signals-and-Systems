@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.3.0] - 2026-05-12
+
+### Added
+- Cycle review improvements with updated demo validation coverage
+
+### Changed
+- Adaptive analysis controls and analysis UI refinements
+- Data merge and file-save handling improvements for preparation workflows
+- Datetime parsing and dataset handling robustness improvements
+- Performance and memory optimizations across dataframe operations
+
 ## [v0.2.0] - 2026-04-06
 
 ### Added
