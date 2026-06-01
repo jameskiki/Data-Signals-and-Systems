@@ -23,7 +23,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from analysis_app import AnalysisWorkspace
+from analysis_app.app import AnalysisWorkspace
 from .datasets import (
     DatasetContext,
     apply_literal_role_combobox_style,
@@ -53,6 +53,7 @@ from .preview import (
 )
 from shared.column_roles import summarize_column_roles
 from shared.documentation_links import open_documentation_path
+from shared.notifications import NotificationManager
 from .state import (
     APP_TITLE,
     WINDOW_GEOMETRY,
@@ -91,6 +92,7 @@ class DataAnalysisApp:
         self._preview_plot_figure: plt.Figure | None = None
         self._preview_plot_canvas: FigureCanvasTkAgg | None = None
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
+        self.notifications = NotificationManager()
 
         self.selected_dataset_var = tk.StringVar(value="No dataset selected")
         self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")

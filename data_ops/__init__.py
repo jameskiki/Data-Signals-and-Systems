@@ -21,7 +21,7 @@ from .frame_ops import (
     split_dataframe_by_index_ranges,
 )
 from .io_ops import analyze_selected_dataframes, export_clean_dataframes, merge_selected_dataframes
-from .models import AnalysisResult, DataFrameMap, DataSummary, SIGNAL_FILTER_OPERATIONS
+from .models import DataFrameMap, DataSummary, SIGNAL_FILTER_OPERATIONS
 from .signals import add_derived_column, apply_signal_filter
 from .spectral import (
     FFT_WINDOW_OPTIONS,
@@ -37,7 +37,6 @@ from .spectral import (
 from .summary import build_correlation_frame, build_statistics_frame, summarize_dataframe
 
 __all__ = [
-    "AnalysisResult",
     "CycleAnalysisResult",
     "DataFrameMap",
     "DataSummary",

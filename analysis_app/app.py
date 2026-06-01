@@ -74,28 +74,6 @@ from shared.plot_utils import create_plot_figure
 
 
 class AnalysisWorkspace:
-    def _refresh_cycle_method_controls(self) -> None:
-        mode = self.cycle_mode_var.get().strip() or "fixed_length"
-        # Hide all frames first
-        if hasattr(self, "cycle_fixed_frame") and self.cycle_fixed_frame is not None:
-            self.cycle_fixed_frame.grid_remove()
-        if hasattr(self, "cycle_edge_frame") and self.cycle_edge_frame is not None:
-            self.cycle_edge_frame.grid_remove()
-        if hasattr(self, "cycle_peak_frame") and self.cycle_peak_frame is not None:
-            self.cycle_peak_frame.grid_remove()
-        if hasattr(self, "cycle_max_frame") and self.cycle_max_frame is not None:
-            self.cycle_max_frame.grid_remove()
-
-        # Show relevant frames
-        if mode == "fixed_length":
-            self.cycle_fixed_frame.grid()
-        elif mode in {"rising_edge", "zero_crossing"}:
-            self.cycle_edge_frame.grid()
-            self.cycle_max_frame.grid()
-        elif mode == "peak":
-            self.cycle_peak_frame.grid()
-            self.cycle_max_frame.grid()
-
     """Tkinter window for filtering, deriving, plotting, and exporting one dataset."""
 
     def __init__(
@@ -238,6 +216,28 @@ class AnalysisWorkspace:
         self.window.destroy()
         if self.on_close is not None:
             self.on_close(self)
+
+    def _refresh_cycle_method_controls(self) -> None:
+        mode = self.cycle_mode_var.get().strip() or "fixed_length"
+        # Hide all frames first
+        if hasattr(self, "cycle_fixed_frame") and self.cycle_fixed_frame is not None:
+            self.cycle_fixed_frame.grid_remove()
+        if hasattr(self, "cycle_edge_frame") and self.cycle_edge_frame is not None:
+            self.cycle_edge_frame.grid_remove()
+        if hasattr(self, "cycle_peak_frame") and self.cycle_peak_frame is not None:
+            self.cycle_peak_frame.grid_remove()
+        if hasattr(self, "cycle_max_frame") and self.cycle_max_frame is not None:
+            self.cycle_max_frame.grid_remove()
+
+        # Show relevant frames
+        if mode == "fixed_length":
+            self.cycle_fixed_frame.grid()
+        elif mode in {"rising_edge", "zero_crossing"}:
+            self.cycle_edge_frame.grid()
+            self.cycle_max_frame.grid()
+        elif mode == "peak":
+            self.cycle_peak_frame.grid()
+            self.cycle_max_frame.grid()
 
     def _ensure_current_summary(self) -> None:
         if self.session.last_summary is not None and self.session.last_summary_revision == self.session.working_revision:

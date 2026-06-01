@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from shared.documentation_links import DOCUMENTATION_LINKS
+from shared.status_widget import StatusBar
 from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
 
@@ -58,6 +59,10 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar.add_cascade(label="Help", menu=help_menu)
 
     app.root.config(menu=menu_bar)
+
+    # Status bar must be packed before the workspace so it anchors to the bottom.
+    app.status_bar = StatusBar(app.root, app.notifications)
+    app.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     workspace = ttk.Frame(app.root, padding=8)
     workspace.pack(fill=tk.BOTH, expand=True)
