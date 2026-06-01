@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from .models import AnalysisResult, DataFrameMap
+from .models import DataFrameMap
 from .summary import summarize_dataframe
 
 
@@ -23,14 +23,13 @@ def merge_selected_dataframes(
 def analyze_selected_dataframes(
     selected_paths: Sequence[str],
     data_frames: DataFrameMap,
-) -> AnalysisResult:
-    """Build a text analysis summary and merged dataframe for the selected files."""
+) -> str:
+    """Build a text analysis summary for the selected files."""
 
     merged = merge_selected_dataframes(selected_paths, data_frames)
     summary = summarize_dataframe(merged, include_details=False)
     file_summary = ", ".join(f"{os.path.basename(path)}:{len(data_frames[path])}" for path in selected_paths)
-    info_lines = [f"Files {len(selected_paths)} | {file_summary}", summary.overview_text]
-    return AnalysisResult(report_text="\n".join(info_lines), merged_frame=merged)
+    return "\n".join([f"Files {len(selected_paths)} | {file_summary}", summary.overview_text])
 
 
 def export_clean_dataframes(

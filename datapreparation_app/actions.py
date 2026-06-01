@@ -10,7 +10,6 @@ from .preparation import create_prepared_dataset as create_prepared_dataset_work
 from .plotting import PlotOptionsDialog, show_figure_in_window
 from .preview import refresh_preview_table, clear_preview_plot, clear_preview_table, refresh_preview_plot, refresh_preview_plot_signal_controls
 from data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
-from data_ops.models import AnalysisResult
 from shared.plot_utils import create_plot_figure
 
 def load_files(app) -> None:
@@ -58,11 +57,11 @@ def load_files(app) -> None:
 				messagebox.showerror("Error", "\n\n".join(error_messages))
 			return
 
-		analysis_result = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
+		report_text = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
 		select_dataset_in_table(app, loaded_file_paths[-1])
 		app._refresh_dataset_preparation_views()
 
-		summary_lines = [" | ".join(parse_info), analysis_result.report_text]
+		summary_lines = [" | ".join(parse_info), report_text]
 		if error_messages:
 			summary_lines.extend(["", "Warnings:", *error_messages])
 		messagebox.showinfo("Load summary", "\n".join(summary_lines))
@@ -281,7 +280,7 @@ def merge_selected_files(app) -> None:
 		refresh_dataset_table(app)
 		select_dataset_in_table(app, save_path)
 		app._refresh_dataset_preparation_views()
-		messagebox.showinfo("Saved", f"Merged file saved to:\n{save_path}")
+		app.notifications.success(f"Merged file saved to: {os.path.basename(save_path)}")
 
 	def _poll_merge_queue() -> None:
 		nonlocal worker_done, merged_result, error_message
@@ -337,7 +336,7 @@ def create_prepared_dataset(app) -> None:
 		messagebox.showerror("Create Dataset Error", str(error))
 		return
 	if prepared_path is not None:
-		messagebox.showinfo("Prepared Dataset", f"Created dataset:\n{os.path.basename(prepared_path)}")
+		app.notifications.success(f"Created dataset: {os.path.basename(prepared_path)}")
 
 def split_selected_dataset(app) -> None:
 	split_options = app._prompt_split_subframes_options()
@@ -353,14 +352,14 @@ def split_selected_dataset(app) -> None:
 	except Exception as error:
 		messagebox.showerror("Split Error", str(error))
 		return
-	messagebox.showinfo("Split Complete", f"Created {len(created_paths)} subframe dataset(s)")
+	app.notifications.success(f"Created {len(created_paths)} subframe dataset(s)")
 
 def open_analysis_workspace(app) -> None:
 	selected_path = app._get_single_selected_file_path("Select exactly one file first")
 	if selected_path is None:
 		return
 
-	from analysis_app import AnalysisWorkspace
+	from analysis_app.app import AnalysisWorkspace
 
 	workspace = AnalysisWorkspace(
 		app.root,
@@ -383,7 +382,7 @@ def unload_selected_files(app) -> None:
 
 	refresh_dataset_table(app)
 	app._refresh_dataset_preparation_views()
-	messagebox.showinfo("Unloaded", f"Unloaded {len(selected_file_paths)} file(s)")
+	app.notifications.success(f"Unloaded {len(selected_file_paths)} file(s)")
 
 def export_clean_data(app) -> None:
 	if not app.data_frames:
@@ -395,7 +394,7 @@ def export_clean_data(app) -> None:
 		return
 
 	exported_count = export_clean_dataframes(app.data_frames, output_dir)
-	messagebox.showinfo("Success", f"Exported {exported_count} files")
+	app.notifications.success(f"Exported {exported_count} files")
 
 def apply_selected_column_role(app) -> None:
 	selected_path = app._get_single_selected_file_path("Select exactly one dataset first")

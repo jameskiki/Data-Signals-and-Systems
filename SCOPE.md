@@ -77,6 +77,8 @@ This application is designed to analyze, visualize, and report on data from engi
 
 ### User Interface
 - Graphical user interface (GUI) for interactive analysis
+- Non-blocking status bar with severity-aware notifications (`NotificationManager`, `StatusBar`)
+- Cycle review workflow with interactive include/exclude of detected cycles
 
 ### Documentation & Help
 
@@ -130,4 +132,4 @@ All contributors are encouraged to add or update tests when modifying or extendi
 - Scope document should be referenced in prompt templates and developer documentation
 
 ---
-_Last updated: 2026-04-06_
+_Last updated: 2026-06-01_

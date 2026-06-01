@@ -14,14 +14,6 @@ SIGNAL_FILTER_OPERATIONS = [
 
 
 @dataclass(frozen=True)
-class AnalysisResult:
-    """Result of analyzing and merging selected dataframes."""
-
-    report_text: str
-    merged_frame: pd.DataFrame
-
-
-@dataclass(frozen=True)
 class DataSummary:
     """Computed overview, statistics, and correlations for one dataframe."""
 

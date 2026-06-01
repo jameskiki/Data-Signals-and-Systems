@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import pandas as pd
-import tkinter as tk
-from tkinter import ttk
+
+try:
+    import tkinter as tk
+    from tkinter import ttk
+except ImportError:  # headless environment (e.g. CI without a display)
+    tk = None  # type: ignore[assignment]
+    ttk = None  # type: ignore[assignment]
 
 
 COLUMN_ROLE_LABELS = {

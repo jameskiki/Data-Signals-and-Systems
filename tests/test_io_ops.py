@@ -57,18 +57,18 @@ class TestAnalyzeSelectedDataframes:
     def test_report_contains_file_count(self, sample_data_frames):
         paths = list(sample_data_frames.keys())
         result = analyze_selected_dataframes(paths, sample_data_frames)
-        assert "Files 2" in result.report_text
+        assert "Files 2" in result
 
     def test_report_contains_filenames(self, sample_data_frames):
         paths = list(sample_data_frames.keys())
         result = analyze_selected_dataframes(paths, sample_data_frames)
-        assert "file_a.csv" in result.report_text
-        assert "file_b.csv" in result.report_text
+        assert "file_a.csv" in result
+        assert "file_b.csv" in result
 
-    def test_merged_frame_has_all_rows(self, sample_data_frames):
+    def test_returns_string(self, sample_data_frames):
         paths = list(sample_data_frames.keys())
         result = analyze_selected_dataframes(paths, sample_data_frames)
-        assert len(result.merged_frame) == 5
+        assert isinstance(result, str)
 
 
 # ── export_clean_dataframes ──────────────────────────────────────────
