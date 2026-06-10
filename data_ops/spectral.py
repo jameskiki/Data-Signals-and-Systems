@@ -248,7 +248,8 @@ def compute_transfer_estimate(
     )
     denominator = np.maximum(np.abs(prepared["auto_input"]), 1e-12)
     transfer_values = prepared["cross_spectrum"] / denominator
-    amplitudes = np.abs(transfer_values)
+    linear_magnitude = np.abs(transfer_values)
+    amplitudes = 20.0 * np.log10(np.maximum(linear_magnitude, 1e-12))
     phase = np.angle(transfer_values)
     dominant_index = _get_dominant_frequency_index(amplitudes)
     peaks_frame = _build_peak_frame(prepared["frequencies"], amplitudes, peak_count)
@@ -272,9 +273,9 @@ def compute_transfer_estimate(
         amplitudes=amplitudes,
         phase=phase,
         peaks_frame=peaks_frame,
-        y_axis_label="|H(f)|",
+        y_axis_label="|H(f)| [dB]",
         plot_title=f"Transfer Estimate: {comparison_column} -> {source_column}",
-        value_column_label="|H|",
+        value_column_label="|H| [dB]",
     )
 
 

@@ -32,6 +32,17 @@ flowchart TB
 
 A dataset is one loaded table in the main window. A prepared dataset is a new in-app working copy derived from one selected source dataset. Column roles are lightweight semantic labels that help the app choose better defaults. The overview plot is an inspection view only, while the analysis workspace is the place for detailed work on one dataset at a time.
 
+## Plot Types
+
+The application intentionally keeps plot families limited to four core types:
+
+- `Preview Plot` in the main window (`Preview -> Plot`)
+- `Time-series Plot` in the analysis workspace live plot area
+- `Frequency Plot` in the analysis workspace result notebook
+- `Cycle Plot` in the analysis workspace result notebook
+
+There is also a `Plot Data` popup in the main window for quick ad-hoc inspection. Treat it as a utility window, not as an additional core plot type.
+
 ## Column Roles
 
 | Role | Meaning | Typical columns | Used for |
@@ -175,6 +186,8 @@ Select exactly one dataset, then use:
 The analysis workspace is for detailed work on one dataset at a time.
 
 The `Preview` tab shows the current working dataframe. `Filter` changes that working copy through three sub-tabs: Simple Filtering (min/max masking), Signal Processing (smoothing, high-pass, and Butterworth filters), and Resample (interpolation to a uniform time grid). `Derived Signals` creates new columns such as delta, derivative, detrend, integrate, rms_envelope, and hilbert_envelope. `Frequency` runs FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, or Spectrogram. `Cycles` detects repeated segments via fixed_length, rising_edge, zero_crossing, or peak detection. `Statistics` summarizes the current state with statistics and correlation views.
+
+If you want a focused read on cycle-analysis interpretation (what to read, where to find it, and how to judge quality), see [cycle-analysis-guide.md](cycle-analysis-guide.md).
 
 ## Step 8: Choose The Right Analysis Tool
 

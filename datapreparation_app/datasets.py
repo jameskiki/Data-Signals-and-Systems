@@ -103,9 +103,15 @@ def refresh_dataset_table(app) -> None:
             ),
         )
 
-    for path in selected_paths:
-        if app.dataset_table.exists(path):
+    valid_selected = {path for path in selected_paths if app.dataset_table.exists(path)}
+    if valid_selected:
+        for path in valid_selected:
             app.dataset_table.selection_add(path)
+    elif app.data_frames:
+        # Auto-select the first remaining dataset when the previously selected one was removed
+        first_path = next(iter(app.data_frames))
+        if app.dataset_table.exists(first_path):
+            app.dataset_table.selection_set(first_path)
 
 
 def select_dataset_in_table(app, file_path: str) -> None:

@@ -4,6 +4,19 @@
 
 Use the main window for structural preparation and the analysis workspace for detailed analysis.
 
+## Canonical Plot Types
+
+Keep plotting choices limited to these core types:
+
+- `Preview Plot` (main window `Preview -> Plot`)
+- `Time-series Plot` (analysis workspace live plot tab)
+- `Frequency Plot` (analysis workspace frequency-result plot tab)
+- `Cycle Plot` (analysis workspace cycle-result plot tab)
+
+Optional, non-core plotting surface:
+
+- `Ad-hoc Plot Window` via `Plot Data` in the main window (quick inspection dialog). This is a utility window, not a separate analysis plot family.
+
 ```mermaid
 flowchart TB
 	A[Start with one dataset] --> B{What do you need next?}

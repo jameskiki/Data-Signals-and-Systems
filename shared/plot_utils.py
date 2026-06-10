@@ -106,12 +106,12 @@ def create_overlay_figure(
                 linewidth=2,
             )
 
-    ax.set_title("Overlay Plot", fontsize=12)
-    ax.set_xlabel(x_label, fontsize=11)
-    ax.set_ylabel("Value", fontsize=11)
+    ax.set_title("Overlay Plot", fontsize=10)
+    ax.set_xlabel(x_label, fontsize=9)
+    ax.set_ylabel("Value", fontsize=9)
     if ax.lines:
-        ax.legend(fontsize=10, loc="upper right")
-    ax.grid(True)
+        ax.legend(fontsize=8, loc="upper right")
+    ax.grid(True, alpha=0.3)
     apply_numeric_axis_format(ax, format_x=True, format_y=True)
 
     x_limits = compute_shared_xlim(x_values_by_axis)
@@ -196,12 +196,12 @@ def plot_columns_on_axes(
                 markersize=2,
                 linewidth=2,
             )
-        ax.set_title(col_name, fontsize=12)
-        ax.set_xlabel(x_label, fontsize=11)
-        ax.set_ylabel("Value", fontsize=11)
+        ax.set_title(col_name, fontsize=10)
+        ax.set_xlabel(x_label, fontsize=9)
+        ax.set_ylabel("Value", fontsize=9)
         if ax.lines:
-            ax.legend(fontsize=10, loc="upper right")
-        ax.grid(True)
+            ax.legend(fontsize=8, loc="upper right")
+        ax.grid(True, alpha=0.3)
         apply_numeric_axis_format(ax, format_x=True, format_y=True)
     return x_values_by_axis
 

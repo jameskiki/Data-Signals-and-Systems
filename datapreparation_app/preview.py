@@ -67,7 +67,30 @@ def refresh_preview_plot(
     app._preview_plot_toolbar = NavigationToolbar2Tk(app._preview_plot_canvas, app._preview_plot_container)
     app._preview_plot_toolbar.update()
     app._preview_plot_toolbar.pack(side=tk.TOP, fill=tk.X)
-    app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+    _c, _f = app._preview_plot_canvas, app._preview_plot_figure
+    app.root.after_idle(lambda: app._sync_canvas_size(_c, _f))
+    app.root.after_idle(_c.draw)
+    # Replace (not add) the configure binding so repeated dataset switches
+    # don't accumulate stale handlers on the same container.
+    _container = app._preview_plot_container
+    _root = app.root
+    _job_attr = f"_resize_job_{id(_c)}"
+
+    def _on_configure(event):
+        if event.widget is not _container:
+            return
+        job = getattr(app, _job_attr, None)
+        if job is not None:
+            _root.after_cancel(job)
+
+        def _do_resize():
+            app._sync_canvas_size(_c, _c.figure)
+            _c.draw_idle()
+
+        setattr(app, _job_attr, _root.after(150, _do_resize))
+
+    _container.bind("<Configure>", _on_configure)
 
     # Attach SpanSelector for visual range picking (use the first axis)
     axes = figure.get_axes()

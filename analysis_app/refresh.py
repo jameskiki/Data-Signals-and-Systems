@@ -88,7 +88,8 @@ def refresh_filter_controls(workspace) -> None:
             workspace.frequency_compare_var.set(comparison_value)
         elif comparison_value == workspace.active_column_var.get() and len(numeric_columns) > 1:
             fallback = preferred_compare or comparison_value
-            workspace.frequency_compare_var.set(fallback)
+            if fallback != comparison_value:
+                workspace.frequency_compare_var.set(fallback)
 
     set_default_output_names(workspace)
     if hasattr(workspace, "_refresh_frequency_method_controls"):

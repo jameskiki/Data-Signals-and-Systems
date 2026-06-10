@@ -146,7 +146,7 @@ def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:
     workspace.signal_plot_tab = ttk.Frame(workspace.plot_notebook)
     workspace.frequency_plot_tab = ttk.Frame(workspace.plot_notebook)
     workspace.cycle_plot_tab = ttk.Frame(workspace.plot_notebook)
-    workspace.plot_notebook.add(workspace.signal_plot_tab, text="Signal Plot")
+    workspace.plot_notebook.add(workspace.signal_plot_tab, text="Time-series Plot")
     workspace.plot_notebook.add(workspace.frequency_plot_tab, text="Frequency Plot")
     workspace.plot_notebook.add(workspace.cycle_plot_tab, text="Cycle Plot")
 

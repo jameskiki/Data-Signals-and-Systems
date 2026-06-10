@@ -23,6 +23,15 @@ The application has two working areas:
 
 ## Features
 
+Canonical plotting is intentionally limited to four core types:
+
+- preview plot
+- time-series plot
+- frequency plot
+- cycle plot
+
+The main window also provides an ad-hoc `Plot Data` popup for quick inspection, but it is not a separate core plot family.
+
 - dataset import and summary views
 - preparation workflows for column-role assignment, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
@@ -144,7 +153,7 @@ The repository root is now intentionally kept thin: the launcher stays at the to
 
 ## Validation Status
 
-The project includes an automated test suite with 131 tests covering all `data_ops` modules: spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), and summary statistics.
+The project includes an automated test suite with 256 tests covering all `data_ops` modules plus app-layer orchestration and workflow integration checks. Coverage includes spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), summary statistics, preparation actions, analysis handlers, parser boundary behavior, and cross-module preparation-to-analysis workflows.
 
 Run the tests with:
 
@@ -153,6 +162,29 @@ python -m pytest tests/ -v
 ```
 
 The UI layer (Tkinter) is not unit-tested. Manual verification is still recommended for interactive workflows and engineering conclusions.
+
+## CI Test Gating
+
+The repository now includes a GitHub Actions workflow at `.github/workflows/tests.yml`.
+
+On every push and pull request, CI runs two checks:
+
+- `Unit and app-layer tests (3.12)`
+- `Integration workflow tests (3.12)`
+
+Commands:
+
+```powershell
+python -m pytest tests -q -k "not workflows_integration"
+python -m pytest tests/test_workflows_integration.py -q
+```
+
+The integration check is currently non-blocking in CI (`continue-on-error: true`) so it can be observed and stabilized first.
+
+To enforce strict merge gates via branch protection:
+
+1. Mark `Unit and app-layer tests (3.12)` as required now.
+2. Mark `Integration workflow tests (3.12)` as required after stabilization.
 
 ## Current Preparation Caveat
 

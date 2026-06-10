@@ -13,10 +13,15 @@ from tkinter import filedialog, messagebox, ttk
 from shared.documentation_links import open_documentation_path
 from shared.notifications import NotificationManager
 from .actions import (
-    build_derived_signal_update,
     build_reset_update,
-    build_signal_filter_update,
-    build_simple_filter_update,
+)
+from .handlers import (
+    apply_derived_signal,
+    apply_filter,
+    apply_resample,
+    apply_signal_filter,
+    compute_cycle_analysis,
+    compute_fft,
 )
 from .layout import build_analysis_workspace_ui
 from .refresh import (
@@ -39,11 +44,6 @@ from .views import render_correlation_view, render_dataframe_preview, render_fft
 from .views import render_cycle_metrics_tree
 from data_ops.cycles import (
     CycleAnalysisResult,
-    compute_fixed_length_cycle_analysis,
-    compute_cycle_analysis_from_ranges,
-    detect_peak_cycle_ranges,
-    detect_rising_edge_cycle_ranges,
-    detect_zero_crossing_cycle_ranges,
     rebuild_cycle_analysis_result,
 )
 from shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
@@ -55,25 +55,18 @@ from shared.column_roles import (
     summarize_column_roles,
     update_projected_column_roles,
 )
+from shared.base_app_shell import BaseAppShell
 from shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
 
 from data_ops.filtering import resolve_filtered_column_name
 from data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
-from data_ops.spectral import (
-    FrequencySpectrumResult,
-    SpectrogramResult,
-    compute_coherence_spectrum,
-    compute_fft_spectrum,
-    compute_spectrogram,
-    compute_transfer_estimate,
-    compute_welch_psd,
-)
+from data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from data_ops.summary import summarize_dataframe
 from shared.plot_utils import create_plot_figure
 
 
-class AnalysisWorkspace:
+class AnalysisWorkspace(BaseAppShell):
     """Tkinter window for filtering, deriving, plotting, and exporting one dataset."""
 
     def __init__(
@@ -184,14 +177,13 @@ class AnalysisWorkspace:
 
         build_analysis_workspace_ui(self)
         self.active_column_var.trace_add("write", self._handle_active_column_changed)
-        self.frequency_analysis_var.trace_add("write", self._handle_frequency_expectation_changed)
-        self.frequency_compare_var.trace_add("write", self._handle_frequency_expectation_changed)
-        self.plot_x_var.trace_add("write", self._handle_role_widget_selection_changed)
-        self.derived_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
-        self.fft_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
-        self.cycle_reference_var.trace_add("write", self._handle_role_widget_selection_changed)
-        self.signal_filter_operation_var.trace_add("write", self._handle_output_defaults_changed)
-        self.derived_operation_var.trace_add("write", self._handle_output_defaults_changed)
+        self._bind_write(self._handle_frequency_expectation_changed,
+                         self.frequency_analysis_var, self.frequency_compare_var)
+        self._bind_write(self._handle_role_widget_selection_changed,
+                         self.plot_x_var, self.derived_reference_var,
+                         self.fft_reference_var, self.cycle_reference_var)
+        self._bind_write(self._handle_output_defaults_changed,
+                         self.signal_filter_operation_var, self.derived_operation_var)
         self.cycle_mode_var.trace_add("write", lambda *_: self._refresh_cycle_method_controls())
         for metric_toggle_var in self.cycle_metric_toggle_vars.values():
             metric_toggle_var.trace_add("write", self._handle_cycle_metric_toggle_changed)
@@ -248,21 +240,28 @@ class AnalysisWorkspace:
     def _refresh_all_views(self, refresh_summary: bool = True) -> None:
         if refresh_summary:
             self._ensure_current_summary()
-        refresh_sidebar(self)
-        refresh_overview(self)
+        self._refresh_summary_widgets()
         self._refresh_preview()
         refresh_filter_controls(self)
-        self._refresh_statistics()
         refresh_plot_controls(self)
         self._refresh_frequency_expectation()
         self._refresh_frequency_method_controls()
         self._refresh_cycle_method_controls()
 
-    def _refresh_summary_views(self) -> None:
-        self._ensure_current_summary()
+    def _refresh_summary_widgets(self) -> None:
+        """Refresh sidebar labels, overview text, and statistics trees from the current session state.
+
+        Does not recompute the summary — call ``_ensure_current_summary`` first if needed.
+        Both ``_refresh_all_views`` and ``_refresh_summary_views`` delegate here so that
+        adding a new summary panel only requires one change in this method.
+        """
         refresh_sidebar(self)
         refresh_overview(self)
         self._refresh_statistics()
+
+    def _refresh_summary_views(self) -> None:
+        self._ensure_current_summary()
+        self._refresh_summary_widgets()
 
     def refresh_column_roles(self, column_roles: dict[str, str]) -> None:
         self.column_roles = dict(column_roles)
@@ -304,266 +303,22 @@ class AnalysisWorkspace:
         self._render_plot_figure(figure)
 
     def _apply_filter(self) -> None:
-        column = self.active_column_var.get().strip()
-        if not column:
-            messagebox.showwarning("Warning", "Select an active analysis column")
-            return
-
-        output_column = resolve_filtered_column_name(column, self.filter_output_name_var.get())
-
-        try:
-            update = build_simple_filter_update(
-                self.session.working_frame,
-                active_column=column,
-                output_name=self.filter_output_name_var.get(),
-                minimum_value=self.filter_min_var.get(),
-                maximum_value=self.filter_max_var.get(),
-                keep_missing=self.keep_missing_var.get(),
-            )
-        except Exception as error:
-            messagebox.showerror("Filter Error", str(error))
-            return
-
-        self._replace_working_frame(
-            update.dataframe,
-            update.history_entry,
-            role_overrides={output_column: self.column_roles.get(column, "signal")},
-            focus_column=output_column,
-        )
+        return apply_filter(self)
 
     def _apply_signal_filter(self) -> None:
-        source_column = self.active_column_var.get().strip()
-        operation = self.signal_filter_operation_var.get().strip()
-        if not source_column:
-            messagebox.showwarning("Warning", "Select an active analysis column")
-            return
-
-        output_column = resolve_filtered_column_name(source_column, self.signal_filter_name_var.get())
-
-        try:
-            update = build_signal_filter_update(
-                self.session.working_frame,
-                source_column=source_column,
-                operation=operation,
-                output_name=self.signal_filter_name_var.get(),
-                window_size=int(self.signal_filter_window_var.get() or "5"),
-                alpha=float(self.signal_filter_alpha_var.get() or "0.2"),
-                cutoff_hz=float(self.signal_filter_cutoff_var.get() or "10.0"),
-                sample_spacing=float(self.signal_filter_spacing_var.get() or "0.0"),
-                filter_order=int(self.signal_filter_order_var.get() or "4"),
-            )
-        except Exception as error:
-            messagebox.showerror("Signal Filter Error", str(error))
-            return
-
-        self._replace_working_frame(
-            update.dataframe,
-            update.history_entry,
-            role_overrides={output_column: self.column_roles.get(source_column, "signal")},
-            focus_column=output_column,
-        )
-        self.signal_filter_name_var.set("")
+        return apply_signal_filter(self)
 
     def _apply_resample(self) -> None:
-        time_column = self.resample_time_var.get().strip()
-        if not time_column or time_column == "Index":
-            messagebox.showwarning("Warning", "Select a time column for resampling")
-            return
-
-        try:
-            target_spacing = float(self.resample_spacing_var.get() or "1.0")
-            resampled = resample_to_uniform(
-                self.session.working_frame,
-                time_column=time_column,
-                target_spacing=target_spacing,
-            )
-        except Exception as error:
-            messagebox.showerror("Resample Error", str(error))
-            return
-
-        self._replace_working_frame(
-            resampled,
-            f"Resampled to uniform grid (spacing={target_spacing}) using {time_column}",
-        )
+        return apply_resample(self)
 
     def _apply_derived_signal(self) -> None:
-        source_column = self.active_column_var.get().strip()
-        operation = self.derived_operation_var.get().strip()
-        new_column = self.derived_name_var.get().strip()
-        reference_column = self.derived_reference_var.get().strip() or "Index"
-        if not source_column:
-            messagebox.showwarning("Warning", "Select an active analysis column")
-            return
-
-        try:
-            update = build_derived_signal_update(
-                self.session.working_frame,
-                source_column=source_column,
-                operation=operation,
-                new_column=new_column,
-                reference_column=None if reference_column == "Index" else reference_column,
-                window_size=int(self.derived_window_var.get() or "5"),
-            )
-        except Exception as error:
-            messagebox.showerror("Derived Signal Error", str(error))
-            return
-
-        derived_role = self.column_roles.get(source_column, "signal")
-        if derived_role == "time":
-            derived_role = "signal"
-        self._replace_working_frame(
-            update.dataframe,
-            update.history_entry,
-            role_overrides={new_column: derived_role},
-            focus_column=new_column,
-        )
-        self.derived_name_var.set("")
+        return apply_derived_signal(self)
 
     def _compute_fft(self) -> None:
-        source_column = self.active_column_var.get().strip()
-        if not source_column:
-            messagebox.showwarning("Warning", "Select an active analysis column")
-            return
-
-        reference_column = self.fft_reference_var.get().strip() or "Index"
-        analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
-        try:
-            common_kwargs = {
-                "dataframe": self.session.working_frame,
-                "source_column": source_column,
-                "reference_column": None if reference_column == "Index" else reference_column,
-                "sample_spacing": float(self.fft_sample_spacing_var.get() or "1.0"),
-                "window": self.fft_window_var.get().strip(),
-                "detrend": self.fft_detrend_var.get(),
-            }
-            if analysis_name == "Spectrogram":
-                spectrogram_result = compute_spectrogram(
-                    **common_kwargs,
-                    segment_length=int(self.welch_segment_length_var.get() or "256"),
-                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
-                )
-                self._render_spectrogram_result(spectrogram_result)
-                self.notifications.success(
-                    f"Computed Spectrogram for {source_column} "
-                    f"(segment={spectrogram_result.segment_length}, fs={spectrogram_result.sampling_frequency:.1f} Hz)"
-                )
-                return
-            elif analysis_name == "Welch PSD":
-                result = compute_welch_psd(
-                    **common_kwargs,
-                    segment_length=int(self.welch_segment_length_var.get() or "256"),
-                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
-                )
-            elif analysis_name == "Transfer Estimate":
-                result = compute_transfer_estimate(
-                    **common_kwargs,
-                    comparison_column=self.frequency_compare_var.get().strip(),
-                    segment_length=int(self.welch_segment_length_var.get() or "256"),
-                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
-                )
-            elif analysis_name == "Coherence":
-                result = compute_coherence_spectrum(
-                    **common_kwargs,
-                    comparison_column=self.frequency_compare_var.get().strip(),
-                    segment_length=int(self.welch_segment_length_var.get() or "256"),
-                    overlap_fraction=float(self.welch_overlap_fraction_var.get() or "0.5"),
-                )
-            else:
-                result = compute_fft_spectrum(**common_kwargs)
-        except Exception as error:
-            messagebox.showerror("Frequency Analysis Error", str(error))
-            return
-
-        self._render_fft_result(result)
-        self.notifications.success(
-            f"Computed {result.analysis_name} for {source_column} using {reference_column} with {result.window} window"
-        )
+        return compute_fft(self)
 
     def _compute_cycle_analysis(self) -> None:
-        source_column = self.active_column_var.get().strip()
-        if not source_column:
-            messagebox.showwarning("Warning", "Select an active analysis column")
-            return
-
-        time_column = self._get_cycle_time_column()
-
-        try:
-            cycle_length = int(self.cycle_length_var.get().strip() or "0")
-            max_cycles_text = self.cycle_max_cycles_var.get().strip()
-            max_cycles = int(max_cycles_text) if max_cycles_text else None
-            cycle_mode = self.cycle_mode_var.get().strip() or "fixed_length"
-            if cycle_mode == "rising_edge":
-                reference_column = self.cycle_reference_var.get().strip() or "Index"
-                threshold = float(self.cycle_threshold_var.get().strip() or "0.0")
-                resolved_reference = source_column if reference_column == "Index" else reference_column
-                cycle_ranges = detect_rising_edge_cycle_ranges(
-                    self.session.working_frame,
-                    reference_column=resolved_reference,
-                    threshold=threshold,
-                    min_cycle_length=cycle_length,
-                    max_cycles=max_cycles,
-                )
-                result = compute_cycle_analysis_from_ranges(
-                    self.session.working_frame,
-                    source_column=source_column,
-                    cycle_ranges=cycle_ranges,
-                    method="rising_edge",
-                    reference_column=resolved_reference,
-                    time_column=time_column,
-                )
-            elif cycle_mode == "zero_crossing":
-                reference_column = self.cycle_reference_var.get().strip() or "Index"
-                resolved_reference = source_column if reference_column == "Index" else reference_column
-                cycle_ranges = detect_zero_crossing_cycle_ranges(
-                    self.session.working_frame,
-                    reference_column=resolved_reference,
-                    direction="rising",
-                    min_cycle_length=cycle_length,
-                    max_cycles=max_cycles,
-                )
-                result = compute_cycle_analysis_from_ranges(
-                    self.session.working_frame,
-                    source_column=source_column,
-                    cycle_ranges=cycle_ranges,
-                    method="zero_crossing",
-                    reference_column=resolved_reference,
-                    time_column=time_column,
-                )
-            elif cycle_mode == "peak":
-                reference_column = self.cycle_reference_var.get().strip() or "Index"
-                resolved_reference = source_column if reference_column == "Index" else reference_column
-                prominence = float(self.cycle_prominence_var.get().strip() or "0.0")
-                cycle_ranges = detect_peak_cycle_ranges(
-                    self.session.working_frame,
-                    reference_column=resolved_reference,
-                    min_cycle_length=cycle_length,
-                    prominence=prominence,
-                    max_cycles=max_cycles,
-                )
-                result = compute_cycle_analysis_from_ranges(
-                    self.session.working_frame,
-                    source_column=source_column,
-                    cycle_ranges=cycle_ranges,
-                    method="peak",
-                    reference_column=resolved_reference,
-                    time_column=time_column,
-                )
-            else:
-                result = compute_fixed_length_cycle_analysis(
-                    self.session.working_frame,
-                    source_column=source_column,
-                    cycle_length=cycle_length,
-                    max_cycles=max_cycles,
-                    time_column=time_column,
-                )
-        except Exception as error:
-            messagebox.showerror("Cycle Analysis Error", str(error))
-            return
-
-        self._render_cycle_result(result)
-        self.notifications.success(
-            f"Analyzed {result.cycle_count} cycles of length {result.cycle_length} for {source_column}"
-        )
+        return compute_cycle_analysis(self)
 
     def _update_plot(self) -> None:
         selected_columns = self._get_selected_plot_y_columns()
@@ -612,16 +367,12 @@ class AnalysisWorkspace:
             self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
             self.window.after_idle(self._sync_plot_canvas_size)
             self.window.after_idle(self._plot_canvas.draw)
+            self._bind_canvas_resize(self.plot_container, self._plot_canvas, self.window)
 
     def _sync_plot_canvas_size(self) -> None:
         if self._plot_canvas is None or self._plot_figure is None:
             return
-        canvas_widget = self._plot_canvas.get_tk_widget()
-        canvas_widget.update_idletasks()
-        width = max(canvas_widget.winfo_width(), 1)
-        height = max(canvas_widget.winfo_height(), 1)
-        dpi = float(self._plot_figure.get_dpi() or 100.0)
-        self._plot_figure.set_size_inches(width / dpi, height / dpi, forward=True)
+        self._sync_canvas_size(self._plot_canvas, self._plot_figure)
 
     def _clear_plot_container(self) -> None:
         if self._plot_figure is not None:
@@ -699,6 +450,7 @@ class AnalysisWorkspace:
         if self._fft_canvas is not None:
             self._fft_canvas.figure = figure
             figure.canvas = self._fft_canvas
+            self._sync_canvas_size(self._fft_canvas, figure)
             self._fft_canvas.draw_idle()
             if self._fft_toolbar is not None:
                 self._fft_toolbar.update()
@@ -709,6 +461,10 @@ class AnalysisWorkspace:
             self._fft_toolbar.update()
             self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
             self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+            _c, _f = self._fft_canvas, figure
+            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
+            self.window.after_idle(_c.draw)
+            self._bind_canvas_resize(self.frequency_plot_container, self._fft_canvas, self.window)
         self.plot_notebook.select(self.frequency_plot_tab)
 
     def _clear_fft_results(self, message: str | None = None) -> None:
@@ -763,6 +519,7 @@ class AnalysisWorkspace:
         if self._fft_canvas is not None:
             self._fft_canvas.figure = figure
             figure.canvas = self._fft_canvas
+            self._sync_canvas_size(self._fft_canvas, figure)
             self._fft_canvas.draw_idle()
             if self._fft_toolbar is not None:
                 self._fft_toolbar.update()
@@ -773,6 +530,10 @@ class AnalysisWorkspace:
             self._fft_toolbar.update()
             self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
             self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+            _c, _f = self._fft_canvas, figure
+            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
+            self.window.after_idle(_c.draw)
+            self._bind_canvas_resize(self.frequency_plot_container, self._fft_canvas, self.window)
         self.plot_notebook.select(self.frequency_plot_tab)
 
     def _render_cycle_result(
@@ -875,8 +636,8 @@ class AnalysisWorkspace:
         ax_mid.plot(step_values, mean_values, color="#0f766e", linewidth=2.0, label="mean")
         if all_cycle_count >= 4:
             half = max(1, all_cycle_count // 2)
-            early_mean = np.nanmean(all_cycles[:half], axis=0)
-            late_mean = np.nanmean(all_cycles[-half:], axis=0)
+            early_mean = pd.DataFrame(all_cycles[:half]).mean(axis=0, skipna=True).to_numpy(dtype=float)
+            late_mean = pd.DataFrame(all_cycles[-half:]).mean(axis=0, skipna=True).to_numpy(dtype=float)
             ax_mid.plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
             ax_mid.plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
         support_axis = None
@@ -966,7 +727,12 @@ class AnalysisWorkspace:
             self._cycle_toolbar.update()
             self._cycle_toolbar.pack(side=tk.TOP, fill=tk.X)
             self._cycle_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
+            _c, _f = self._cycle_canvas, self._cycle_figure
+            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
+            self.window.after_idle(_c.draw)
+            self._bind_canvas_resize(self.cycle_plot_container, self._cycle_canvas, self.window)
         else:
+            self._sync_canvas_size(self._cycle_canvas, self._cycle_figure)
             self._cycle_canvas.draw()
         self.notebook.select(self.cycles_tab)
         self.plot_notebook.select(self.cycle_plot_tab)

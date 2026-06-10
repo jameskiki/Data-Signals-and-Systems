@@ -3,6 +3,7 @@ from .actions import (
     load_demo_test_signal,
     load_demo_input_output_signal,
     load_all_demo_test_signals,
+    _load_demo_dataset as _actions_load_demo_dataset,
     plot_selected_data,
     merge_selected_files,
     create_prepared_dataset,
@@ -28,17 +29,14 @@ from .datasets import (
     DatasetContext,
     apply_literal_role_combobox_style,
     apply_role_combobox_style,
-    build_virtual_dataset_path,
     format_source_paths,
     get_available_column_roles,
     get_column_role_cell_colors,
     get_preferred_role_column,
     infer_column_roles,
     refresh_dataset_table,
-    register_dataset,
     select_dataset_in_table,
 )
-from .demo import create_demo_dataset
 from .layout import build_main_ui
 from .plotting import show_figure_in_window
 from .preview import (
@@ -53,6 +51,7 @@ from .preview import (
 )
 from shared.column_roles import summarize_column_roles
 from shared.documentation_links import open_documentation_path
+from shared.base_app_shell import BaseAppShell
 from shared.notifications import NotificationManager
 from .state import (
     APP_TITLE,
@@ -67,7 +66,7 @@ from .state import (
 )
 
 
-class DataAnalysisApp:
+class DataAnalysisApp(BaseAppShell):
     """Tkinter application for data parsing and structural preparation."""
 
     def __init__(self, root: tk.Tk) -> None:
@@ -96,7 +95,6 @@ class DataAnalysisApp:
 
         self.selected_dataset_var = tk.StringVar(value="No dataset selected")
         self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")
-        self.dataset_source_var = tk.StringVar(value="")
         self.dataset_source_var = tk.StringVar(value="")
         self.dataset_note_var = tk.StringVar(value="")
 
@@ -131,8 +129,8 @@ class DataAnalysisApp:
         self.column_output_name_var.trace_add("write", self._handle_output_dataset_name_changed)
         self.role_editor_column_var.trace_add("write", self._handle_role_editor_column_changed)
         self.role_editor_value_var.trace_add("write", self._handle_role_editor_value_changed)
-        self.row_range_start_var.trace_add("write", self._handle_row_range_changed)
-        self.row_range_end_var.trace_add("write", self._handle_row_range_changed)
+        self._bind_write(self._handle_row_range_changed,
+                         self.row_range_start_var, self.row_range_end_var)
         self._refresh_dataset_preparation_views()
 
     def _set_selected_dataset_path(self, dataset_path: str | None) -> None:
@@ -208,36 +206,7 @@ class DataAnalysisApp:
         return load_all_demo_test_signals(self)
 
     def _load_demo_dataset(self, demo_key: str, show_message: bool = True) -> str:
-        spec, dataframe = create_demo_dataset(demo_key)
-        demo_source_path = os.path.join(os.getcwd(), spec.basename)
-        dataset_path = build_virtual_dataset_path(self.data_frames, demo_source_path, spec.suffix)
-
-        register_dataset(
-            self,
-            dataset_path,
-            dataframe,
-            source_paths=[demo_source_path],
-            description=spec.description,
-            column_roles=spec.column_roles,
-        )
-
-        if show_message:
-            refresh_dataset_table(self)
-            select_dataset_in_table(self, dataset_path)
-            self._refresh_dataset_preparation_views()
-            messagebox.showinfo(
-                "Demo/Test Signal Loaded",
-                "\n".join(
-                    [
-                        f"Created synthetic validation dataset:\n{os.path.basename(dataset_path)}",
-                        "",
-                        spec.summary,
-                        "",
-                        f"Rows: {len(dataframe)}",
-                    ]
-                ),
-            )
-        return dataset_path
+        return _actions_load_demo_dataset(self, demo_key, show_message=show_message)
 
     def plot_selected_data(self) -> None:
         return plot_selected_data(self)
@@ -480,30 +449,40 @@ class DataAnalysisApp:
     ) -> pd.DataFrame:
         time_values = pd.to_numeric(dataframe[time_col], errors="coerce")
         mask = pd.Series(True, index=dataframe.index)
+        invalid_inputs: list[str] = []
         try:
             if start_text:
                 mask &= time_values >= float(start_text)
         except ValueError:
-            pass
+            invalid_inputs.append(f"start '{start_text}'")
         try:
             if end_text:
                 mask &= time_values <= float(end_text)
         except ValueError:
-            pass
+            invalid_inputs.append(f"end '{end_text}'")
+        if invalid_inputs:
+            self.notifications.warning(f"Invalid range value ({', '.join(invalid_inputs)}) — expected a number. Filter not applied.")
+            return dataframe
         filtered = dataframe.loc[mask].reset_index(drop=True)
         return filtered if not filtered.empty else dataframe
 
     def _filter_by_index_range(
         self, dataframe: pd.DataFrame, start_text: str, end_text: str,
     ) -> pd.DataFrame:
+        invalid_inputs: list[str] = []
         try:
             start_idx = int(start_text) if start_text else 0
         except ValueError:
+            invalid_inputs.append(f"start '{start_text}'")
             start_idx = 0
         try:
             end_idx = int(end_text) if end_text else len(dataframe)
         except ValueError:
+            invalid_inputs.append(f"end '{end_text}'")
             end_idx = len(dataframe)
+        if invalid_inputs:
+            self.notifications.warning(f"Invalid range value ({', '.join(invalid_inputs)}) — expected an integer. Filter not applied.")
+            return dataframe
         start_idx = max(0, min(start_idx, len(dataframe)))
         end_idx = max(start_idx, min(end_idx, len(dataframe)))
         filtered = dataframe.iloc[start_idx:end_idx].reset_index(drop=True)

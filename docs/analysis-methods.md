@@ -170,6 +170,8 @@ Reproducible demo examples:
 
 For the formal note on the current cycle workflow, see [latex/cycle_analysis_example.pdf](latex/cycle_analysis_example.pdf).
 
+For a practical interpretation guide with annotated screenshots (controls, metrics table, representative cycle, and cycle-to-cycle trends), see [cycle-analysis-guide.md](cycle-analysis-guide.md).
+
 ## Statistics
 
 The statistics tab is a read-only summary of the current working dataframe.

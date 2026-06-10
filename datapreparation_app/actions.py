@@ -120,23 +120,29 @@ def load_demo_input_output_signal(app) -> None:
 
 def load_all_demo_test_signals(app) -> None:
 	loaded_paths: list[str] = []
+	failed_keys: list[str] = []
 	for spec in DEMO_DATASET_SPECS:
-		dataset_path = _load_demo_dataset(app, spec.key, show_message=False)
-		loaded_paths.append(dataset_path)
+		try:
+			dataset_path = _load_demo_dataset(app, spec.key, show_message=False)
+			loaded_paths.append(dataset_path)
+		except Exception as error:
+			failed_keys.append(f"- {spec.key}: {error}")
 
 	refresh_dataset_table(app)
 	if loaded_paths:
 		select_dataset_in_table(app, loaded_paths[-1])
 	app._refresh_dataset_preparation_views()
-	messagebox.showinfo(
-		"Demo/Test Signals Loaded",
-		"\n".join(
-			[
-				f"Loaded {len(loaded_paths)} synthetic validation datasets:",
-				*[f"- {os.path.basename(path)}" for path in loaded_paths],
-			]
-		),
-	)
+
+	summary_lines = [f"Loaded {len(loaded_paths)} synthetic validation dataset(s):"]
+	summary_lines += [f"- {os.path.basename(path)}" for path in loaded_paths]
+	if failed_keys:
+		summary_lines += ["", f"Failed to load {len(failed_keys)} dataset(s):"]
+		summary_lines += failed_keys
+
+	if failed_keys:
+		messagebox.showwarning("Demo/Test Signals Loaded (with errors)", "\n".join(summary_lines))
+	else:
+		messagebox.showinfo("Demo/Test Signals Loaded", "\n".join(summary_lines))
 
 def _load_demo_dataset(app, demo_key: str, show_message: bool = True) -> str:
 	spec, dataframe = create_demo_dataset(demo_key)
@@ -412,3 +418,8 @@ def apply_selected_column_role(app) -> None:
 		return
 
 	context.column_roles[column_name] = role_name
+
+	app._set_role_editor_column("", update_var=True)
+	app._set_role_editor_value("", update_var=True)
+	app._refresh_dataset_preparation_views()
+	app.notifications.success(f"Role '{role_name}' applied to column '{column_name}'")
