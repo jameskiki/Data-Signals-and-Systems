@@ -3,15 +3,10 @@
 
 a = Analysis(
     ['EvalData.py'],
-    pathex=['Source'],
+    pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[
-        'Source.analysis_app',
-        'Source.datapreparation_app',
-        'Source.data_ops',
-        'Source.shared',
-    ],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

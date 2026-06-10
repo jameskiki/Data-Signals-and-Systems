@@ -84,6 +84,27 @@ def get_default_plot_style() -> PlotStyle:
     return PlotStyle()
 
 
+def get_cycle_time_column(workspace) -> str | None:
+    """Resolve the best available time column for cycle-duration metrics."""
+
+    available_columns = [str(column) for column in workspace.session.working_frame.columns]
+    preferred_time_column = get_preferred_role_column(
+        workspace.column_roles,
+        "time",
+        available_columns=available_columns,
+    )
+    if preferred_time_column:
+        return preferred_time_column
+
+    # Fall back to the user-selected resample time column when no role is assigned.
+    if getattr(workspace, "resample_time_var", None) is not None:
+        resample_time_column = workspace.resample_time_var.get().strip()
+        if resample_time_column and resample_time_column != "Index" and resample_time_column in available_columns:
+            return resample_time_column
+
+    return None
+
+
 def render_plot_figure(workspace, figure: plt.Figure) -> None:
     workspace._render_embedded_figure(
         figure=figure,

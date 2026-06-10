@@ -71,8 +71,18 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     workspace.rowconfigure(1, weight=1)
 
     build_dataset_selector(app, workspace)
-    build_info_tab(app, workspace)
-    build_preview_views_notebook(app, workspace, preview_row_limit)
+
+    content_pane = ttk.Panedwindow(workspace, orient=tk.HORIZONTAL)
+    content_pane.grid(row=1, column=0, columnspan=2, sticky="nsew")
+
+    manipulations_frame = ttk.LabelFrame(content_pane, text="Preparation")
+    preview_frame = ttk.LabelFrame(content_pane, text="Preview")
+
+    content_pane.add(manipulations_frame, weight=3)
+    content_pane.add(preview_frame, weight=5)
+
+    build_manipulations_frame(app, manipulations_frame)
+    build_preview_content(app, preview_frame, preview_row_limit)
 
 
 def build_dataset_selector(app, parent: ttk.Frame) -> None:
@@ -125,11 +135,9 @@ def build_info_tab(app, parent: ttk.Frame) -> None:
     manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=0)
     build_manipulations_frame(app, manipulations_frame)
 
-def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int) -> None:
-    """Build the right-side notebook for plot and table previews."""
+def build_preview_content(app, preview_frame: ttk.Frame, preview_row_limit: int) -> None:
+    """Build the right-side notebook content for plot and table previews."""
 
-    preview_frame = ttk.LabelFrame(parent, text="Preview")
-    preview_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 0))
     preview_frame.columnconfigure(0, weight=1)
     preview_frame.rowconfigure(0, weight=1)
 
@@ -143,6 +151,14 @@ def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int)
 
     build_preview_plot_tab(app, plot_tab)
     build_preview_table_tab(app, table_tab, preview_row_limit)
+
+
+def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int) -> None:
+    """Build the right-side notebook for plot and table previews."""
+
+    preview_frame = ttk.LabelFrame(parent, text="Preview")
+    preview_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 0))
+    build_preview_content(app, preview_frame, preview_row_limit)
 
 
 def build_preview_plot_tab(app, parent: ttk.Frame) -> None:
