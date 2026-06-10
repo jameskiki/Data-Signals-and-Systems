@@ -8,9 +8,12 @@
 - Applied shared axis presentation helpers to specialized Frequency and Cycle plots while preserving existing analytical layouts.
 - Consolidated embedded Tk/matplotlib canvas lifecycle handling into `shared/base_app_shell.py` and adopted it in analysis and datapreparation preview rendering.
 - Added debounced resize synchronization for the ad-hoc `Plot Data` detached window.
+- Datapreparation row-range handling now supports datetime-like time columns consistently when using preview drag-select (`SpanSelector`) and manual range entry.
+- Removed unused helper code and orphan scripts (`Scripts/bench_perf.py`, `Scripts/profile_view.py`, unreferenced listbox role-color helper).
 
 ### Added
 - Direct unit coverage for embedded figure lifecycle helper create/reuse behavior in `tests/test_base_app_shell.py`.
+- Focused datapreparation row-range regression coverage in `Tests/test_dataprep_row_range.py` (numeric and datetime range parsing, including Matplotlib span coordinates).
 
 ## [v0.3.0] - 2026-05-12
 

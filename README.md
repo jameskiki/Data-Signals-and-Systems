@@ -154,7 +154,7 @@ The repository root is now intentionally kept thin: the launcher stays at the to
 
 ## Validation Status
 
-The project includes an automated test suite with 261 tests covering all `data_ops` modules plus app-layer orchestration and workflow integration checks. Coverage includes spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), summary statistics, preparation actions, analysis handlers, parser boundary behavior, shared plotting/lifecycle utilities, and cross-module preparation-to-analysis workflows.
+The project includes an automated test suite with 274 tests covering all `data_ops` modules plus app-layer orchestration and workflow integration checks. Coverage includes spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), summary statistics, preparation actions, analysis handlers, parser boundary behavior, shared plotting/lifecycle utilities, datapreparation row-range behavior, and cross-module preparation-to-analysis workflows.
 
 Run the tests with:
 
@@ -189,9 +189,9 @@ To enforce strict merge gates via branch protection:
 1. Mark `Import boundary checks (3.12)` and `Unit and app-layer tests (3.12)` as required now.
 2. Mark `Integration workflow tests (3.12)` as required after stabilization.
 
-## Current Preparation Caveat
+## Current Preparation Behavior
 
-Prepared dataset creation currently copies the full selected dataset and optionally keeps only the chosen columns. The overview plot is an inspection aid, not a row-trimming control. If you need separate row windows as standalone datasets, use `Preparation -> Split Into Subframes`.
+Prepared dataset creation supports both channel selection and optional row-range selection. You can type range bounds manually or drag-select a range directly in the preview plot to populate the row-range fields. If no range is provided, the full dataset is used. Use `Preparation -> Split Into Subframes` when you need multiple explicit row windows created in one operation.
 
 ## Documentation Approach
 

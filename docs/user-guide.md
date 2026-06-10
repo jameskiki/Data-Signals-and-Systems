@@ -30,7 +30,7 @@ flowchart TB
 
 ## Main Concepts
 
-A dataset is one loaded table in the main window. A prepared dataset is a new in-app working copy derived from one selected source dataset. Column roles are lightweight semantic labels that help the app choose better defaults. The overview plot is an inspection view only, while the analysis workspace is the place for detailed work on one dataset at a time.
+A dataset is one loaded table in the main window. A prepared dataset is a new in-app working copy derived from one selected source dataset. Column roles are lightweight semantic labels that help the app choose better defaults. The overview plot is primarily an inspection view and also supports drag-selecting row ranges for preparation. The analysis workspace is the place for detailed work on one dataset at a time.
 
 ## Plot Types
 
@@ -152,10 +152,10 @@ If you do not select any channel subset, all columns are kept.
 
 Important:
 
-- Row trimming is not part of prepared dataset creation.
+- Row-range filtering is optional during prepared dataset creation.
 - Column trimming is optional via channel selection.
-- The overview plot is for inspection only.
-- For row-based segmentation, use `Preparation -> Split Into Subframes`.
+- You can fill row-range bounds manually or by dragging in the overview plot.
+- For creating multiple explicit row windows in one step, use `Preparation -> Split Into Subframes`.
 
 ## Step 5: Create A Prepared Dataset
 
