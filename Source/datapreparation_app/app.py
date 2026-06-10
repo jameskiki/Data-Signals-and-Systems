@@ -18,6 +18,7 @@ from .actions import (
 
 import os
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import pandas as pd
@@ -53,6 +54,7 @@ from Source.shared.column_roles import summarize_column_roles
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.base_app_shell import BaseAppShell
 from Source.shared.notifications import NotificationManager
+from Source.shared.plot_utils import normalize_x_values
 from .state import (
     APP_TITLE,
     WINDOW_GEOMETRY,
@@ -447,17 +449,44 @@ class DataPreparationApp(BaseAppShell):
     def _filter_by_time_range(
         self, dataframe: pd.DataFrame, time_col: str, start_text: str, end_text: str,
     ) -> pd.DataFrame:
-        time_values = pd.to_numeric(dataframe[time_col], errors="coerce")
+        time_values = normalize_x_values(dataframe[time_col])
         mask = pd.Series(True, index=dataframe.index)
         invalid_inputs: list[str] = []
+
+        if pd.api.types.is_datetime64_any_dtype(time_values):
+            normalized_time_values = pd.to_datetime(time_values, errors="coerce", utc=True).dt.tz_localize(None)
+            start_dt = self._coerce_datetime_range_value(start_text) if start_text else None
+            end_dt = self._coerce_datetime_range_value(end_text) if end_text else None
+
+            if start_text:
+                if start_dt is None:
+                    invalid_inputs.append(f"start '{start_text}'")
+                else:
+                    mask &= normalized_time_values >= start_dt
+            if end_text:
+                if end_dt is None:
+                    invalid_inputs.append(f"end '{end_text}'")
+                else:
+                    mask &= normalized_time_values <= end_dt
+
+            if invalid_inputs:
+                self.notifications.warning(
+                    f"Invalid range value ({', '.join(invalid_inputs)}) — expected a datetime value. Filter not applied."
+                )
+                return dataframe
+
+            filtered = dataframe.loc[mask].reset_index(drop=True)
+            return filtered if not filtered.empty else dataframe
+
+        numeric_time_values = pd.to_numeric(time_values, errors="coerce")
         try:
             if start_text:
-                mask &= time_values >= float(start_text)
+                mask &= numeric_time_values >= float(start_text)
         except ValueError:
             invalid_inputs.append(f"start '{start_text}'")
         try:
             if end_text:
-                mask &= time_values <= float(end_text)
+                mask &= numeric_time_values <= float(end_text)
         except ValueError:
             invalid_inputs.append(f"end '{end_text}'")
         if invalid_inputs:
@@ -465,6 +494,20 @@ class DataPreparationApp(BaseAppShell):
             return dataframe
         filtered = dataframe.loc[mask].reset_index(drop=True)
         return filtered if not filtered.empty else dataframe
+
+    def _coerce_datetime_range_value(self, raw_value: str) -> pd.Timestamp | None:
+        parsed_value = pd.to_datetime(raw_value, errors="coerce", utc=True)
+        if pd.notna(parsed_value):
+            return pd.Timestamp(parsed_value).tz_localize(None)
+        try:
+            span_as_datetime = pd.to_datetime(mdates.num2date(float(raw_value)), utc=True)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        return pd.Timestamp(span_as_datetime).tz_localize(None)
+
+    def _format_span_time_value(self, span_value: float) -> str:
+        timestamp = pd.Timestamp(mdates.num2date(span_value)).tz_convert("UTC").tz_localize(None)
+        return timestamp.isoformat(sep=" ", timespec="seconds")
 
     def _filter_by_index_range(
         self, dataframe: pd.DataFrame, start_text: str, end_text: str,
@@ -509,12 +552,21 @@ class DataPreparationApp(BaseAppShell):
             return
         context = self.dataset_contexts.get(selected_path, DatasetContext())
         time_col = self._get_time_column(context.column_roles)
+        range_start, range_end = sorted((float(start_val), float(end_val)))
 
         self._row_range_update_in_progress = True
         if time_col is not None:
-            self._set_row_range_values(f"{start_val:.6g}", f"{end_val:.6g}")
+            source_frame = self.data_frames[selected_path]
+            normalized_time_values = normalize_x_values(source_frame[time_col])
+            if pd.api.types.is_datetime64_any_dtype(normalized_time_values):
+                self._set_row_range_values(
+                    self._format_span_time_value(range_start),
+                    self._format_span_time_value(range_end),
+                )
+            else:
+                self._set_row_range_values(f"{range_start:.6g}", f"{range_end:.6g}")
         else:
-            self._set_row_range_values(str(int(round(start_val))), str(int(round(end_val))))
+            self._set_row_range_values(str(int(round(range_start))), str(int(round(range_end))))
         self._row_range_update_in_progress = False
 
         # Update only the table preview, not the plot
