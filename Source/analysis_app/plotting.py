@@ -426,20 +426,3 @@ def render_cycle_plot(workspace, result: CycleAnalysisResult) -> None:
     )
     workspace.notebook.select(workspace.cycles_tab)
     workspace.plot_notebook.select(workspace.cycle_plot_tab)
-
-
-def get_cycle_time_column(workspace) -> str | None:
-    preferred_time_column = get_preferred_role_column(
-        workspace.column_roles,
-        "time",
-        available_columns=list(workspace.session.working_frame.columns),
-    )
-    candidate_columns = [
-        preferred_time_column or "",
-        workspace.plot_x_var.get().strip(),
-        getattr(workspace.session, "selected_x_column", "").strip(),
-    ]
-    for column_name in candidate_columns:
-        if column_name and column_name != "Index" and column_name in workspace.session.working_frame.columns:
-            return column_name
-    return None

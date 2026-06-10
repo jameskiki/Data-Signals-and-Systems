@@ -186,19 +186,6 @@ def sort_columns_by_role(columns: list[str], column_roles: dict[str, str]) -> li
     )
 
 
-def colorize_listbox_by_role(listbox: tk.Listbox | None, values: list[str], column_roles: dict[str, str]) -> None:
-    """Apply per-row role-aware colors to a Tk listbox."""
-
-    if listbox is None:
-        return
-
-    listbox.configure(selectforeground="#111111")
-    for index, value in enumerate(values):
-        role_name = "metadata" if value == "Index" else get_column_role(column_roles, value)
-        background, foreground = get_column_role_cell_colors(role_name)
-        listbox.itemconfig(index, background=background, foreground=foreground)
-
-
 def apply_role_combobox_style(
     combobox: ttk.Combobox | None,
     column_roles: dict[str, str],

@@ -10,7 +10,6 @@ import tkinter as tk
 from Source.shared.column_roles import (
     apply_literal_role_combobox_style,
     apply_role_combobox_style,
-    colorize_listbox_by_role,
     get_available_column_roles,
     get_column_role,
     get_column_role_cell_colors,
