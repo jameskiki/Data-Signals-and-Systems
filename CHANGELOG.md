@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Consolidated plotting presentation under a shared contract in `shared/plot_options.py` and `shared/plot_utils.py`.
+- Unified Preview and Analysis time-series generic plotting behavior (labels/grid/legend/format defaults now come from shared contract fields).
+- Applied shared axis presentation helpers to specialized Frequency and Cycle plots while preserving existing analytical layouts.
+- Consolidated embedded Tk/matplotlib canvas lifecycle handling into `shared/base_app_shell.py` and adopted it in analysis and datapreparation preview rendering.
+- Added debounced resize synchronization for the ad-hoc `Plot Data` detached window.
+
+### Added
+- Direct unit coverage for embedded figure lifecycle helper create/reuse behavior in `tests/test_base_app_shell.py`.
+
 ## [v0.3.0] - 2026-05-12
 
 ### Added

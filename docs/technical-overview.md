@@ -143,6 +143,40 @@ Files are parsed into in-memory dataframes and registered in the main window. Th
 
 That split matters because UI state stays in the window packages, while the reusable calculations stay in `data_ops/*`.
 
+## Plotting Architecture Consistency
+
+The plotting layer now follows a shared consistency model to reduce concept drift between main-window preview plotting and analysis workspace plotting.
+
+### Shared Plot Contract
+
+- `shared/plot_options.py` defines the plotting contract used by generic plot builders.
+- `PlotOptions` now includes shared presentation fields (for example title, y-label, subplot columns, style contract).
+- `PlotStyle` centralizes default grid, legend, font-size, marker, and line-width behavior for generic plotting.
+
+### Shared Generic Rendering
+
+- `shared/plot_utils.py` is the single implementation for generic overlay/subplot figures.
+- The same axis contract helper is used to apply title/x/y labels and baseline grid/legend behavior.
+- Preview plot and analysis time-series plotting both flow through this shared generic path.
+
+### Specialized Families Under Shared Rules
+
+- Frequency and Cycle plots remain specialized renderers in `analysis_workspace/window.py` because their analytical layouts are domain-specific.
+- Even so, they now consume shared axis presentation helpers so baseline labeling/grid semantics stay aligned with generic plots.
+- This keeps analytical intent intact while reducing style/label inconsistency.
+
+### Shared Embedded Figure Lifecycle
+
+- `shared/base_app_shell.py` provides a shared embedded-figure lifecycle helper for Tk/matplotlib integration.
+- Analysis workspace (time-series, frequency, cycle canvases) and datapreparation preview plotting now use this shared helper.
+- The ad-hoc detached plot window uses debounced resize synchronization for consistent figure-to-container sizing behavior.
+
+### Validation Impact
+
+- Direct unit coverage exists for embedded figure create/reuse behavior in `tests/test_base_app_shell.py`.
+- Generic plotting contract behavior is covered in `tests/test_plot_utils.py`.
+- End-to-end workflow checks remain in integration tests under `tests/test_workflows_integration.py`.
+
 ## Packaging And Build
 
 `requirements.txt` defines the dependency baseline. `deploy.py` is the convenience bootstrap/build script. `EvalData.spec` supports PyInstaller packaging work. `.vscode/launch.json` provides a shared debug configuration that starts `EvalData.py` from the repository root.

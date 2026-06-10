@@ -94,3 +94,101 @@ class BaseAppShell:
         """
         for var in vars:
             var.trace_add("write", handler)
+
+    def _render_embedded_figure(
+        self,
+        *,
+        figure,
+        figure_attr: str,
+        canvas_attr: str,
+        toolbar_attr: str,
+        container,
+        root_window,
+        draw_idle_on_reuse: bool,
+        clear_container_before_create: bool = False,
+    ) -> None:
+        """Render a matplotlib figure in a Tk container with shared lifecycle behavior.
+
+        Reuses an existing canvas/toolbar when present, otherwise creates and binds
+        resize handling once during first initialization.
+        """
+
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+        import matplotlib.pyplot as plt
+
+        existing_figure = getattr(self, figure_attr)
+        existing_canvas = getattr(self, canvas_attr)
+        existing_toolbar = getattr(self, toolbar_attr)
+
+        def _is_widget_alive(widget, expected_master) -> bool:
+            if widget is None:
+                return False
+            if not hasattr(widget, "winfo_exists"):
+                return False
+            try:
+                if not bool(widget.winfo_exists()):
+                    return False
+            except Exception:
+                return False
+            return getattr(widget, "master", None) is expected_master
+
+        if existing_canvas is not None:
+            canvas_widget = existing_canvas.get_tk_widget()
+            canvas_is_alive = _is_widget_alive(canvas_widget, container)
+            toolbar_is_alive = existing_toolbar is None or _is_widget_alive(existing_toolbar, container)
+            can_reuse_canvas = canvas_is_alive and toolbar_is_alive and existing_figure is figure
+
+            if can_reuse_canvas:
+                setattr(self, figure_attr, figure)
+                existing_canvas.figure = figure
+                figure.canvas = existing_canvas
+                self._sync_canvas_size(existing_canvas, figure)
+                if draw_idle_on_reuse:
+                    existing_canvas.draw_idle()
+                else:
+                    existing_canvas.draw()
+                if existing_toolbar is not None:
+                    existing_toolbar.canvas = existing_canvas
+                    existing_toolbar.update()
+                return
+
+            # Recreate stale widgets, or recreate on figure swap to avoid Tk/matplotlib
+            # callback drift after replacing a figure object under an existing toolbar.
+            if existing_toolbar is not None and hasattr(existing_toolbar, "destroy"):
+                try:
+                    existing_toolbar.destroy()
+                except Exception:
+                    pass
+            try:
+                if _is_widget_alive(canvas_widget, container):
+                    canvas_widget.destroy()
+            except Exception:
+                pass
+            existing_canvas = None
+            existing_toolbar = None
+            setattr(self, canvas_attr, None)
+            setattr(self, toolbar_attr, None)
+
+        if existing_figure is not None and existing_figure is not figure:
+            plt.close(existing_figure)
+
+        setattr(self, figure_attr, figure)
+
+        if clear_container_before_create:
+            for widget in container.winfo_children():
+                widget.destroy()
+
+        canvas = FigureCanvasTkAgg(figure, master=container)
+        canvas.draw()
+        toolbar = NavigationToolbar2Tk(canvas, container)
+        toolbar.update()
+        toolbar.pack(side="top", fill="x")
+        canvas.get_tk_widget().pack(fill="both", expand=True, side="bottom")
+
+        setattr(self, canvas_attr, canvas)
+        setattr(self, toolbar_attr, toolbar)
+
+        _canvas, _figure = canvas, figure
+        root_window.after_idle(lambda: self._sync_canvas_size(_canvas, _figure))
+        root_window.after_idle(_canvas.draw)
+        self._bind_canvas_resize(container, canvas, root_window)

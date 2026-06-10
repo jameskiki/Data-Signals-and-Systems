@@ -3,7 +3,6 @@
 import tkinter as tk
 from tkinter import ttk
 
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 from shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
 from shared.plot_utils import create_plot_figure
@@ -33,8 +32,6 @@ def refresh_preview_plot(
         clear_preview_plot(app, "No numeric non-time columns available for overview plot.")
         return
 
-    clear_preview_plot(app)
-
     # Determine x-axis column
     time_col = _get_time_role_column(resolved_roles)
     if time_col is not None and time_col in dataframe.columns:
@@ -47,6 +44,8 @@ def refresh_preview_plot(
         cols_to_plot=preview_columns,
         xcol=xcol,
         use_subplots=False,
+        title="Overlay Plot",
+        y_label="Value",
     )
 
     # Use a single dummy file path and data_frames map for compatibility with plot_utils
@@ -61,36 +60,16 @@ def refresh_preview_plot(
         column_roles=resolved_roles,
     )
 
-    app._preview_plot_figure = figure
-    app._preview_plot_canvas = FigureCanvasTkAgg(figure, master=app._preview_plot_container)
-    app._preview_plot_canvas.draw()
-    app._preview_plot_toolbar = NavigationToolbar2Tk(app._preview_plot_canvas, app._preview_plot_container)
-    app._preview_plot_toolbar.update()
-    app._preview_plot_toolbar.pack(side=tk.TOP, fill=tk.X)
-    app._preview_plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-    _c, _f = app._preview_plot_canvas, app._preview_plot_figure
-    app.root.after_idle(lambda: app._sync_canvas_size(_c, _f))
-    app.root.after_idle(_c.draw)
-    # Replace (not add) the configure binding so repeated dataset switches
-    # don't accumulate stale handlers on the same container.
-    _container = app._preview_plot_container
-    _root = app.root
-    _job_attr = f"_resize_job_{id(_c)}"
-
-    def _on_configure(event):
-        if event.widget is not _container:
-            return
-        job = getattr(app, _job_attr, None)
-        if job is not None:
-            _root.after_cancel(job)
-
-        def _do_resize():
-            app._sync_canvas_size(_c, _c.figure)
-            _c.draw_idle()
-
-        setattr(app, _job_attr, _root.after(150, _do_resize))
-
-    _container.bind("<Configure>", _on_configure)
+    app._render_embedded_figure(
+        figure=figure,
+        figure_attr="_preview_plot_figure",
+        canvas_attr="_preview_plot_canvas",
+        toolbar_attr="_preview_plot_toolbar",
+        container=app._preview_plot_container,
+        root_window=app.root,
+        draw_idle_on_reuse=True,
+        clear_container_before_create=True,
+    )
 
     # Attach SpanSelector for visual range picking (use the first axis)
     axes = figure.get_axes()

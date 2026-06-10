@@ -153,7 +153,7 @@ The repository root is now intentionally kept thin: the launcher stays at the to
 
 ## Validation Status
 
-The project includes an automated test suite with 256 tests covering all `data_ops` modules plus app-layer orchestration and workflow integration checks. Coverage includes spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), summary statistics, preparation actions, analysis handlers, parser boundary behavior, and cross-module preparation-to-analysis workflows.
+The project includes an automated test suite with 261 tests covering all `data_ops` modules plus app-layer orchestration and workflow integration checks. Coverage includes spectral analysis (FFT, Welch, Transfer Estimate, Coherence, Spectrogram), signal processing (all 9 derived operations, all 7 filter operations), cycle detection (fixed-length, rising-edge, zero-crossing, peak), frame operations (select, drop, slice, split, normalize, resample), filtering (simple filter, subset), I/O (merge, analyze, export), summary statistics, preparation actions, analysis handlers, parser boundary behavior, shared plotting/lifecycle utilities, and cross-module preparation-to-analysis workflows.
 
 Run the tests with:
 

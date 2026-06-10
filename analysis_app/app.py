@@ -63,7 +63,8 @@ from data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
 from data_ops.models import SIGNAL_FILTER_OPERATIONS
 from data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from data_ops.summary import summarize_dataframe
-from shared.plot_utils import create_plot_figure
+from shared.plot_options import PlotOptions, PlotStyle
+from shared.plot_utils import apply_axis_contract, create_plot_figure
 
 
 class AnalysisWorkspace(BaseAppShell):
@@ -288,10 +289,9 @@ class AnalysisWorkspace(BaseAppShell):
             self._clear_plot_container()
             return
 
-        from shared.plot_options import PlotOptions
-        plot_options = PlotOptions(
-            cols_to_plot=self.session.selected_y_columns,
-            xcol=self.session.selected_x_column,
+        plot_options = self._build_time_series_plot_options(
+            selected_columns=self.session.selected_y_columns,
+            x_column=self.session.selected_x_column,
             use_subplots=self.session.use_subplots,
         )
         figure = create_plot_figure(
@@ -331,10 +331,9 @@ class AnalysisWorkspace(BaseAppShell):
         self.session.selected_y_columns = selected_columns
         self.session.use_subplots = self.plot_subplots_var.get()
 
-        from shared.plot_options import PlotOptions
-        plot_options = PlotOptions(
-            cols_to_plot=selected_columns,
-            xcol=x_column,
+        plot_options = self._build_time_series_plot_options(
+            selected_columns=selected_columns,
+            x_column=x_column,
             use_subplots=self.session.use_subplots,
         )
         figure = create_plot_figure(
@@ -345,34 +344,37 @@ class AnalysisWorkspace(BaseAppShell):
         )
         self._render_plot_figure(figure)
 
-    def _render_plot_figure(self, figure: plt.Figure) -> None:
-        if self._plot_canvas is not None:
-            if self._plot_figure is not None:
-                plt.close(self._plot_figure)
-            self._plot_figure = figure
-            self._plot_canvas.figure = figure
-            figure.canvas = self._plot_canvas
-            self._sync_plot_canvas_size()
-            self._plot_canvas.draw()
-            if self._plot_toolbar is not None:
-                self._plot_toolbar.update()
-        else:
-            self._clear_plot_container()
-            self._plot_figure = figure
-            self._plot_canvas = FigureCanvasTkAgg(figure, master=self.plot_container)
-            self._plot_canvas.draw()
-            self._plot_toolbar = NavigationToolbar2Tk(self._plot_canvas, self.plot_container)
-            self._plot_toolbar.update()
-            self._plot_toolbar.pack(side=tk.TOP, fill=tk.X)
-            self._plot_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-            self.window.after_idle(self._sync_plot_canvas_size)
-            self.window.after_idle(self._plot_canvas.draw)
-            self._bind_canvas_resize(self.plot_container, self._plot_canvas, self.window)
+    def _build_time_series_plot_options(
+        self,
+        selected_columns: list[str],
+        x_column: str,
+        use_subplots: bool,
+    ) -> PlotOptions:
+        """Build shared plot contract options for analysis time-series rendering."""
 
-    def _sync_plot_canvas_size(self) -> None:
-        if self._plot_canvas is None or self._plot_figure is None:
-            return
-        self._sync_canvas_size(self._plot_canvas, self._plot_figure)
+        return PlotOptions(
+            cols_to_plot=selected_columns,
+            xcol=x_column,
+            use_subplots=use_subplots,
+            y_label="Value",
+        )
+
+    def _get_default_plot_style(self) -> PlotStyle:
+        """Return the shared default style contract for specialized plot families."""
+
+        return PlotStyle()
+
+    def _render_plot_figure(self, figure: plt.Figure) -> None:
+        self._render_embedded_figure(
+            figure=figure,
+            figure_attr="_plot_figure",
+            canvas_attr="_plot_canvas",
+            toolbar_attr="_plot_toolbar",
+            container=self.plot_container,
+            root_window=self.window,
+            draw_idle_on_reuse=False,
+            clear_container_before_create=True,
+        )
 
     def _clear_plot_container(self) -> None:
         if self._plot_figure is not None:
@@ -403,6 +405,7 @@ class AnalysisWorkspace(BaseAppShell):
             value_column_label=result.value_column_label,
         )
 
+        style = self._get_default_plot_style()
         figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
         frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
         amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
@@ -412,20 +415,15 @@ class AnalysisWorkspace(BaseAppShell):
             figure, (axis, phase_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=True)
             phase_values = np.degrees(result.phase[1:]) if result.phase.size > 1 else np.degrees(result.phase)
             phase_axis.plot(frequencies, phase_values, linewidth=1.0, color="#c62828")
-            phase_axis.set_xlabel("Frequency [Hz]", fontsize=9)
-            phase_axis.set_ylabel("Phase [deg]", fontsize=9)
+            apply_axis_contract(phase_axis, title="", x_label="Frequency [Hz]", y_label="Phase [deg]", style=style)
             phase_axis.set_ylim(-200, 200)
             phase_axis.set_yticks([-180, -90, 0, 90, 180])
-            phase_axis.grid(True, alpha=0.3)
             phase_axis.margins(x=0.02)
             apply_numeric_axis_format(phase_axis, format_x=True, format_y=False)
         else:
             figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
         axis.plot(frequencies, amplitudes, linewidth=1.2)
-        axis.set_title(result.plot_title, fontsize=10)
-        axis.set_xlabel("Frequency [Hz]", fontsize=9)
-        axis.set_ylabel(result.y_axis_label, fontsize=9)
-        axis.grid(True, alpha=0.3)
+        apply_axis_contract(axis, title=result.plot_title, x_label="Frequency [Hz]", y_label=result.y_axis_label, style=style)
         axis.margins(x=0.02)
         expected_guides = get_demo_frequency_guides(self.session.working_frame, result.source_column, result.analysis_name)
         for guide_index, (frequency_hz, label) in enumerate(expected_guides):
@@ -445,27 +443,7 @@ class AnalysisWorkspace(BaseAppShell):
             )
         apply_numeric_axis_format(axis, format_x=True, format_y=True)
         figure.tight_layout()
-
-        self._fft_figure = figure
-        if self._fft_canvas is not None:
-            self._fft_canvas.figure = figure
-            figure.canvas = self._fft_canvas
-            self._sync_canvas_size(self._fft_canvas, figure)
-            self._fft_canvas.draw_idle()
-            if self._fft_toolbar is not None:
-                self._fft_toolbar.update()
-        else:
-            self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
-            self._fft_canvas.draw()
-            self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
-            self._fft_toolbar.update()
-            self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
-            self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-            _c, _f = self._fft_canvas, figure
-            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
-            self.window.after_idle(_c.draw)
-            self._bind_canvas_resize(self.frequency_plot_container, self._fft_canvas, self.window)
-        self.plot_notebook.select(self.frequency_plot_tab)
+        self._render_frequency_figure(figure)
 
     def _clear_fft_results(self, message: str | None = None) -> None:
         if self._fft_figure is not None:
@@ -500,6 +478,7 @@ class AnalysisWorkspace(BaseAppShell):
         )
 
         power_db = 10.0 * np.log10(result.power.T + 1e-20)
+        style = self._get_default_plot_style()
         figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
         mesh = axis.pcolormesh(
             result.times,
@@ -509,31 +488,30 @@ class AnalysisWorkspace(BaseAppShell):
             cmap="viridis",
         )
         figure.colorbar(mesh, ax=axis, label="Power [dB]")
-        axis.set_title(f"Spectrogram — {result.source_column}", fontsize=10)
-        axis.set_xlabel("Time [s]" if result.reference_column else "Sample", fontsize=9)
-        axis.set_ylabel("Frequency [Hz]", fontsize=9)
+        apply_axis_contract(
+            axis,
+            title=f"Spectrogram — {result.source_column}",
+            x_label="Time [s]" if result.reference_column else "Sample",
+            y_label="Frequency [Hz]",
+            style=style,
+        )
         apply_numeric_axis_format(axis, format_x=True, format_y=True)
         figure.tight_layout()
 
-        self._fft_figure = figure
-        if self._fft_canvas is not None:
-            self._fft_canvas.figure = figure
-            figure.canvas = self._fft_canvas
-            self._sync_canvas_size(self._fft_canvas, figure)
-            self._fft_canvas.draw_idle()
-            if self._fft_toolbar is not None:
-                self._fft_toolbar.update()
-        else:
-            self._fft_canvas = FigureCanvasTkAgg(figure, master=self.frequency_plot_container)
-            self._fft_canvas.draw()
-            self._fft_toolbar = NavigationToolbar2Tk(self._fft_canvas, self.frequency_plot_container)
-            self._fft_toolbar.update()
-            self._fft_toolbar.pack(side=tk.TOP, fill=tk.X)
-            self._fft_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-            _c, _f = self._fft_canvas, figure
-            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
-            self.window.after_idle(_c.draw)
-            self._bind_canvas_resize(self.frequency_plot_container, self._fft_canvas, self.window)
+        self._render_frequency_figure(figure)
+
+    def _render_frequency_figure(self, figure: plt.Figure) -> None:
+        """Render FFT/spectrogram figure using shared frequency-canvas lifecycle behavior."""
+
+        self._render_embedded_figure(
+            figure=figure,
+            figure_attr="_fft_figure",
+            canvas_attr="_fft_canvas",
+            toolbar_attr="_fft_toolbar",
+            container=self.frequency_plot_container,
+            root_window=self.window,
+            draw_idle_on_reuse=True,
+        )
         self.plot_notebook.select(self.frequency_plot_tab)
 
     def _render_cycle_result(
@@ -581,6 +559,7 @@ class AnalysisWorkspace(BaseAppShell):
         self._render_cycle_plot(result)
 
     def _render_cycle_plot(self, result: CycleAnalysisResult) -> None:
+        style = self._get_default_plot_style()
         # Always use all cycles for representative and C2C plots
         all_cycles = result.cycles_frame.to_numpy()
         max_cycle_len = all_cycles.shape[1]
@@ -616,10 +595,13 @@ class AnalysisWorkspace(BaseAppShell):
         ax_top.clear()
         for cycle_index in range(len(selected_cycles)):
             ax_top.plot(step_values, selected_cycles[cycle_index], color="#94a3b8", alpha=0.5, linewidth=1.0)
-        ax_top.set_title("Selected Individual Cycles", fontsize=10)
-        ax_top.set_xlabel("Sample within cycle", fontsize=9)
-        ax_top.set_ylabel(result.source_column, fontsize=9)
-        ax_top.grid(True, alpha=0.3)
+        apply_axis_contract(
+            ax_top,
+            title="Selected Individual Cycles",
+            x_label="Sample within cycle",
+            y_label=result.source_column,
+            style=style,
+        )
         # Keep top and middle cycle plots on the same x-domain even when selected cycles are shorter.
         if max_cycle_len > 0:
             ax_top.set_xlim(0, max_cycle_len - 1)
@@ -651,12 +633,15 @@ class AnalysisWorkspace(BaseAppShell):
                 linestyle=":",
                 label="support",
             )
-            support_axis.set_ylabel("Support [cycles]", fontsize=9, color="#475569")
+            support_axis.set_ylabel("Support [cycles]", fontsize=style.label_fontsize, color="#475569")
             support_axis.tick_params(axis="y", colors="#475569")
-        ax_mid.set_title("Representative Cycle (mean ± std)", fontsize=10)
-        ax_mid.set_xlabel("Sample within cycle", fontsize=9)
-        ax_mid.set_ylabel(result.source_column, fontsize=9)
-        ax_mid.grid(True, alpha=0.3)
+        apply_axis_contract(
+            ax_mid,
+            title="Representative Cycle (mean ± std)",
+            x_label="Sample within cycle",
+            y_label=result.source_column,
+            style=style,
+        )
         if max_cycle_len > 0:
             ax_mid.set_xlim(0, max_cycle_len - 1)
         apply_numeric_axis_format(ax_mid, format_x=True, format_y=True)
@@ -665,9 +650,9 @@ class AnalysisWorkspace(BaseAppShell):
         mid_handles, mid_labels = ax_mid.get_legend_handles_labels()
         if support_axis is not None:
             support_handles, support_labels = support_axis.get_legend_handles_labels()
-            ax_mid.legend(mid_handles + support_handles, mid_labels + support_labels, fontsize=8, loc="best")
+            ax_mid.legend(mid_handles + support_handles, mid_labels + support_labels, fontsize=style.legend_fontsize, loc="best")
         elif mid_handles:
-            ax_mid.legend(mid_handles, mid_labels, fontsize=8, loc="best")
+            ax_mid.legend(mid_handles, mid_labels, fontsize=style.legend_fontsize, loc="best")
 
         # Bottom: Cycle-to-cycle statistics (all cycles)
         ax_bot = axes[2]
@@ -704,36 +689,29 @@ class AnalysisWorkspace(BaseAppShell):
             color="#b45309",
             linestyle="--",
         )
-        ax_bot.set_title("Cycle-to-Cycle Statistics", fontsize=10)
-        ax_bot.set_xlabel("Cycle", fontsize=9)
-        ax_bot.set_ylabel("Metric", fontsize=9)
-        ax_bot_right.set_ylabel(right_axis_label, fontsize=9, color="#b45309", labelpad=12)
+        apply_axis_contract(ax_bot, title="Cycle-to-Cycle Statistics", x_label="Cycle", y_label="Metric", style=style)
+        ax_bot_right.set_ylabel(right_axis_label, fontsize=style.label_fontsize, color="#b45309", labelpad=12)
         ax_bot_right.yaxis.set_label_position("right")
         ax_bot_right.yaxis.tick_right()
         ax_bot_right.tick_params(axis="y", colors="#b45309")
-        ax_bot.grid(True, alpha=0.3)
         left_handles, left_labels = ax_bot.get_legend_handles_labels()
         right_handles, right_labels = ax_bot_right.get_legend_handles_labels()
-        ax_bot.legend(left_handles + right_handles, left_labels + right_labels, fontsize=8, loc="best")
+        ax_bot.legend(left_handles + right_handles, left_labels + right_labels, fontsize=style.legend_fontsize, loc="best")
         apply_numeric_axis_format(ax_bot, format_x=True, format_y=True)
         apply_numeric_axis_format(ax_bot_right, format_x=False, format_y=True)
 
         self._cycle_figure.tight_layout()
 
         # Canvas and toolbar management
-        if self._cycle_canvas is None:
-            self._cycle_canvas = FigureCanvasTkAgg(self._cycle_figure, master=self.cycle_plot_container)
-            self._cycle_toolbar = NavigationToolbar2Tk(self._cycle_canvas, self.cycle_plot_container)
-            self._cycle_toolbar.update()
-            self._cycle_toolbar.pack(side=tk.TOP, fill=tk.X)
-            self._cycle_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-            _c, _f = self._cycle_canvas, self._cycle_figure
-            self.window.after_idle(lambda: self._sync_canvas_size(_c, _f))
-            self.window.after_idle(_c.draw)
-            self._bind_canvas_resize(self.cycle_plot_container, self._cycle_canvas, self.window)
-        else:
-            self._sync_canvas_size(self._cycle_canvas, self._cycle_figure)
-            self._cycle_canvas.draw()
+        self._render_embedded_figure(
+            figure=self._cycle_figure,
+            figure_attr="_cycle_figure",
+            canvas_attr="_cycle_canvas",
+            toolbar_attr="_cycle_toolbar",
+            container=self.cycle_plot_container,
+            root_window=self.window,
+            draw_idle_on_reuse=False,
+        )
         self.notebook.select(self.cycles_tab)
         self.plot_notebook.select(self.cycle_plot_tab)
 

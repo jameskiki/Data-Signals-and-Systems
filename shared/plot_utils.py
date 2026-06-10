@@ -9,7 +9,7 @@ subplots, and syncing axes.
 """
 
 from collections.abc import Mapping, Sequence
-from .plot_options import PlotOptions
+from .plot_options import PlotOptions, PlotStyle
 
 
 import matplotlib.pyplot as plt
@@ -53,9 +53,21 @@ def create_plot_figure(
 
     if plot_options.use_subplots:
         n = len(plot_options.cols_to_plot)
-        fig, axes, _, _ = create_subplots(n, ncols=2, plt_module=plt_module)
+        fig, axes, _, _ = create_subplots(
+            n,
+            ncols=max(1, plot_options.subplot_columns),
+            style=plot_options.style,
+            plt_module=plt_module,
+        )
         x_values_by_axis = plot_columns_on_axes(
-            axes, plot_options.cols_to_plot, selected_file_paths, data_frames, plot_options.xcol, column_roles=column_roles
+            axes,
+            plot_options.cols_to_plot,
+            selected_file_paths,
+            data_frames,
+            plot_options.xcol,
+            y_label=plot_options.y_label,
+            style=plot_options.style,
+            column_roles=column_roles,
         )
         hide_unused_subplots(axes, n)
         sync_x_axes(axes, x_values_by_axis, fig)
@@ -66,6 +78,9 @@ def create_plot_figure(
         data_frames,
         plot_options.cols_to_plot,
         plot_options.xcol,
+        title=plot_options.title or "Overlay Plot",
+        y_label=plot_options.y_label,
+        style=plot_options.style,
         column_roles=column_roles,
         plt_module=plt_module,
     )
@@ -76,11 +91,15 @@ def create_overlay_figure(
     data_frames: DataFrameMap,
     cols_to_plot: list[str],
     xcol: str,
+    title: str = "Overlay Plot",
+    y_label: str = "Value",
+    style: PlotStyle | None = None,
     column_roles: dict[str, str] | None = None,
     plt_module=plt,
 ) -> plt.Figure:
     """Build a single-axis overlay plot for the selected files and columns."""
 
+    resolved_style = style or PlotStyle()
     fig, ax = plt_module.subplots(figsize=(10, 6))
     x_values_by_axis: XValueList = []
     x_label = "Index" if xcol == "Index" else xcol
@@ -101,17 +120,18 @@ def create_overlay_figure(
                 df[col_name],
                 label=_build_overlay_label(path, col_name, selected_file_paths, cols_to_plot),
                 color=get_column_role_plot_color(get_column_role(column_roles or {}, col_name)),
-                marker='o',
-                markersize=2,
-                linewidth=2,
+                marker=resolved_style.marker,
+                markersize=resolved_style.marker_size,
+                linewidth=resolved_style.line_width,
             )
 
-    ax.set_title("Overlay Plot", fontsize=10)
-    ax.set_xlabel(x_label, fontsize=9)
-    ax.set_ylabel("Value", fontsize=9)
-    if ax.lines:
-        ax.legend(fontsize=8, loc="upper right")
-    ax.grid(True, alpha=0.3)
+    _apply_axis_contract(
+        ax,
+        title=title,
+        x_label=x_label,
+        y_label=y_label,
+        style=resolved_style,
+    )
     apply_numeric_axis_format(ax, format_x=True, format_y=True)
 
     x_limits = compute_shared_xlim(x_values_by_axis)
@@ -138,7 +158,12 @@ def _build_overlay_label(
 
 
 
-def create_subplots(n: int, ncols: int = 2, plt_module=plt) -> tuple[plt.Figure, object, int, int]:
+def create_subplots(
+    n: int,
+    ncols: int = 2,
+    style: PlotStyle | None = None,
+    plt_module=plt,
+) -> tuple[plt.Figure, object, int, int]:
     """
     Create a grid of matplotlib subplots.
     Args:
@@ -149,6 +174,7 @@ def create_subplots(n: int, ncols: int = 2, plt_module=plt) -> tuple[plt.Figure,
     """
     ncols = min(ncols, n)
     nrows = (n + ncols - 1) // ncols
+    _ = style  # Reserved for future style-driven figure sizing.
     fig, axes = plt_module.subplots(nrows=nrows, ncols=ncols, figsize=(8 * ncols, 4 * nrows), squeeze=False)
     return fig, axes, nrows, ncols
 
@@ -159,6 +185,8 @@ def plot_columns_on_axes(
     selected_file_paths: Sequence[str],
     data_frames: DataFrameMap,
     xcol: str,
+    y_label: str = "Value",
+    style: PlotStyle | None = None,
     column_roles: dict[str, str] | None = None,
 ) -> XValueList:
     """
@@ -173,6 +201,7 @@ def plot_columns_on_axes(
         List of all x-values arrays for axis syncing.
     """
     x_values_by_axis: XValueList = []
+    resolved_style = style or PlotStyle()
     ncols = axes.shape[1]
     for idx, col_name in enumerate(cols_to_plot):
         row = idx // ncols
@@ -192,18 +221,51 @@ def plot_columns_on_axes(
                 df[col_name],
                 label=os.path.basename(path),
                 color=get_column_role_plot_color(get_column_role(column_roles or {}, col_name)),
-                marker='o',
-                markersize=2,
-                linewidth=2,
+                marker=resolved_style.marker,
+                markersize=resolved_style.marker_size,
+                linewidth=resolved_style.line_width,
             )
-        ax.set_title(col_name, fontsize=10)
-        ax.set_xlabel(x_label, fontsize=9)
-        ax.set_ylabel("Value", fontsize=9)
-        if ax.lines:
-            ax.legend(fontsize=8, loc="upper right")
-        ax.grid(True, alpha=0.3)
+        _apply_axis_contract(
+            ax,
+            title=col_name,
+            x_label=x_label,
+            y_label=y_label,
+            style=resolved_style,
+        )
         apply_numeric_axis_format(ax, format_x=True, format_y=True)
     return x_values_by_axis
+
+
+def apply_axis_contract(
+    axis: object,
+    title: str,
+    x_label: str,
+    y_label: str,
+    style: PlotStyle,
+) -> None:
+    """Apply shared axis presentation defaults to reduce drift across plot families."""
+
+    axis.set_title(title, fontsize=style.title_fontsize)
+    axis.set_xlabel(x_label, fontsize=style.label_fontsize)
+    axis.set_ylabel(y_label, fontsize=style.label_fontsize)
+    if style.show_legend and axis.lines:
+        axis.legend(fontsize=style.legend_fontsize, loc=style.legend_location)
+    if style.show_grid:
+        axis.grid(True, alpha=style.grid_alpha)
+    else:
+        axis.grid(False)
+
+
+def _apply_axis_contract(
+    axis: object,
+    title: str,
+    x_label: str,
+    y_label: str,
+    style: PlotStyle,
+) -> None:
+    """Compatibility wrapper around apply_axis_contract for local call sites."""
+
+    apply_axis_contract(axis, title=title, x_label=x_label, y_label=y_label, style=style)
 
 
 def normalize_x_values(series: pd.Series) -> pd.Series:
