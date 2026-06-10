@@ -170,21 +170,23 @@ The repository now includes a GitHub Actions workflow at `.github/workflows/test
 
 On every push and pull request, CI runs two checks:
 
+- `Import boundary checks (3.12)`
 - `Unit and app-layer tests (3.12)`
 - `Integration workflow tests (3.12)`
 
 Commands:
 
 ```powershell
+python Scripts/check_import_boundaries.py
 python -m pytest Tests -q -k "not workflows_integration"
 python -m pytest Tests/test_workflows_integration.py -q
 ```
 
-The integration check is currently non-blocking in CI (`continue-on-error: true`) so it can be observed and stabilized first.
+The boundary check is a hard gate and runs before the unit suite. The integration check is currently non-blocking in CI (`continue-on-error: true`) so it can be observed and stabilized first.
 
 To enforce strict merge gates via branch protection:
 
-1. Mark `Unit and app-layer tests (3.12)` as required now.
+1. Mark `Import boundary checks (3.12)` and `Unit and app-layer tests (3.12)` as required now.
 2. Mark `Integration workflow tests (3.12)` as required after stabilization.
 
 ## Current Preparation Caveat

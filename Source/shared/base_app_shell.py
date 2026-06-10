@@ -1,7 +1,7 @@
 """Shared mixin for EvalData application shells.
 
 Provides lightweight infrastructure that is common to both
-``DataAnalysisApp`` and ``AnalysisWorkspace`` without imposing any
+``DataPreparationApp`` and ``AnalysisWorkspace`` without imposing any
 Tkinter inheritance (both windows use different root types).
 
 Usage::
@@ -15,7 +15,7 @@ Usage::
 """
 
 from contextlib import contextmanager
-from tkinter import messagebox
+from tkinter import TclError, messagebox
 
 
 class BaseAppShell:
@@ -39,7 +39,7 @@ class BaseAppShell:
             messagebox.showerror(title, str(error))
             _failed.append(error)
 
-    def _sync_canvas_size(self, canvas, figure) -> None:
+    def _sync_canvas_size(self, canvas, figure) -> bool:
         """Resize *figure* to fill the Tkinter widget that hosts *canvas*.
 
         Call this after a figure is first embedded (via ``after_idle``) and
@@ -47,12 +47,19 @@ class BaseAppShell:
         always fills the available space instead of keeping its initial
         ``figsize`` in inches.
         """
-        widget = canvas.get_tk_widget()
-        widget.update_idletasks()
-        width = max(widget.winfo_width(), 1)
-        height = max(widget.winfo_height(), 1)
+        try:
+            widget = canvas.get_tk_widget()
+            if not bool(widget.winfo_exists()):
+                return False
+            widget.update_idletasks()
+            width = max(widget.winfo_width(), 1)
+            height = max(widget.winfo_height(), 1)
+        except (AttributeError, TclError):
+            return False
+
         dpi = float(figure.get_dpi() or 100.0)
         figure.set_size_inches(width / dpi, height / dpi, forward=True)
+        return True
 
     def _bind_canvas_resize(self, container, canvas, root_window, debounce_ms: int = 150) -> None:
         """Bind a debounced ``<Configure>`` handler so the matplotlib figure
@@ -69,15 +76,38 @@ class BaseAppShell:
                 return
             job = getattr(self, job_attr, None)
             if job is not None:
-                root_window.after_cancel(job)
+                try:
+                    root_window.after_cancel(job)
+                except TclError:
+                    pass
 
             def _do_resize():
-                self._sync_canvas_size(canvas, canvas.figure)
-                canvas.draw_idle()
+                setattr(self, job_attr, None)
+                if not self._sync_canvas_size(canvas, canvas.figure):
+                    return
+                try:
+                    canvas.draw_idle()
+                except TclError:
+                    return
 
-            setattr(self, job_attr, root_window.after(debounce_ms, _do_resize))
+            try:
+                setattr(self, job_attr, root_window.after(debounce_ms, _do_resize))
+            except TclError:
+                setattr(self, job_attr, None)
+
+        def _on_destroy(event):
+            if event.widget is not container:
+                return
+            job = getattr(self, job_attr, None)
+            if job is not None:
+                try:
+                    root_window.after_cancel(job)
+                except TclError:
+                    pass
+            setattr(self, job_attr, None)
 
         container.bind("<Configure>", _on_configure, add="+")
+        container.bind("<Destroy>", _on_destroy, add="+")
 
     def _bind_write(self, handler, *vars) -> None:
         """Register *handler* as the ``trace_add("write", ...)`` callback for each var.

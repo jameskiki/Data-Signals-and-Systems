@@ -1,3 +1,5 @@
+"""Main GUI application for dataset parsing, structural preparation, plotting, and analysis."""
+
 from .actions import (
     load_files,
     load_demo_test_signal,
@@ -13,7 +15,6 @@ from .actions import (
     export_clean_data,
     apply_selected_column_role,
 )
-"""Main GUI application for dataset parsing, structural preparation, plotting, and analysis."""
 
 import os
 
@@ -24,7 +25,6 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from Source.analysis_app.app import AnalysisWorkspace
 from .datasets import (
     DatasetContext,
     apply_literal_role_combobox_style,
@@ -66,7 +66,7 @@ from .state import (
 )
 
 
-class DataAnalysisApp(BaseAppShell):
+class DataPreparationApp(BaseAppShell):
     """Tkinter application for data parsing and structural preparation."""
 
     def __init__(self, root: tk.Tk) -> None:
@@ -87,7 +87,7 @@ class DataAnalysisApp(BaseAppShell):
 
         self.data_frames: dict[str, pd.DataFrame] = {}
         self.dataset_contexts: dict[str, DatasetContext] = {}
-        self._analysis_workspaces: list[AnalysisWorkspace] = []
+        self._analysis_workspaces: list[object] = []
         self._preview_plot_figure: plt.Figure | None = None
         self._preview_plot_canvas: FigureCanvasTkAgg | None = None
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
@@ -914,14 +914,13 @@ class DataAnalysisApp(BaseAppShell):
     def _get_selected_preview_plot_columns(self, dataframe: pd.DataFrame) -> list[str]:
         return get_selected_preview_plot_columns(self, dataframe, PREVIEW_PLOT_MAX_COLUMNS)
 
-    def _on_analysis_workspace_closed(self, workspace: AnalysisWorkspace) -> None:
+    def _on_analysis_workspace_closed(self, workspace: object) -> None:
         if workspace in self._analysis_workspaces:
             self._analysis_workspaces.remove(workspace)
 
-
 def main() -> None:
     root = tk.Tk()
-    DataAnalysisApp(root)
+    DataPreparationApp(root)
     root.mainloop()
 
 

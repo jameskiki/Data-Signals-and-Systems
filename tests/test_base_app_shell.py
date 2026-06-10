@@ -147,6 +147,67 @@ def test_bind_write_registers_handler_for_all_vars():
     assert var_b.calls == [("write", _handler)]
 
 
+class FigureForSyncSize:
+    def __init__(self, dpi=100.0):
+        self._dpi = dpi
+        self.last_size = None
+
+    def get_dpi(self):
+        return self._dpi
+
+    def set_size_inches(self, width, height, forward=True):
+        self.last_size = (width, height, forward)
+
+
+class WidgetForSyncSize:
+    def __init__(self, *, exists=True, width=500, height=300):
+        self._exists = exists
+        self._width = width
+        self._height = height
+
+    def winfo_exists(self):
+        return 1 if self._exists else 0
+
+    def update_idletasks(self):
+        return None
+
+    def winfo_width(self):
+        return self._width
+
+    def winfo_height(self):
+        return self._height
+
+
+class CanvasForSyncSize:
+    def __init__(self, widget):
+        self._widget = widget
+
+    def get_tk_widget(self):
+        return self._widget
+
+
+def test_sync_canvas_size_returns_true_and_resizes_figure_for_live_widget():
+    shell = BaseAppShell()
+    figure = FigureForSyncSize(dpi=100.0)
+    canvas = CanvasForSyncSize(WidgetForSyncSize(width=400, height=250))
+
+    resized = shell._sync_canvas_size(canvas, figure)
+
+    assert resized is True
+    assert figure.last_size == (4.0, 2.5, True)
+
+
+def test_sync_canvas_size_returns_false_for_destroyed_widget():
+    shell = BaseAppShell()
+    figure = FigureForSyncSize(dpi=100.0)
+    canvas = CanvasForSyncSize(WidgetForSyncSize(exists=False))
+
+    resized = shell._sync_canvas_size(canvas, figure)
+
+    assert resized is False
+    assert figure.last_size is None
+
+
 def test_render_embedded_figure_create_path_clears_and_initializes(monkeypatch):
     shell = BaseAppShell()
     shell._plot_figure = None

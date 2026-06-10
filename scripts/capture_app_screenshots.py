@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from Source.datapreparation_app.app import DataAnalysisApp
+from Source.datapreparation_app.app import DataPreparationApp
 from Source.shared.demo_catalog import CYCLE_VALIDATION_DEMO, SPECTRAL_REFERENCE_DEMO
 
 try:
@@ -376,7 +376,7 @@ def _iter_widgets(widget: tk.Misc):
         yield from _iter_widgets(child)
 
 
-def _find_preview_notebook(app: DataAnalysisApp) -> ttk.Notebook:
+def _find_preview_notebook(app: DataPreparationApp) -> ttk.Notebook:
     """Locate the preview notebook that contains Plot and Table tabs."""
 
     for widget in _iter_widgets(app.root):
@@ -436,7 +436,7 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
     with _silence_messageboxes():
         root = tk.Tk()
         _install_tk_exception_filter(root)
-        app = DataAnalysisApp(root)
+        app = DataPreparationApp(root)
         root.geometry("1600x980")
         root.lift()
         root.attributes("-topmost", True)

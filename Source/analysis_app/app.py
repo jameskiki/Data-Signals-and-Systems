@@ -40,23 +40,21 @@ from .state import (
     AnalysisSession,
     UI_FREQUENCY_ANALYSIS_METHODS,
 )
-from .views import render_correlation_view, render_dataframe_preview, render_fft_peaks_tree, render_statistics_tree
-from .views import render_cycle_metrics_tree
+from .views import render_correlation_view, render_dataframe_preview, render_statistics_tree
 from Source.data_ops.cycles import (
     CycleAnalysisResult,
     rebuild_cycle_analysis_result,
 )
-from Source.shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
+from Source.shared.display_format import format_display_number, format_display_percent
 from Source.shared.column_roles import (
     apply_literal_role_combobox_style,
     get_column_role,
     get_column_role_cell_colors,
-    get_preferred_role_column,
     summarize_column_roles,
     update_projected_column_roles,
 )
 from Source.shared.base_app_shell import BaseAppShell
-from Source.shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
+from Source.shared.demo_catalog import describe_demo_frequency_expectations
 
 from Source.data_ops.filtering import resolve_filtered_column_name
 from Source.data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
@@ -64,7 +62,7 @@ from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from Source.data_ops.summary import summarize_dataframe
 from Source.shared.plot_options import PlotOptions, PlotStyle
-from Source.shared.plot_utils import apply_axis_contract, create_plot_figure
+from . import plotting as plotting_ops
 
 
 class AnalysisWorkspace(BaseAppShell):
@@ -285,22 +283,7 @@ class AnalysisWorkspace(BaseAppShell):
         self._correlation_widget = render_correlation_view(self.correlation_container, correlation_frame)
 
     def _refresh_live_plot(self) -> None:
-        if not self.session.selected_y_columns:
-            self._clear_plot_container()
-            return
-
-        plot_options = self._build_time_series_plot_options(
-            selected_columns=self.session.selected_y_columns,
-            x_column=self.session.selected_x_column,
-            use_subplots=self.session.use_subplots,
-        )
-        figure = create_plot_figure(
-            plot_options,
-            [self.session.source_path],
-            {self.session.source_path: self.session.working_frame},
-            column_roles=self.column_roles,
-        )
-        self._render_plot_figure(figure)
+        return plotting_ops.refresh_live_plot(self)
 
     def _apply_filter(self) -> None:
         return apply_filter(self)
@@ -321,28 +304,7 @@ class AnalysisWorkspace(BaseAppShell):
         return compute_cycle_analysis(self)
 
     def _update_plot(self) -> None:
-        selected_columns = self._get_selected_plot_y_columns()
-        if not selected_columns:
-            messagebox.showwarning("Warning", "Select at least one Y column")
-            return
-
-        x_column = self.plot_x_var.get().strip() or "Index"
-        self.session.selected_x_column = x_column
-        self.session.selected_y_columns = selected_columns
-        self.session.use_subplots = self.plot_subplots_var.get()
-
-        plot_options = self._build_time_series_plot_options(
-            selected_columns=selected_columns,
-            x_column=x_column,
-            use_subplots=self.session.use_subplots,
-        )
-        figure = create_plot_figure(
-            plot_options,
-            [self.session.source_path],
-            {self.session.source_path: self.session.working_frame},
-            column_roles=self.column_roles,
-        )
-        self._render_plot_figure(figure)
+        return plotting_ops.update_plot(self)
 
     def _build_time_series_plot_options(
         self,
@@ -350,169 +312,28 @@ class AnalysisWorkspace(BaseAppShell):
         x_column: str,
         use_subplots: bool,
     ) -> PlotOptions:
-        """Build shared plot contract options for analysis time-series rendering."""
-
-        return PlotOptions(
-            cols_to_plot=selected_columns,
-            xcol=x_column,
-            use_subplots=use_subplots,
-            y_label="Value",
-        )
+        return plotting_ops.build_time_series_plot_options(selected_columns, x_column, use_subplots)
 
     def _get_default_plot_style(self) -> PlotStyle:
-        """Return the shared default style contract for specialized plot families."""
-
-        return PlotStyle()
+        return plotting_ops.get_default_plot_style()
 
     def _render_plot_figure(self, figure: plt.Figure) -> None:
-        self._render_embedded_figure(
-            figure=figure,
-            figure_attr="_plot_figure",
-            canvas_attr="_plot_canvas",
-            toolbar_attr="_plot_toolbar",
-            container=self.plot_container,
-            root_window=self.window,
-            draw_idle_on_reuse=False,
-            clear_container_before_create=True,
-        )
+        return plotting_ops.render_plot_figure(self, figure)
 
     def _clear_plot_container(self) -> None:
-        if self._plot_figure is not None:
-            plt.close(self._plot_figure)
-            self._plot_figure = None
-        self._plot_canvas = None
-        self._plot_toolbar = None
-        for widget in self.plot_container.winfo_children():
-            widget.destroy()
+        return plotting_ops.clear_plot_container(self)
 
     def _render_fft_result(self, result: FrequencySpectrumResult) -> None:
-        # Partial clear: preserve the canvas widget for reuse; only destroy peaks
-        # tree children and (first time) any stale message labels in the plot container.
-        for widget in self.fft_peaks_container.winfo_children():
-            widget.destroy()
-        self._fft_peaks_tree = None
-        if self._fft_canvas is None:
-            for widget in self.frequency_plot_container.winfo_children():
-                widget.destroy()
-        if self._fft_figure is not None:
-            plt.close(self._fft_figure)
-            self._fft_figure = None
-        self.fft_summary_var.set(self._build_frequency_summary(result))
-
-        self._fft_peaks_tree = render_fft_peaks_tree(
-            self.fft_peaks_container,
-            result.peaks_frame,
-            value_column_label=result.value_column_label,
-        )
-
-        style = self._get_default_plot_style()
-        figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
-        frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
-        amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
-        has_phase = result.phase is not None and result.phase.size > 0
-
-        if has_phase:
-            figure, (axis, phase_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=True)
-            phase_values = np.degrees(result.phase[1:]) if result.phase.size > 1 else np.degrees(result.phase)
-            phase_axis.plot(frequencies, phase_values, linewidth=1.0, color="#c62828")
-            apply_axis_contract(phase_axis, title="", x_label="Frequency [Hz]", y_label="Phase [deg]", style=style)
-            phase_axis.set_ylim(-200, 200)
-            phase_axis.set_yticks([-180, -90, 0, 90, 180])
-            phase_axis.margins(x=0.02)
-            apply_numeric_axis_format(phase_axis, format_x=True, format_y=False)
-        else:
-            figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
-        axis.plot(frequencies, amplitudes, linewidth=1.2)
-        apply_axis_contract(axis, title=result.plot_title, x_label="Frequency [Hz]", y_label=result.y_axis_label, style=style)
-        axis.margins(x=0.02)
-        expected_guides = get_demo_frequency_guides(self.session.working_frame, result.source_column, result.analysis_name)
-        for guide_index, (frequency_hz, label) in enumerate(expected_guides):
-            if frequency_hz <= 0 or frequency_hz > float(frequencies[-1] if frequencies.size else 0.0):
-                continue
-            axis.axvline(frequency_hz, color="#b45309", linestyle="--", linewidth=0.9, alpha=0.35)
-            axis.text(
-                frequency_hz,
-                0.96 - 0.08 * (guide_index % 2),
-                label,
-                transform=axis.get_xaxis_transform(),
-                rotation=90,
-                va="top",
-                ha="right",
-                fontsize=7,
-                color="#b45309",
-            )
-        apply_numeric_axis_format(axis, format_x=True, format_y=True)
-        figure.tight_layout()
-        self._render_frequency_figure(figure)
+        return plotting_ops.render_fft_result(self, result)
 
     def _clear_fft_results(self, message: str | None = None) -> None:
-        if self._fft_figure is not None:
-            plt.close(self._fft_figure)
-            self._fft_figure = None
-        self._fft_canvas = None
-        self._fft_toolbar = None
-        self._fft_peaks_tree = None
-        for container in (self.frequency_plot_container, self.fft_peaks_container):
-            for widget in container.winfo_children():
-                widget.destroy()
-        if message:
-            ttk.Label(self.frequency_plot_container, text=message, justify=tk.LEFT).pack(anchor="w", padx=5, pady=5)
+        return plotting_ops.clear_fft_results(self, message)
 
     def _render_spectrogram_result(self, result: SpectrogramResult) -> None:
-        # Partial clear: preserve canvas for reuse.
-        if self._fft_canvas is None:
-            for widget in self.frequency_plot_container.winfo_children():
-                widget.destroy()
-        for widget in self.fft_peaks_container.winfo_children():
-            widget.destroy()
-        self._fft_peaks_tree = None
-        if self._fft_figure is not None:
-            plt.close(self._fft_figure)
-            self._fft_figure = None
-        self.fft_summary_var.set(
-            f"Spectrogram | {result.source_column} | "
-            f"fs = {result.sampling_frequency:.2f} Hz | "
-            f"Segment: {result.segment_length} samples | "
-            f"Overlap: {result.overlap_fraction:.0%} | "
-            f"Window: {result.window}"
-        )
-
-        power_db = 10.0 * np.log10(result.power.T + 1e-20)
-        style = self._get_default_plot_style()
-        figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
-        mesh = axis.pcolormesh(
-            result.times,
-            result.frequencies,
-            power_db,
-            shading="auto",
-            cmap="viridis",
-        )
-        figure.colorbar(mesh, ax=axis, label="Power [dB]")
-        apply_axis_contract(
-            axis,
-            title=f"Spectrogram — {result.source_column}",
-            x_label="Time [s]" if result.reference_column else "Sample",
-            y_label="Frequency [Hz]",
-            style=style,
-        )
-        apply_numeric_axis_format(axis, format_x=True, format_y=True)
-        figure.tight_layout()
-
-        self._render_frequency_figure(figure)
+        return plotting_ops.render_spectrogram_result(self, result)
 
     def _render_frequency_figure(self, figure: plt.Figure) -> None:
-        """Render FFT/spectrogram figure using shared frequency-canvas lifecycle behavior."""
-
-        self._render_embedded_figure(
-            figure=figure,
-            figure_attr="_fft_figure",
-            canvas_attr="_fft_canvas",
-            toolbar_attr="_fft_toolbar",
-            container=self.frequency_plot_container,
-            root_window=self.window,
-            draw_idle_on_reuse=True,
-        )
-        self.plot_notebook.select(self.frequency_plot_tab)
+        return plotting_ops.render_frequency_figure(self, figure)
 
     def _render_cycle_result(
         self,
@@ -520,212 +341,13 @@ class AnalysisWorkspace(BaseAppShell):
         full_result: CycleAnalysisResult | None = None,
         kept_cycle_full_indices: list[int] | None = None,
     ) -> None:
-        preserved_full_result = full_result if full_result is not None else result
-        resolved_kept_full_indices = (
-            list(kept_cycle_full_indices)
-            if kept_cycle_full_indices is not None
-            else list(range(preserved_full_result.cycle_count))
-        )
-        self._clear_cycle_results()
-        self._full_cycle_result = preserved_full_result
-        self._kept_cycle_full_indices = resolved_kept_full_indices
-        self._latest_cycle_result = result
-        excluded_cycles = max(0, preserved_full_result.cycle_count - result.cycle_count)
-        cycle_axis_label = self._get_cycle_length_axis_label(result.metrics_frame)
-        self.cycle_summary_var.set(
-            " | ".join(
-                [
-                    f"Source: {result.source_column}",
-                    f"Mode: {result.method}",
-                    f"Ref: {result.reference_column}",
-                    f"Cycle length: {result.cycle_length}",
-                    f"C2C length axis: {cycle_axis_label}",
-                    f"Cycles: {result.cycle_count}",
-                    f"Excluded: {excluded_cycles}",
-                    f"Dropped rows: {result.dropped_rows}",
-                ]
-            )
-        )
-
-        display_metrics = self._build_cycle_metrics_display_frame(preserved_full_result, resolved_kept_full_indices)
-        self._cycle_metrics_tree = render_cycle_metrics_tree(self.cycle_metrics_container, display_metrics)
-        if self._cycle_metrics_tree is not None:
-            self._cycle_tree_item_to_result_index = self._build_cycle_tree_index_map(
-                self._cycle_metrics_tree,
-                resolved_kept_full_indices,
-            )
-            self._cycle_metrics_tree.bind("<<TreeviewSelect>>", self._handle_cycle_metrics_selection_changed)
-            self._cycle_tree_item_to_full_index = self._build_cycle_tree_full_index_map(self._cycle_metrics_tree)
-        self._render_cycle_plot(result)
+        return plotting_ops.render_cycle_result(self, result, full_result, kept_cycle_full_indices)
 
     def _render_cycle_plot(self, result: CycleAnalysisResult) -> None:
-        style = self._get_default_plot_style()
-        # Always use all cycles for representative and C2C plots
-        all_cycles = result.cycles_frame.to_numpy()
-        max_cycle_len = all_cycles.shape[1]
-        all_cycle_count = all_cycles.shape[0]
-
-        # Pad all cycles to max length (should already be the case, but ensure)
-        def pad_to_max(arr, maxlen):
-            if arr.shape[1] == maxlen:
-                return arr
-            out = np.full((arr.shape[0], maxlen), np.nan)
-            out[:, :arr.shape[1]] = arr
-            return out
-
-        # Top: only selected cycles, padded
-        selected_indices = self._get_selected_cycle_indices()
-        if not selected_indices:
-            selected_indices = list(range(all_cycle_count))
-        selected_cycles = result.cycles_frame.iloc[selected_indices].to_numpy()
-        selected_cycles = pad_to_max(selected_cycles, max_cycle_len)
-
-        # X axis for cycles
-        step_values = np.arange(max_cycle_len)
-
-        # Reuse or create the figure and axes (OO-API)
-        if self._cycle_figure is not None:
-            self._cycle_figure.clf()
-            axes = self._cycle_figure.subplots(3, 1, sharex=False)
-        else:
-            self._cycle_figure, axes = plt.subplots(3, 1, figsize=(6.2, 6.2), dpi=100, sharex=False)
-
-        # Top: Individual cycles (selected only)
-        ax_top = axes[0]
-        ax_top.clear()
-        for cycle_index in range(len(selected_cycles)):
-            ax_top.plot(step_values, selected_cycles[cycle_index], color="#94a3b8", alpha=0.5, linewidth=1.0)
-        apply_axis_contract(
-            ax_top,
-            title="Selected Individual Cycles",
-            x_label="Sample within cycle",
-            y_label=result.source_column,
-            style=style,
-        )
-        # Keep top and middle cycle plots on the same x-domain even when selected cycles are shorter.
-        if max_cycle_len > 0:
-            ax_top.set_xlim(0, max_cycle_len - 1)
-        apply_numeric_axis_format(ax_top, format_x=True, format_y=True)
-
-        # Middle: Representative cycle (all cycles, mean ± std, early/late means)
-        ax_mid = axes[1]
-        ax_mid.clear()
-        representative = result.representative_frame
-        mean_values = representative["mean"].to_numpy(dtype=float)
-        std_values = representative["std"].fillna(0.0).to_numpy(dtype=float)
-        support_values = representative["support_count"].to_numpy(dtype=float) if "support_count" in representative.columns else None
-        ax_mid.fill_between(step_values, mean_values - std_values, mean_values + std_values, color="#14b8a6", alpha=0.18)
-        ax_mid.plot(step_values, mean_values, color="#0f766e", linewidth=2.0, label="mean")
-        if all_cycle_count >= 4:
-            half = max(1, all_cycle_count // 2)
-            early_mean = pd.DataFrame(all_cycles[:half]).mean(axis=0, skipna=True).to_numpy(dtype=float)
-            late_mean = pd.DataFrame(all_cycles[-half:]).mean(axis=0, skipna=True).to_numpy(dtype=float)
-            ax_mid.plot(step_values, early_mean, color="#2563eb", linewidth=1.2, linestyle="--", label="early mean")
-            ax_mid.plot(step_values, late_mean, color="#dc2626", linewidth=1.2, linestyle="--", label="late mean")
-        support_axis = None
-        if support_values is not None and np.nanmin(support_values) < np.nanmax(support_values):
-            support_axis = ax_mid.twinx()
-            support_axis.plot(
-                step_values,
-                support_values,
-                color="#475569",
-                linewidth=1.1,
-                linestyle=":",
-                label="support",
-            )
-            support_axis.set_ylabel("Support [cycles]", fontsize=style.label_fontsize, color="#475569")
-            support_axis.tick_params(axis="y", colors="#475569")
-        apply_axis_contract(
-            ax_mid,
-            title="Representative Cycle (mean ± std)",
-            x_label="Sample within cycle",
-            y_label=result.source_column,
-            style=style,
-        )
-        if max_cycle_len > 0:
-            ax_mid.set_xlim(0, max_cycle_len - 1)
-        apply_numeric_axis_format(ax_mid, format_x=True, format_y=True)
-        if support_axis is not None:
-            apply_numeric_axis_format(support_axis, format_x=False, format_y=True)
-        mid_handles, mid_labels = ax_mid.get_legend_handles_labels()
-        if support_axis is not None:
-            support_handles, support_labels = support_axis.get_legend_handles_labels()
-            ax_mid.legend(mid_handles + support_handles, mid_labels + support_labels, fontsize=style.legend_fontsize, loc="best")
-        elif mid_handles:
-            ax_mid.legend(mid_handles, mid_labels, fontsize=style.legend_fontsize, loc="best")
-
-        # Bottom: Cycle-to-cycle statistics (all cycles)
-        ax_bot = axes[2]
-        ax_bot.clear()
-        metrics = result.metrics_frame
-        c2c_metric_specs = [
-            ("mean", "mean", metrics["mean"], 1.4, None),
-            ("rms", "rms", metrics["rms"], 1.4, None),
-            ("peak_to_peak", "p2p", metrics["peak_to_peak"], 1.2, None),
-            ("min", "min", metrics["min"], 1.1, "#2563eb"),
-            ("max", "max", metrics["max"], 1.1, "#dc2626"),
-        ]
-        for metric_key, label, values, linewidth, color in c2c_metric_specs:
-            if not self.cycle_metric_toggle_vars[metric_key].get():
-                continue
-            plot_kwargs = {"label": label, "linewidth": linewidth}
-            if color is not None:
-                plot_kwargs["color"] = color
-            ax_bot.plot(metrics["cycle"], values, **plot_kwargs)
-        ax_bot_right = ax_bot.twinx()
-        ax_bot_right.clear()
-        length_series = metrics["length"]
-        right_axis_values = length_series
-        right_axis_label = self._get_cycle_length_axis_label(metrics)
-        right_axis_legend = "len"
-        if "duration_seconds" in metrics.columns and metrics["duration_seconds"].notna().any():
-            right_axis_values = metrics["duration_seconds"]
-            right_axis_legend = "dur [s]"
-        ax_bot_right.plot(
-            metrics["cycle"],
-            right_axis_values,
-            label=right_axis_legend,
-            linewidth=1.4,
-            color="#b45309",
-            linestyle="--",
-        )
-        apply_axis_contract(ax_bot, title="Cycle-to-Cycle Statistics", x_label="Cycle", y_label="Metric", style=style)
-        ax_bot_right.set_ylabel(right_axis_label, fontsize=style.label_fontsize, color="#b45309", labelpad=12)
-        ax_bot_right.yaxis.set_label_position("right")
-        ax_bot_right.yaxis.tick_right()
-        ax_bot_right.tick_params(axis="y", colors="#b45309")
-        left_handles, left_labels = ax_bot.get_legend_handles_labels()
-        right_handles, right_labels = ax_bot_right.get_legend_handles_labels()
-        ax_bot.legend(left_handles + right_handles, left_labels + right_labels, fontsize=style.legend_fontsize, loc="best")
-        apply_numeric_axis_format(ax_bot, format_x=True, format_y=True)
-        apply_numeric_axis_format(ax_bot_right, format_x=False, format_y=True)
-
-        self._cycle_figure.tight_layout()
-
-        # Canvas and toolbar management
-        self._render_embedded_figure(
-            figure=self._cycle_figure,
-            figure_attr="_cycle_figure",
-            canvas_attr="_cycle_canvas",
-            toolbar_attr="_cycle_toolbar",
-            container=self.cycle_plot_container,
-            root_window=self.window,
-            draw_idle_on_reuse=False,
-        )
-        self.notebook.select(self.cycles_tab)
-        self.plot_notebook.select(self.cycle_plot_tab)
+        return plotting_ops.render_cycle_plot(self, result)
 
     def _get_cycle_time_column(self) -> str | None:
-        preferred_time_column = get_preferred_role_column(self.column_roles, "time", available_columns=list(self.session.working_frame.columns))
-        candidate_columns = [
-            preferred_time_column or "",
-            self.plot_x_var.get().strip(),
-            getattr(self.session, "selected_x_column", "").strip(),
-        ]
-        for column_name in candidate_columns:
-            if column_name and column_name != "Index" and column_name in self.session.working_frame.columns:
-                return column_name
-        return None
+        return plotting_ops.get_cycle_time_column(self)
 
     def _get_cycle_length_axis_label(self, metrics_frame: pd.DataFrame) -> str:
         if "duration_seconds" in metrics_frame.columns and metrics_frame["duration_seconds"].notna().any():
