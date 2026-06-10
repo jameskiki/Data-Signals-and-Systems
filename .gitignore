@@ -4,20 +4,20 @@ __pycache__/
 *.pyo
 *.pyd
 
-build/
-dist/
+Build/
+Dist/
 *.spec.bak
 
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
-docs/latex/*.aux
-docs/latex/*.log
-docs/latex/*.out
-docs/latex/*.toc
-docs/latex/*.lof
-docs/latex/*.lot
+Docs/latex/*.aux
+Docs/latex/*.log
+Docs/latex/*.out
+Docs/latex/*.toc
+Docs/latex/*.lof
+Docs/latex/*.lot
 
 .vscode/settings.json
 

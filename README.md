@@ -15,11 +15,11 @@ The application has two working areas:
 
 ## Start Here
 
-- [docs/quickstart.md](docs/quickstart.md): one short demo run from load to FFT
-- [docs/user-guide.md](docs/user-guide.md): normal user workflow and window orientation
-- [docs/analysis-methods.md](docs/analysis-methods.md): short reference for filters, derived signals, spectra, cycles, and statistics
-- [docs/technical-overview.md](docs/technical-overview.md): current package layout and runtime flow
-- [docs/faq.md](docs/faq.md): practical troubleshooting
+- [Docs/quickstart.md](Docs/quickstart.md): one short demo run from load to FFT
+- [Docs/user-guide.md](Docs/user-guide.md): normal user workflow and window orientation
+- [Docs/analysis-methods.md](Docs/analysis-methods.md): short reference for filters, derived signals, spectra, cycles, and statistics
+- [Docs/technical-overview.md](Docs/technical-overview.md): current package layout and runtime flow
+- [Docs/faq.md](Docs/faq.md): practical troubleshooting
 
 ## Features
 
@@ -71,13 +71,13 @@ flowchart TB
 ## Visual Checks
 
 <p align="center">
-	<img src="docs/images/algorithms/fft_clean_signal.png" alt="Spectral demo overview and FFT result" width="64%">
+	<img src="Docs/images/algorithms/fft_clean_signal.png" alt="Spectral demo overview and FFT result" width="64%">
 </p>
 
 Spectral reference demo: time-domain clean signal and its FFT amplitude spectrum.
 
 <p align="center">
-	<img src="docs/images/algorithms/fft_vs_welch_comparison.png" alt="FFT and Welch comparison on the same demo output" width="64%">
+	<img src="Docs/images/algorithms/fft_vs_welch_comparison.png" alt="FFT and Welch comparison on the same demo output" width="64%">
 </p>
 
 Same signal, two views: FFT amplitude vs Welch PSD on the input-output demo.
@@ -100,7 +100,7 @@ pip install -r requirements.txt
 python EvalData.py
 ```
 
-`EvalData.py` remains the supported entry point at the repository root. It is intentionally thin and forwards into the packaged application code under `main_window/`.
+`EvalData.py` remains the supported entry point at the repository root. It is intentionally thin and forwards into the packaged application code under `Source/datapreparation_app/`.
 
 ## Debugging In VS Code
 
@@ -128,25 +128,26 @@ You can also build directly from an activated environment:
 pyinstaller EvalData.py
 ```
 
-Generated build artifacts are written to `build/` and `dist/` and are intentionally ignored by Git.
+Generated build artifacts are written to `Build/` and `Dist/` and are intentionally ignored by Git.
 
 ## Documentation Map
 
-- [docs/quickstart.md](docs/quickstart.md) for the shortest demo-based path
-- [docs/user-guide.md](docs/user-guide.md) for the normal workflow, roles, and windows
-- [docs/analysis-methods.md](docs/analysis-methods.md) for the current analysis methods and their functional meaning
-- [docs/which-tool-when.md](docs/which-tool-when.md) for deciding between the main window and the analysis workspace
-- [docs/technical-overview.md](docs/technical-overview.md) for architecture and runtime flow
-- [docs/faq.md](docs/faq.md) for troubleshooting and common file/export issues
-- [docs/data-formats.md](docs/data-formats.md) and [docs/glossary.md](docs/glossary.md) as short reference pages
-- [docs/latex/README.md](docs/latex/README.md) for the full printable algorithm-note index, including FFT/Welch, filtering, derived signals, cycles, and statistics/correlation
+- [Docs/quickstart.md](Docs/quickstart.md) for the shortest demo-based path
+- [Docs/user-guide.md](Docs/user-guide.md) for the normal workflow, roles, and windows
+- [Docs/analysis-methods.md](Docs/analysis-methods.md) for the current analysis methods and their functional meaning
+- [Docs/which-tool-when.md](Docs/which-tool-when.md) for deciding between the main window and the analysis workspace
+- [Docs/technical-overview.md](Docs/technical-overview.md) for architecture and runtime flow
+- [Docs/faq.md](Docs/faq.md) for troubleshooting and common file/export issues
+- [Docs/data-formats.md](Docs/data-formats.md) and [Docs/glossary.md](Docs/glossary.md) as short reference pages
+- [Docs/latex/README.md](Docs/latex/README.md) for the full printable algorithm-note index, including FFT/Welch, filtering, derived signals, cycles, and statistics/correlation
 
 ## Project Layout
 
 - `EvalData.py`: thin entry point for launching the application
-- `main_window/`: main application window, preparation workflow, preview UI, plotting helpers, and demo datasets
-- `analysis_workspace/`: detailed per-dataset analysis window and its supporting UI/state modules
-- `data_ops/`: pure dataframe and signal-processing helpers
+- `Source/datapreparation_app/`: main application window, preparation workflow, preview UI, plotting helpers, and demo datasets
+- `Source/analysis_app/`: detailed per-dataset analysis window and its supporting UI/state modules
+- `Source/data_ops/`: pure dataframe and signal-processing helpers
+- `Source/shared/`: shared UI contracts, plotting helpers, notifications, and documentation links
 - `deploy.py`: environment/bootstrap build helper
 
 The repository root is now intentionally kept thin: the launcher stays at the top level, while the main UI and analysis UI live in dedicated packages.
@@ -158,7 +159,7 @@ The project includes an automated test suite with 261 tests covering all `data_o
 Run the tests with:
 
 ```powershell
-python -m pytest tests/ -v
+python -m pytest Tests/ -v
 ```
 
 The UI layer (Tkinter) is not unit-tested. Manual verification is still recommended for interactive workflows and engineering conclusions.
@@ -175,8 +176,8 @@ On every push and pull request, CI runs two checks:
 Commands:
 
 ```powershell
-python -m pytest tests -q -k "not workflows_integration"
-python -m pytest tests/test_workflows_integration.py -q
+python -m pytest Tests -q -k "not workflows_integration"
+python -m pytest Tests/test_workflows_integration.py -q
 ```
 
 The integration check is currently non-blocking in CI (`continue-on-error: true`) so it can be observed and stabilized first.
@@ -194,4 +195,4 @@ Prepared dataset creation currently copies the full selected dataset and optiona
 
 Markdown is the primary documentation format. LaTeX remains available for more formal printable notes when needed.
 
-Practical pages should link forward into deeper notes when those notes exist. The current formal entry point is [docs/latex/README.md](docs/latex/README.md), with the first compiled example at [docs/latex/fft_welch_example.pdf](docs/latex/fft_welch_example.pdf).
+Practical pages should link forward into deeper notes when those notes exist. The current formal entry point is [Docs/latex/README.md](Docs/latex/README.md), with the first compiled example at [Docs/latex/fft_welch_example.pdf](Docs/latex/fft_welch_example.pdf).

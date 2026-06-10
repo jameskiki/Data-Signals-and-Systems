@@ -39,8 +39,8 @@ def main() -> None:
     # Install dependencies
     run([PYTHON_EXE, "-m", "pip", "install", *DEPENDENCIES, "pyinstaller"])
 
-    # Build EXE
-    run([PYINSTALLER_EXE, "EvalData.py"])
+    # Build EXE into the repository's renamed artifact folders.
+    run([PYINSTALLER_EXE, "EvalData.py", "--workpath", "Build", "--distpath", "Dist"])
 
 if __name__ == "__main__":
     main()

@@ -21,7 +21,7 @@ The most reliable first run is the built-in spectral demo because the expected d
 
 Example expectation: the spectral demo is deterministic and should show the main peaks near 1.0 Hz, 7.5 Hz, and 18.0 Hz.
 
-If you want the method background behind `FFT Amplitude` and `Welch PSD`, see [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
+If you want the method background behind `FFT Amplitude` and `Welch PSD`, see [Docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
 ## What To Expect
 
@@ -39,11 +39,11 @@ If you want the method background behind `FFT Amplitude` and `Welch PSD`, see [d
 - Try `Welch PSD` after the FFT view if you want a smoother spectrum.
 - If the demo result still looks wrong, treat it as a concrete defect signal in the current implementation, not as user error.
 
-For the formal difference between the two spectrum methods, see [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
+For the formal difference between the two spectrum methods, see [Docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
 ## Next
 
-- [docs/user-guide.md](docs/user-guide.md) for the normal workflow
-- [docs/demo-validation.md](docs/demo-validation.md) for a reproducible manual validation pass on all built-in demo datasets
-- [docs/which-tool-when.md](docs/which-tool-when.md) to decide which window to use
-- [docs/faq.md](docs/faq.md) if something behaves differently than expected
+- [Docs/user-guide.md](user-guide.md) for the normal workflow
+- [Docs/demo-validation.md](demo-validation.md) for a reproducible manual validation pass on all built-in demo datasets
+- [Docs/which-tool-when.md](which-tool-when.md) to decide which window to use
+- [Docs/faq.md](faq.md) if something behaves differently than expected
