@@ -10,8 +10,8 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from shared.documentation_links import open_documentation_path
-from shared.notifications import NotificationManager
+from Source.shared.documentation_links import open_documentation_path
+from Source.shared.notifications import NotificationManager
 from .actions import (
     build_reset_update,
 )
@@ -42,12 +42,12 @@ from .state import (
 )
 from .views import render_correlation_view, render_dataframe_preview, render_fft_peaks_tree, render_statistics_tree
 from .views import render_cycle_metrics_tree
-from data_ops.cycles import (
+from Source.data_ops.cycles import (
     CycleAnalysisResult,
     rebuild_cycle_analysis_result,
 )
-from shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
-from shared.column_roles import (
+from Source.shared.display_format import apply_numeric_axis_format, format_display_number, format_display_percent
+from Source.shared.column_roles import (
     apply_literal_role_combobox_style,
     get_column_role,
     get_column_role_cell_colors,
@@ -55,16 +55,16 @@ from shared.column_roles import (
     summarize_column_roles,
     update_projected_column_roles,
 )
-from shared.base_app_shell import BaseAppShell
-from shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
+from Source.shared.base_app_shell import BaseAppShell
+from Source.shared.demo_catalog import describe_demo_frequency_expectations, get_demo_frequency_guides
 
-from data_ops.filtering import resolve_filtered_column_name
-from data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
-from data_ops.models import SIGNAL_FILTER_OPERATIONS
-from data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
-from data_ops.summary import summarize_dataframe
-from shared.plot_options import PlotOptions, PlotStyle
-from shared.plot_utils import apply_axis_contract, create_plot_figure
+from Source.data_ops.filtering import resolve_filtered_column_name
+from Source.data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
+from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
+from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
+from Source.data_ops.summary import summarize_dataframe
+from Source.shared.plot_options import PlotOptions, PlotStyle
+from Source.shared.plot_utils import apply_axis_contract, create_plot_figure
 
 
 class AnalysisWorkspace(BaseAppShell):

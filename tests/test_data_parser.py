@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from datapreparation_app.data_parser import DataParser
+from Source.datapreparation_app.data_parser import DataParser
 
 
 class TestParseDatetimeSeries:

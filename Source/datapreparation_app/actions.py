@@ -9,8 +9,8 @@ from .datasets import DatasetContext, register_dataset, select_dataset_in_table,
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog, show_figure_in_window
 from .preview import refresh_preview_table, clear_preview_plot, clear_preview_table, refresh_preview_plot, refresh_preview_plot_signal_controls
-from data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
-from shared.plot_utils import create_plot_figure
+from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
+from Source.shared.plot_utils import create_plot_figure
 
 def load_files(app) -> None:
 	files = filedialog.askopenfilenames(filetypes=app.LOG_FILE_TYPES)
@@ -365,7 +365,7 @@ def open_analysis_workspace(app) -> None:
 	if selected_path is None:
 		return
 
-	from analysis_app.app import AnalysisWorkspace
+	from Source.analysis_app.app import AnalysisWorkspace
 
 	workspace = AnalysisWorkspace(
 		app.root,

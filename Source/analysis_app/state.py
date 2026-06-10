@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from data_ops.models import DataSummary
-from data_ops.spectral import FFT_WINDOW_OPTIONS
+from Source.data_ops.models import DataSummary
+from Source.data_ops.spectral import FFT_WINDOW_OPTIONS
 
 
 ANALYSIS_WINDOW_GEOMETRY = "1450x900"

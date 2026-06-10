@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from analysis_app.actions import FrameUpdate
-from analysis_app import handlers
+from Source.analysis_app.actions import FrameUpdate
+from Source.analysis_app import handlers
 
 
 class DummyVar:

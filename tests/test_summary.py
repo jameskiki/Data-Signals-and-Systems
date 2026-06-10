@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_ops.summary import build_correlation_frame, build_statistics_frame, summarize_dataframe
+from Source.data_ops.summary import build_correlation_frame, build_statistics_frame, summarize_dataframe
 
 
 # ── summarize_dataframe ──────────────────────────────────────────────

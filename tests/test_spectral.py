@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from scipy.signal import welch as scipy_welch
 
-from data_ops.spectral import (
+from Source.data_ops.spectral import (
     FrequencySpectrumResult,
     SpectrogramResult,
     compute_coherence_spectrum,

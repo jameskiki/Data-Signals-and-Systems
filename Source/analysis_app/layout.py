@@ -3,10 +3,10 @@
 import tkinter as tk
 from tkinter import ttk
 
-from shared.documentation_links import DOCUMENTATION_LINKS
-from shared.status_widget import StatusBar
+from Source.shared.documentation_links import DOCUMENTATION_LINKS
+from Source.shared.status_widget import StatusBar
 from .state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
-from data_ops.models import SIGNAL_FILTER_OPERATIONS
+from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 
 
 def build_analysis_workspace_ui(workspace) -> None:

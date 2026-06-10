@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from shared.display_format import (
+from Source.shared.display_format import (
     format_display_number,
     format_display_percent,
     format_display_value,

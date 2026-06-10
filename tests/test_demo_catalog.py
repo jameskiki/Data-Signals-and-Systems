@@ -1,6 +1,6 @@
 import numpy as np
 
-from shared.demo_catalog import (
+from Source.shared.demo_catalog import (
     CYCLE_EXCLUSION_STRESS_DEMO,
     CYCLE_VALIDATION_DEMO,
     DEMO_DATASET_SPEC_BY_KEY,

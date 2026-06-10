@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from tkinter import font as tkfont, ttk
 
 import pandas as pd
-from shared.column_roles import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
-from shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
-from shared.display_format import format_display_value
+from Source.shared.column_roles import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from Source.shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
+from Source.shared.display_format import format_display_value
 
 from .state import (
     CORRELATION_DIAGONAL_COLOR,

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_ops.cycles import (
+from Source.data_ops.cycles import (
     compute_cycle_analysis_from_ranges,
     compute_fixed_length_cycle_analysis,
     detect_peak_cycle_ranges,

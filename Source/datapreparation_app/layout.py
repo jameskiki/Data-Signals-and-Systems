@@ -3,8 +3,8 @@
 import tkinter as tk
 from tkinter import ttk
 
-from shared.documentation_links import DOCUMENTATION_LINKS
-from shared.status_widget import StatusBar
+from Source.shared.documentation_links import DOCUMENTATION_LINKS
+from Source.shared.status_widget import StatusBar
 from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_ops.signals import add_derived_column, apply_signal_filter
+from Source.data_ops.signals import add_derived_column, apply_signal_filter
 
 
 # ── Derived columns ──────────────────────────────────────────────────

@@ -8,16 +8,16 @@ are thin one-line delegations to these functions.
 
 from tkinter import messagebox
 
-from data_ops.cycles import (
+from Source.data_ops.cycles import (
     compute_cycle_analysis_from_ranges,
     compute_fixed_length_cycle_analysis,
     detect_peak_cycle_ranges,
     detect_rising_edge_cycle_ranges,
     detect_zero_crossing_cycle_ranges,
 )
-from data_ops.filtering import resolve_filtered_column_name
-from data_ops.frame_ops import resample_to_uniform
-from data_ops.spectral import (
+from Source.data_ops.filtering import resolve_filtered_column_name
+from Source.data_ops.frame_ops import resample_to_uniform
+from Source.data_ops.spectral import (
     compute_coherence_spectrum,
     compute_fft_spectrum,
     compute_spectrogram,

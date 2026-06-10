@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 import tkinter as tk
 
-from shared.column_roles import (
+from Source.shared.column_roles import (
     apply_literal_role_combobox_style,
     apply_role_combobox_style,
     colorize_listbox_by_role,
@@ -25,8 +25,8 @@ from shared.column_roles import (
     summarize_column_roles,
     update_projected_column_roles,
 )
-from data_ops.models import DataSummary
-from data_ops.summary import summarize_dataframe
+from Source.data_ops.models import DataSummary
+from Source.data_ops.summary import summarize_dataframe
 
 
 @dataclass

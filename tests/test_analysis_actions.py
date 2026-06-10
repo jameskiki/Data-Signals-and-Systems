@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analysis_app.actions import (
+from Source.analysis_app.actions import (
     FrameUpdate,
     build_derived_signal_update,
     build_reset_update,

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_ops.filtering import apply_simple_filter, resolve_filtered_column_name, subset_dataframe_rows
+from Source.data_ops.filtering import apply_simple_filter, resolve_filtered_column_name, subset_dataframe_rows
 
 
 # ── resolve_filtered_column_name ─────────────────────────────────────

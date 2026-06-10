@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from shared.notifications import Notification, NotificationManager, NotificationSeverity
+from Source.shared.notifications import Notification, NotificationManager, NotificationSeverity
 
 
 class StatusBar(tk.Frame):

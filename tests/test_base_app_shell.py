@@ -3,8 +3,8 @@
 import matplotlib.backends.backend_tkagg as backend_tkagg
 import matplotlib.pyplot as plt
 
-from shared.base_app_shell import BaseAppShell
-from shared import base_app_shell
+from Source.shared.base_app_shell import BaseAppShell
+from Source.shared import base_app_shell
 
 
 class DummyVar:

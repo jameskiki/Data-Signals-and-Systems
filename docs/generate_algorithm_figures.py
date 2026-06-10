@@ -14,18 +14,18 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = ROOT / "docs" / "images" / "algorithms"
+OUTPUT_DIR = ROOT / "Docs" / "images" / "algorithms"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from data_ops.filtering import apply_simple_filter
-from data_ops.cycles import compute_cycle_analysis_from_ranges, detect_rising_edge_cycle_ranges
-from data_ops.signals import apply_signal_filter
-from data_ops.signals import add_derived_column
-from data_ops.spectral import compute_fft_spectrum, compute_welch_psd
-from data_ops.summary import summarize_dataframe
-from shared.demo_catalog import INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
+from Source.data_ops.filtering import apply_simple_filter
+from Source.data_ops.cycles import compute_cycle_analysis_from_ranges, detect_rising_edge_cycle_ranges
+from Source.data_ops.signals import apply_signal_filter
+from Source.data_ops.signals import add_derived_column
+from Source.data_ops.spectral import compute_fft_spectrum, compute_welch_psd
+from Source.data_ops.summary import summarize_dataframe
+from Source.shared.demo_catalog import INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 
 
 def _build_demo_frames() -> tuple[pd.DataFrame, pd.DataFrame]:

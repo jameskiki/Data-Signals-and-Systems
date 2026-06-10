@@ -2,7 +2,7 @@
 
 import os
 
-from data_ops.frame_ops import select_dataframe_columns, split_dataframe_by_index_ranges
+from Source.data_ops.frame_ops import select_dataframe_columns, split_dataframe_by_index_ranges
 from .datasets import (
     build_virtual_dataset_path,
     collect_source_paths,

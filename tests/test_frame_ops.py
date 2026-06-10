@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_ops.frame_ops import (
+from Source.data_ops.frame_ops import (
     drop_dataframe_columns,
     drop_dataframe_index_range,
     keep_dataframe_index_ranges,

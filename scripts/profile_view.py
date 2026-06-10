@@ -10,7 +10,8 @@ import sys
 PROFILE_FILE = "profile_output.prof"
 
 # Path to the venv Scripts directory
-VENV_SCRIPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Scripts")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VENV_SCRIPTS = os.path.join(REPO_ROOT, ".venv", "Scripts")
 RUNSNAKE_EXE = os.path.join(VENV_SCRIPTS, "runsnake.exe")
 
 if not os.path.isfile(RUNSNAKE_EXE):

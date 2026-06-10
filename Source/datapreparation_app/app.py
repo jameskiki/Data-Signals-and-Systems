@@ -24,7 +24,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from analysis_app.app import AnalysisWorkspace
+from Source.analysis_app.app import AnalysisWorkspace
 from .datasets import (
     DatasetContext,
     apply_literal_role_combobox_style,
@@ -49,10 +49,10 @@ from .preview import (
     refresh_selected_dataset_preview_plot,
     refresh_preview_table,
 )
-from shared.column_roles import summarize_column_roles
-from shared.documentation_links import open_documentation_path
-from shared.base_app_shell import BaseAppShell
-from shared.notifications import NotificationManager
+from Source.shared.column_roles import summarize_column_roles
+from Source.shared.documentation_links import open_documentation_path
+from Source.shared.base_app_shell import BaseAppShell
+from Source.shared.notifications import NotificationManager
 from .state import (
     APP_TITLE,
     WINDOW_GEOMETRY,

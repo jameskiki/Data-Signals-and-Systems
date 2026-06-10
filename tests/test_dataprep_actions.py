@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from datapreparation_app import actions
-from datapreparation_app.datasets import DatasetContext
+from Source.datapreparation_app import actions
+from Source.datapreparation_app.datasets import DatasetContext
 
 
 class DummyNotifications:
@@ -201,7 +201,7 @@ def test_open_analysis_workspace_appends_workspace(monkeypatch):
         def __init__(self, *args, **kwargs):
             created.append(kwargs)
 
-    monkeypatch.setitem(__import__("sys").modules, "analysis_app.app", SimpleNamespace(AnalysisWorkspace=FakeWorkspace))
+    monkeypatch.setitem(__import__("sys").modules, "Source.analysis_app.app", SimpleNamespace(AnalysisWorkspace=FakeWorkspace))
 
     actions.open_analysis_workspace(app)
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from shared.column_roles import (
+from Source.shared.column_roles import (
     get_available_column_roles,
     get_column_role,
     get_column_role_cell_colors,

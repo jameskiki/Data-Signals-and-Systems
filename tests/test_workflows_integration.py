@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from analysis_app import handlers
-from datapreparation_app import actions as dataprep_actions
-from datapreparation_app import preparation
-from datapreparation_app.datasets import register_dataset
+from Source.analysis_app import handlers
+from Source.datapreparation_app import actions as dataprep_actions
+from Source.datapreparation_app import preparation
+from Source.datapreparation_app.datasets import register_dataset
 
 
 class DummyVar:

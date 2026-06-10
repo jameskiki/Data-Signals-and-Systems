@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from data_ops.filtering import apply_simple_filter, resolve_filtered_column_name
-from data_ops.signals import add_derived_column, apply_signal_filter
+from Source.data_ops.filtering import apply_simple_filter, resolve_filtered_column_name
+from Source.data_ops.signals import add_derived_column, apply_signal_filter
 
 
 @dataclass(frozen=True)

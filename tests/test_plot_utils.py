@@ -8,8 +8,8 @@ matplotlib.use("Agg")
 
 import pandas as pd
 
-from shared.plot_options import PlotOptions, PlotStyle
-from shared.plot_utils import create_plot_figure
+from Source.shared.plot_options import PlotOptions, PlotStyle
+from Source.shared.plot_utils import create_plot_figure
 
 
 def test_overlay_uses_contract_title_and_y_label() -> None:

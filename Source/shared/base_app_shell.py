@@ -6,7 +6,7 @@ Tkinter inheritance (both windows use different root types).
 
 Usage::
 
-    from shared.base_app_shell import BaseAppShell
+    from Source.shared.base_app_shell import BaseAppShell
 
     class MyApp(BaseAppShell):
         def __init__(self):

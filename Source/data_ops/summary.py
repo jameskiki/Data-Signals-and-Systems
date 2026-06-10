@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from shared.display_format import format_display_value
+from Source.shared.display_format import format_display_value
 
 from .models import DataSummary
 
