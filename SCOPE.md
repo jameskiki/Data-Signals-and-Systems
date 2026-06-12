@@ -65,11 +65,11 @@ This application is designed to analyze, visualize, and report on data from engi
 - Statistical analysis (mean, median, std, correlation, etc.)
 - Summary statistics and report generation
 - Interactive plotting (time series, histograms, scatter plots, etc.)
-- Automated batch plotting and figure export (PNG, PDF, SVG)
+- Automated batch plotting and figure export (PNG, PDF, SVG) *(planned; current implementation exports CSV data views and generated docs images)*
 - Export of results (tables, figures, processed data)
-- Configurable analysis workflows (via config files or UI)
-- Logging of analysis steps and parameters for reproducibility
-- Version-controlled outputs (results linked to code and config version)
+- Configurable analysis workflows (via config files or UI) *(planned; current workflow is UI-driven)*
+- Logging of analysis steps and parameters for reproducibility *(planned; current implementation focuses on deterministic demo paths and test coverage)*
+- Version-controlled outputs (results linked to code and config version) *(planned; current reproducibility is primarily repository-level versioning plus demo/test assets)*
 
 ### Extensibility
 - Modular architecture for adding new analysis modules

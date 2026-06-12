@@ -173,7 +173,7 @@ The cycle tab supports four detection modes:
 
 - `fixed_length`: split the active signal into equal row blocks of a given size.
 - `rising_edge`: detect cycle boundaries from rising threshold crossings on a reference signal.
-- `zero_crossing`: detect cycles between zero-crossing points on a reference signal, with direction options: `rising`, `falling`, or `both`.
+- `zero_crossing`: detect cycles between rising zero-crossing points on a reference signal.
 - `peak`: detect cycles between successive peaks of a reference signal using `scipy.signal.find_peaks`. Supports a `prominence` filter to ignore minor peaks.
 
 All modes produce:
@@ -188,7 +188,7 @@ Reproducible demo examples:
 
 - On the spectral reference demo, use `fixed_length` with `cycle_length = 250`. The built-in impact train repeats every `0.5 s` at `500 Hz`, so `250` rows is a natural first check.
 - On the same demo, use `rising_edge` with `Reference = impact_marker`, `Threshold = 0.5`, and `Cycle length = 200` as the minimum accepted cycle size.
-- On the same demo, use `zero_crossing` with `Reference = clean_signal`, `Direction = rising`, and a minimum cycle length to segment the underlying oscillation.
+- On the same demo, use `zero_crossing` with `Reference = clean_signal` and a minimum cycle length to segment the underlying oscillation.
 - On the same demo, use `peak` with `Reference = impact_marker` and a `prominence` value to segment the response around successive significant peaks.
 
 For the formal note on the current cycle workflow, see [latex/cycle_analysis_example.pdf](latex/cycle_analysis_example.pdf).

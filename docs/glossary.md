@@ -14,7 +14,7 @@ Use this page as a short lookup. The fuller explanations live in [user-guide.md]
 - `Spectrogram`: a time-frequency representation produced by short-time FFT, showing how spectral content evolves over time as a heatmap.
 - `Butterworth filter`: a maximally-flat magnitude-response IIR filter. EvalData uses zero-phase `sosfiltfilt` (forward-backward filtering) for lowpass, highpass, and bandpass variants.
 - `Prominence`: a peak-detection parameter from `scipy.signal.find_peaks` that measures how much a peak stands out relative to its surroundings; used in the `peak` cycle-detection mode to ignore minor peaks.
-- `Zero-crossing`: a point where a signal changes sign; the `zero_crossing` cycle-detection mode uses these points as cycle boundaries with configurable direction (rising, falling, or both).
+- `Zero-crossing`: a point where a signal changes sign; the current `zero_crossing` cycle-detection mode uses rising zero-crossing points as cycle boundaries.
 - `Hilbert envelope`: the amplitude envelope of a signal computed via the analytic signal (Hilbert transform). Useful for extracting the modulation envelope of narrowband or oscillatory signals.
 - `RMS envelope`: a rolling root-mean-square value computed over a centered window, tracking the instantaneous energy of a signal.
 - `Detrend`: removal of a polynomial trend (order 1–3) from a signal by least-squares fit and subtraction.

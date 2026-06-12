@@ -19,7 +19,7 @@ The project is organized around:
 - `Source/analysis_app/`: filtering, derived signals, frequency analysis, cycle analysis, stats, export
 - `Source/data_ops/`: pure operation modules (`signals`, `spectral`, `cycles`, `frame_ops`, `summary`, `filtering`, `io_ops`, `models`)
 - `Source/shared/`: shared plot contracts/builders, embedded figure lifecycle, role/display helpers, notifications, docs links
-- `Tests/`: unit/app-layer/integration tests
+- `tests/`: unit/app-layer/integration tests
 - `.github/workflows/tests.yml`: CI test workflow and hard architecture boundary gate
 
 ## Layer Responsibilities
@@ -88,7 +88,7 @@ Depth 2 owns Tk canvas/window behavior, not algorithmic analysis.
 
 ## Import Boundary Policy
 
-The repository now enforces architecture boundaries via `Tests/test_import_boundaries.py` and CI.
+The repository now enforces architecture boundaries via `tests/test_import_boundaries.py` and CI.
 
 ### Required Rules
 
@@ -107,11 +107,11 @@ The repository now enforces architecture boundaries via `Tests/test_import_bound
 
 ## Testing and CI
 
-- `Tests/test_plot_utils.py`: shared plotting contract coverage
-- `Tests/test_base_app_shell.py`: embedded figure lifecycle behavior
-- `Tests/test_analysis_handlers.py`: analysis orchestration behavior
-- `Tests/test_workflows_integration.py`: preparation-to-analysis workflow coverage
-- `Tests/test_import_boundaries.py`: hard architecture boundary checks
+- `tests/test_plot_utils.py`: shared plotting contract coverage
+- `tests/test_base_app_shell.py`: embedded figure lifecycle behavior
+- `tests/test_analysis_handlers.py`: analysis orchestration behavior
+- `tests/test_workflows_integration.py`: preparation-to-analysis workflow coverage
+- `tests/test_import_boundaries.py`: hard architecture boundary checks
 
 CI order in `.github/workflows/tests.yml`:
 

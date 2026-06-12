@@ -21,6 +21,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from Source.datapreparation_app.app import DataPreparationApp
 from Source.shared.demo_catalog import CYCLE_VALIDATION_DEMO, SPECTRAL_REFERENCE_DEMO
+from Source.shared.plot_options import PlotOptions
+from Source.shared.plot_utils import create_plot_figure
 
 try:
     from PIL import Image, ImageDraw, ImageGrab
@@ -33,6 +35,15 @@ except ImportError as error:  # pragma: no cover - runtime dependency check
 SPECTRAL_SCREENSHOT_MAX_ROWS = 2500
 CYCLE_SCREENSHOT_MAX_ROWS = 1800
 CYCLE_SCREENSHOT_MAX_CYCLES = 12
+
+
+def _focus_capture_window(window: tk.Misc, root: tk.Tk) -> None:
+    """Bring one window to the foreground and keep it topmost briefly for capture."""
+
+    window.lift()
+    window.focus_force()
+    window.attributes("-topmost", True)
+    _pump_ui(root, 0.12)
 
 
 def _pump_ui(root: tk.Tk, seconds: float = 0.2) -> None:
@@ -48,24 +59,62 @@ def _pump_ui(root: tk.Tk, seconds: float = 0.2) -> None:
 def _capture_widget(widget: tk.Misc, output_path: Path, padding: int = 8) -> None:
     """Capture one Tk widget rectangle and save it as a PNG image."""
 
-    widget.update_idletasks()
-    x0 = widget.winfo_rootx() - padding
-    y0 = widget.winfo_rooty() - padding
-    x1 = widget.winfo_rootx() + widget.winfo_width() + padding
-    y1 = widget.winfo_rooty() + widget.winfo_height() + padding
-    image = ImageGrab.grab(bbox=(x0, y0, x1, y1), all_screens=True)
+    image = _grab_widget_image(widget, padding=padding)
     image.save(output_path)
 
 
 def _grab_widget_image(widget: tk.Misc, padding: int = 8) -> Image.Image:
     """Capture one Tk widget rectangle and return the Pillow image."""
 
+    toplevel = widget.winfo_toplevel()
+    root = widget._root()  # tkinter internals: returns the Tk root for this widget
+    _focus_capture_window(toplevel, root)
     widget.update_idletasks()
     x0 = widget.winfo_rootx() - padding
     y0 = widget.winfo_rooty() - padding
     x1 = widget.winfo_rootx() + widget.winfo_width() + padding
     y1 = widget.winfo_rooty() + widget.winfo_height() + padding
     return ImageGrab.grab(bbox=(x0, y0, x1, y1), all_screens=True)
+
+
+def _reset_workspace_for_demo_capture(root: tk.Tk, workspace) -> None:
+    """Reset the analysis workspace to the original demo frame before each method capture."""
+
+    workspace._reset_working_data()
+    _pump_ui(root, 0.25)
+
+
+def _set_plot_columns_for_capture(root: tk.Tk, workspace, selected_columns: list[str]) -> None:
+    """Force the live plot to show specific columns for demonstrative algorithm captures."""
+
+    available_columns = set(str(column) for column in workspace.session.working_frame.columns)
+    resolved_columns = [column for column in selected_columns if column in available_columns]
+    if not resolved_columns:
+        return
+
+    workspace.plot_x_var.set("Index")
+    workspace.plot_subplots_var.set(True)
+    numeric_columns = [str(column) for column in workspace.session.working_frame.select_dtypes(include=["number"]).columns]
+    workspace._set_plot_y_column_options(numeric_columns, resolved_columns)
+    workspace.session.selected_x_column = "Index"
+    workspace.session.selected_y_columns = resolved_columns
+    workspace.session.use_subplots = True
+
+    # Render the exact columns we want to demonstrate, independent of transient UI menu state.
+    plot_options = PlotOptions(
+        cols_to_plot=resolved_columns,
+        xcol="Index",
+        use_subplots=True,
+        y_label="Value",
+    )
+    figure = create_plot_figure(
+        plot_options,
+        [workspace.session.source_path],
+        {workspace.session.source_path: workspace.session.working_frame},
+        column_roles=workspace.column_roles,
+    )
+    workspace._render_plot_figure(figure)
+    _pump_ui(root, 0.2)
 
 
 def _build_contact_sheet(
@@ -260,8 +309,15 @@ def _capture_filtering_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
 
     entries: list[tuple[str, Image.Image]] = []
 
+    _reset_workspace_for_demo_capture(root, workspace)
     workspace.notebook.select(workspace.filter_tab)
     _select_notebook_tab_by_prefix(filter_subtabs, "Simple Filtering")
+    workspace.filter_min_var.set("0.15")
+    workspace.filter_max_var.set("")
+    output_column = "measured_signal_simple_demo"
+    workspace.filter_output_name_var.set(output_column)
+    workspace._apply_filter()
+    _set_plot_columns_for_capture(root, workspace, ["measured_signal", output_column])
     _pump_ui(root, 0.25)
     entries.append(("simple_filter", _grab_widget_image(workspace.window)))
 
@@ -275,14 +331,31 @@ def _capture_filtering_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
         "butterworth_bandpass",
     ]
     for operation in signal_ops:
+        _reset_workspace_for_demo_capture(root, workspace)
+        _set_active_column_if_available(workspace, "measured_signal")
         workspace.notebook.select(workspace.filter_tab)
         _select_notebook_tab_by_prefix(filter_subtabs, "Signal Processing")
         workspace.signal_filter_operation_var.set(operation)
+        output_column = f"measured_signal_{operation}_demo"
+        workspace.signal_filter_name_var.set(output_column)
+        workspace.signal_filter_spacing_var.set("0.002")
+        workspace.signal_filter_window_var.set("21")
+        workspace.signal_filter_alpha_var.set("0.2")
+        workspace.signal_filter_cutoff_var.set("10.0")
+        workspace.signal_filter_cutoff_high_var.set("40.0")
+        workspace.signal_filter_order_var.set("4")
+        workspace._apply_signal_filter()
+        _set_plot_columns_for_capture(root, workspace, ["measured_signal", output_column])
         _pump_ui(root, 0.25)
         entries.append((operation, _grab_widget_image(workspace.window)))
 
+    _reset_workspace_for_demo_capture(root, workspace)
     workspace.notebook.select(workspace.filter_tab)
     _select_notebook_tab_by_prefix(filter_subtabs, "Resample")
+    workspace.resample_time_var.set("time_s")
+    workspace.resample_spacing_var.set("0.001")
+    workspace._apply_resample()
+    _set_plot_columns_for_capture(root, workspace, ["measured_signal", "clean_signal"])
     _pump_ui(root, 0.25)
     entries.append(("resample_to_uniform", _grab_widget_image(workspace.window)))
 
@@ -311,8 +384,16 @@ def _capture_derived_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
     ]
     entries: list[tuple[str, Image.Image]] = []
     for operation in operations:
+        _reset_workspace_for_demo_capture(root, workspace)
+        _set_active_column_if_available(workspace, "measured_signal")
         workspace.notebook.select(workspace.derived_tab)
         workspace.derived_operation_var.set(operation)
+        output_column = f"measured_signal_{operation}_demo"
+        workspace.derived_name_var.set(output_column)
+        workspace.derived_reference_var.set("time_s")
+        workspace.derived_window_var.set("21")
+        workspace._apply_derived_signal()
+        _set_plot_columns_for_capture(root, workspace, ["measured_signal", output_column])
         _pump_ui(root, 0.25)
         entries.append((operation, _grab_widget_image(workspace.window)))
 
@@ -325,6 +406,7 @@ def _capture_derived_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
 
 
 def _capture_frequency_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
+    _reset_workspace_for_demo_capture(root, workspace)
     workspace.notebook.select(workspace.frequency_tab)
     _set_active_column_if_available(workspace, "measured_signal")
     _set_frequency_reference_to_time_column(workspace)
@@ -355,6 +437,7 @@ def _capture_frequency_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
 
 
 def _capture_cycles_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
+    _reset_workspace_for_demo_capture(root, workspace)
     workspace.notebook.select(workspace.cycles_tab)
     _set_active_column_if_available(workspace, "cycle_process")
     if workspace.cycles_reference_combo is not None:
@@ -370,20 +453,29 @@ def _capture_cycles_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
     ]
     entries: list[tuple[str, Image.Image]] = []
     for mode in modes:
+        _reset_workspace_for_demo_capture(root, workspace)
         workspace.notebook.select(workspace.cycles_tab)
         workspace.cycle_mode_var.set(mode)
+        workspace.cycle_max_cycles_var.set("")
         if mode == "rising_edge":
             _set_active_column_if_available(workspace, "cycle_process")
             if workspace.cycles_reference_combo is not None:
-                workspace.cycle_reference_var.set("trigger_pulse")
+                workspace.cycle_reference_var.set("cycle_process")
+            workspace.cycle_threshold_var.set("4.5")
+            workspace.cycle_length_var.set("120")
         elif mode == "zero_crossing":
             _set_active_column_if_available(workspace, "cycle_process")
             if workspace.cycles_reference_combo is not None:
                 workspace.cycle_reference_var.set("cycle_reference_zero")
+            workspace.cycle_length_var.set("120")
         elif mode == "peak":
             _set_active_column_if_available(workspace, "cycle_process")
             if workspace.cycles_reference_combo is not None:
                 workspace.cycle_reference_var.set("cycle_process")
+            workspace.cycle_prominence_var.set("0.2")
+            workspace.cycle_length_var.set("120")
+        else:
+            workspace.cycle_length_var.set("144")
         _pump_ui(root, 0.2)
         workspace._compute_cycle_analysis()
         _pump_ui(root, 0.6)
@@ -398,6 +490,7 @@ def _capture_cycles_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
 
 
 def _capture_cycles_workspace_raw(root: tk.Tk, workspace, output_path: Path) -> None:
+    _reset_workspace_for_demo_capture(root, workspace)
     workspace.notebook.select(workspace.cycles_tab)
     _set_active_column_if_available(workspace, "cycle_process")
     _set_active_column_if_available(workspace, "trigger_pulse")
@@ -476,11 +569,9 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
         root = tk.Tk()
         _install_tk_exception_filter(root)
         app = DataPreparationApp(root)
-        root.geometry("1600x980")
-        root.lift()
-        root.attributes("-topmost", True)
+        root.geometry("1280x920+0+0")
+        _focus_capture_window(root, root)
         _pump_ui(root, 0.4)
-        root.attributes("-topmost", False)
 
         dataset_path = app._load_demo_dataset(SPECTRAL_REFERENCE_DEMO.key, show_message=True)
         _shorten_dataset_for_screenshots(
@@ -499,11 +590,9 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
         if not app._analysis_workspaces:
             raise RuntimeError("Analysis workspace did not open")
         workspace = app._analysis_workspaces[-1]
-        workspace.window.geometry("1500x940")
-        workspace.window.lift()
-        workspace.window.attributes("-topmost", True)
+        workspace.window.geometry("1220x900+0+0")
+        _focus_capture_window(workspace.window, root)
         _pump_ui(root, 0.5)
-        workspace.window.attributes("-topmost", False)
 
         filtering_sheet_path = output_dir / "algorithms-filtering.png"
         _capture_filtering_sheet(root, workspace, filtering_sheet_path)
@@ -536,11 +625,9 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
         if not app._analysis_workspaces:
             raise RuntimeError("Cycle analysis workspace did not open")
         workspace = app._analysis_workspaces[-1]
-        workspace.window.geometry("1500x940")
-        workspace.window.lift()
-        workspace.window.attributes("-topmost", True)
+        workspace.window.geometry("900x900+0+0")
+        _focus_capture_window(workspace.window, root)
         _pump_ui(root, 0.5)
-        workspace.window.attributes("-topmost", False)
 
         raw_cycles_path = output_dir / "cycles-workspace-raw.png"
         _capture_cycles_workspace_raw(root, workspace, raw_cycles_path)
@@ -564,7 +651,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("Docs/images/overview"),
+        default=Path("docs/images/overview"),
         help="Directory where screenshot PNG files are written",
     )
     return parser.parse_args()

@@ -30,7 +30,8 @@ Use this area to define cycle boundaries and quality filtering:
 - `Mode`: `fixed_length`, `rising_edge`, `zero_crossing`, `peak`
 - Detection parameters:
   - `Cycle length` for `fixed_length`
-  - `Reference` + `Threshold` for `rising_edge` and `zero_crossing`
+  - `Reference` + `Threshold` for `rising_edge`
+  - `Reference` for `zero_crossing` (rising crossings)
   - `Reference` + `Prominence` for `peak`
 - `Analyze Cycles`: runs segmentation + metrics.
 - Exclusion workflow buttons:

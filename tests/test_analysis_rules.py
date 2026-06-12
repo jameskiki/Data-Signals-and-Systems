@@ -231,7 +231,7 @@ class TestFrameVisibilityFields:
         rule = get_rule("signal_filter", "butterworth_bandpass")
         assert "signal_filter_butterworth_frame" in rule.show_frames
         assert "signal_filter_bandpass_frame" in rule.show_frames
-        assert "signal_filter_bandpass_frame" in rule.hide_frames
+        assert "signal_filter_bandpass_frame" not in rule.hide_frames
 
     def test_exponential_smoothing_shows_alpha_frame(self):
         rule = get_rule("signal_filter", "exponential_smoothing")

@@ -58,4 +58,5 @@ The script writes these stable names by default:
 - Cycle-focused screenshots should use the `Cycle Validation Drift Signal` demo dataset.
 - Frequency screenshots should continue to use the spectral reference demo dataset.
 - Capture the app at a readable scale and avoid personal file paths when practical.
+- For algorithm contact sheets, each method tile should show the selected option and a visible output effect (plot, table, or metrics) after applying that method.
 - After images are added, the README can embed the most representative ones directly.
