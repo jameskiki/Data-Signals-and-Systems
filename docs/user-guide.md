@@ -213,6 +213,13 @@ The `Filter` tab has three sub-tabs:
 - **Signal Processing**: apply smoothing, high-pass, or Butterworth filters (lowpass, highpass, bandpass). Butterworth filters use zero-phase `sosfiltfilt` and require cutoff frequency, sample spacing, and filter order.
 - **Resample**: interpolate all numeric columns to a uniform time grid by specifying the time column and target spacing.
 
+Some spacing/length fields are auto-filled from the active data until you edit them manually. These controls show a live badge:
+
+- `Inferred` when the workspace is using a data-derived value
+- `User-set` once you manually edit the field
+
+This behavior applies to signal-processing sample spacing, FFT index step size, resample target spacing, Welch segment length, and fixed-cycle length.
+
 For a fuller task-to-tool mapping, see `which-tool-when.md`.
 
 ## Step 9: Export Results

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-06-12
+
 ### Added
 - **Dynamic Options Refactor (Rules in Code)** — all analysis-method control rules moved to
   `Source/analysis_app/rules.py` (pure Python, no Tk) and applied via
@@ -45,11 +47,11 @@
 - Consolidated embedded Tk/matplotlib canvas lifecycle handling into `shared/base_app_shell.py` and adopted it in analysis and datapreparation preview rendering.
 - Added debounced resize synchronization for the ad-hoc `Plot Data` detached window.
 - Datapreparation row-range handling now supports datetime-like time columns consistently when using preview drag-select (`SpanSelector`) and manual range entry.
-- Removed unused helper code and orphan scripts (`Scripts/bench_perf.py`, `Scripts/profile_view.py`, unreferenced listbox role-color helper).
+- Removed unused helper code and orphan scripts (`scripts/bench_perf.py`, `scripts/profile_view.py`, unreferenced listbox role-color helper).
 
 ### Added
 - Direct unit coverage for embedded figure lifecycle helper create/reuse behavior in `tests/test_base_app_shell.py`.
-- Focused datapreparation row-range regression coverage in `Tests/test_dataprep_row_range.py` (numeric and datetime range parsing, including Matplotlib span coordinates).
+- Focused datapreparation row-range regression coverage in `tests/test_dataprep_row_range.py` (numeric and datetime range parsing, including Matplotlib span coordinates).
 
 ## [v0.3.0] - 2026-05-12
 

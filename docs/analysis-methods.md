@@ -39,6 +39,23 @@ flowchart TB
 
 Core rule: the analysis workspace operates on a working copy of the selected dataset. `Reset Working Data` restores that copy to the original loaded state for the current workspace session.
 
+## Inferred Defaults And Field Badges
+
+Several spacing and length controls can be auto-filled from the current data when you have not manually set a value yet.
+
+- Signal-processing sample spacing
+- FFT index step size
+- Resample target spacing (when a real time column is selected)
+- Welch segment length
+- Fixed-cycle length
+
+Each of these fields shows a live badge:
+
+- `Inferred`: value is currently data-derived by the workspace
+- `User-set`: value was manually edited and is no longer auto-overwritten
+
+This keeps first-run analysis usable without hiding whether a value came from your input or from workspace inference.
+
 ## Simple Filtering
 
 `Simple Filtering` applies a min/max rule to the active column and writes the result to a column.
