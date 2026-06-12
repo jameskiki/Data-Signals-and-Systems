@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 from Source.shared.base_app_shell import BaseAppShell
 from Source.shared import base_app_shell
+from Source.shared.notifications import NotificationSeverity
 
 
 class DummyVar:
@@ -131,6 +132,31 @@ def test_error_dialog_no_exception_keeps_failed_empty(monkeypatch):
 
     assert failed == []
     assert shown == []
+
+
+def test_notify_success_posts_notification():
+    shell = BaseAppShell()
+    posted = []
+    shell._ensure_notifications().subscribe(lambda notification: posted.append(notification))
+
+    shell.notify_success("Done")
+
+    assert len(posted) == 1
+    assert posted[0].message == "Done"
+    assert posted[0].severity == NotificationSeverity.SUCCESS
+
+
+def test_notify_warning_posts_notification_with_details():
+    shell = BaseAppShell()
+    posted = []
+    shell._ensure_notifications().subscribe(lambda notification: posted.append(notification))
+
+    shell.notify_warning("Invalid", details="x must be > 0")
+
+    assert len(posted) == 1
+    assert posted[0].message == "Invalid"
+    assert posted[0].details == "x must be > 0"
+    assert posted[0].severity == NotificationSeverity.WARNING
 
 
 def test_bind_write_registers_handler_for_all_vars():

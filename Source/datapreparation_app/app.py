@@ -874,19 +874,19 @@ class DataPreparationApp(BaseAppShell):
         selection = self.dataset_table.selection()
         if not selection:
             if warning_message:
-                messagebox.showwarning("Warning", warning_message)
+                self.notifications.warning(warning_message)
             return None
         path = selection[0]  # iid is the full dataset path
         if path in self.data_frames:
             return path
         if warning_message:
-            messagebox.showwarning("Warning", warning_message)
+            self.notifications.warning(warning_message)
         return None
 
     def _get_multiple_selected_file_paths(self, warning_message: str) -> list[str]:
         """Open a dialog for the user to pick multiple datasets."""
         if not self.data_frames:
-            messagebox.showwarning("Warning", warning_message)
+            self.notifications.warning(warning_message)
             return []
         return self._prompt_multi_dataset_selection(warning_message)
 

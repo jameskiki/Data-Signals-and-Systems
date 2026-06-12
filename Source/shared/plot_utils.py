@@ -249,7 +249,10 @@ def apply_axis_contract(
     axis.set_xlabel(x_label, fontsize=style.label_fontsize)
     axis.set_ylabel(y_label, fontsize=style.label_fontsize)
     if style.show_legend and axis.lines:
-        axis.legend(fontsize=style.legend_fontsize, loc=style.legend_location)
+        handles, labels = axis.get_legend_handles_labels()
+        has_public_labels = any(label and not label.startswith("_") for label in labels)
+        if handles and has_public_labels:
+            axis.legend(fontsize=style.legend_fontsize, loc=style.legend_location)
     if style.show_grid:
         axis.grid(True, alpha=style.grid_alpha)
     else:

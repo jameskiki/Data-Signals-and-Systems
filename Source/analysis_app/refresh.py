@@ -2,6 +2,9 @@
 
 import os
 
+import numpy as np
+import pandas as pd
+
 from .actions import resolve_default_output_names
 from Source.shared.column_roles import (
     apply_role_combobox_style,
@@ -91,10 +94,200 @@ def refresh_filter_controls(workspace) -> None:
             if fallback != comparison_value:
                 workspace.frequency_compare_var.set(fallback)
 
+    _apply_default_sample_spacing(workspace, columns)
+    _apply_default_analysis_lengths(workspace, numeric_columns)
+
     set_default_output_names(workspace)
     if hasattr(workspace, "_refresh_frequency_method_controls"):
         workspace._refresh_frequency_method_controls()
     refresh_role_widget_styles(workspace)
+
+
+def _apply_default_sample_spacing(workspace, columns: list[str]) -> None:
+    """Infer and set spacing defaults when fields are unset or invalid."""
+
+    time_column = get_preferred_role_column(workspace.column_roles, "time", available_columns=columns)
+    if not time_column:
+        return
+
+    inferred_spacing = infer_sample_spacing(workspace.session.working_frame, time_column)
+    if inferred_spacing is None:
+        return
+
+    inferred_text = _format_spacing(inferred_spacing)
+    signal_spacing = _parse_positive_float(workspace.signal_filter_spacing_var.get())
+    if signal_spacing is None:
+        _set_inferred_field(workspace, "signal_filter_spacing", workspace.signal_filter_spacing_var, inferred_text)
+
+    if not _is_user_set(workspace, "fft_sample_spacing"):
+        _set_inferred_field(workspace, "fft_sample_spacing", workspace.fft_sample_spacing_var, inferred_text)
+
+    if getattr(workspace, "resample_time_var", None) is None:
+        return
+
+    resample_time_column = workspace.resample_time_var.get().strip()
+    if not resample_time_column or resample_time_column == "Index":
+        return
+
+    if _is_user_set(workspace, "resample_spacing"):
+        return
+
+    inferred_resample_spacing = infer_sample_spacing(workspace.session.working_frame, resample_time_column)
+    if inferred_resample_spacing is not None:
+        _set_inferred_field(
+            workspace,
+            "resample_spacing",
+            workspace.resample_spacing_var,
+            _format_spacing(inferred_resample_spacing),
+        )
+
+
+def infer_sample_spacing(dataframe: pd.DataFrame, time_column: str) -> float | None:
+    """Infer representative spacing from a time/reference column using median diff."""
+
+    if time_column not in dataframe.columns:
+        return None
+
+    reference_series = dataframe[time_column]
+    if pd.api.types.is_datetime64_any_dtype(reference_series):
+        numeric_reference = reference_series.astype("datetime64[ns]").astype("int64") / 1_000_000_000.0
+    else:
+        numeric_reference = pd.to_numeric(reference_series, errors="coerce")
+
+    diffs = pd.Series(numeric_reference).diff().dropna()
+    if diffs.empty:
+        return None
+
+    spacing = float(np.median(np.abs(diffs.to_numpy(dtype=float))))
+    if not np.isfinite(spacing) or spacing <= 0:
+        return None
+    return spacing
+
+
+def _parse_positive_float(value: str) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _set_inferred_field(workspace, field_name: str, variable, value: str) -> None:
+    if hasattr(workspace, "_set_inferred_field_value"):
+        workspace._set_inferred_field_value(field_name, variable, value)
+        return
+    variable.set(value)
+
+
+def _is_user_set(workspace, field_name: str) -> bool:
+    """Return True when the field has been explicitly edited by the user.
+
+    A field is user-set only when it appears in _user_edited_fields — a separate
+    set populated only by real user edits (not by inference writes).  A field that
+    is in neither set is still at its factory default and should be inferred.
+    """
+    user_edited = getattr(workspace, "_user_edited_fields", None)
+    if user_edited is None:
+        return False
+    return field_name in user_edited
+
+
+def _format_spacing(value: float) -> str:
+    return f"{value:.6g}"
+
+
+def _apply_default_analysis_lengths(workspace, numeric_columns: list[str]) -> None:
+    """Infer Welch and fixed-cycle lengths when fields are unset or still at factory defaults."""
+
+    active_column = workspace.active_column_var.get().strip()
+    if active_column not in numeric_columns:
+        return
+
+    series = pd.to_numeric(workspace.session.working_frame[active_column], errors="coerce").dropna()
+    sample_count = int(series.size)
+    if sample_count < 4:
+        return
+
+    welch_text = workspace.welch_segment_length_var.get().strip()
+    welch_value = _parse_positive_int(welch_text)
+    inferred_welch = infer_welch_segment_length(sample_count)
+    if inferred_welch is not None and (welch_value is None or welch_text == "256"):
+        _set_inferred_field(
+            workspace,
+            "welch_segment_length",
+            workspace.welch_segment_length_var,
+            str(inferred_welch),
+        )
+
+    cycle_text = workspace.cycle_length_var.get().strip()
+    cycle_value = _parse_positive_int(cycle_text)
+    inferred_cycle = infer_cycle_length_samples(series)
+    if inferred_cycle is not None and (cycle_value is None or cycle_text == "100"):
+        _set_inferred_field(
+            workspace,
+            "cycle_length",
+            workspace.cycle_length_var,
+            str(inferred_cycle),
+        )
+
+
+def infer_welch_segment_length(sample_count: int) -> int | None:
+    """Infer a practical Welch segment length from available sample count."""
+
+    if sample_count < 4:
+        return None
+
+    target = min(256, int(sample_count))
+    power = 1
+    while power * 2 <= target:
+        power *= 2
+    if power < 4:
+        power = 4
+    if power % 2 == 1:
+        power -= 1
+    return max(4, power)
+
+
+def infer_cycle_length_samples(series: pd.Series) -> int | None:
+    """Infer cycle length in samples from dominant spectral period of one signal."""
+
+    values = pd.to_numeric(series, errors="coerce").dropna().to_numpy(dtype=float)
+    sample_count = int(values.size)
+    if sample_count < 8:
+        return None
+
+    centered = values - np.nanmean(values)
+    if not np.isfinite(centered).all() or np.allclose(centered, 0.0):
+        return None
+
+    window = np.hanning(sample_count)
+    amplitudes = np.abs(np.fft.rfft(centered * window))
+    if amplitudes.size <= 2:
+        return None
+    amplitudes[0] = 0.0
+
+    dominant_index = int(np.argmax(amplitudes))
+    if dominant_index <= 0:
+        return None
+
+    background = np.median(amplitudes[1:])
+    if not np.isfinite(background):
+        return None
+    if amplitudes[dominant_index] < max(1e-12, 3.0 * background):
+        return None
+
+    period_samples = int(round(sample_count / dominant_index))
+    if period_samples < 2:
+        return None
+    return min(period_samples, sample_count // 2)
+
+
+def _parse_positive_int(value: str) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def refresh_plot_controls(workspace) -> None:

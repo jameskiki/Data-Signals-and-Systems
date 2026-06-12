@@ -166,10 +166,10 @@ def render_correlation_view(container: ttk.Frame, correlation_frame: pd.DataFram
                 fg=foreground,
                 borderwidth=1,
                 relief="solid",
-                padx=8,
-                pady=5,
-                width=7,
-                anchor="e",
+                padx=4,
+                pady=2,
+                width=5,
+                anchor="center",
             )
             label.grid(row=row_index, column=column_index, sticky="nsew")
 
@@ -395,8 +395,8 @@ def _build_correlation_header_cell(
         font=font,
         borderwidth=1,
         relief="solid",
-        padx=8,
-        pady=5,
+        padx=4,
+        pady=2,
         anchor=anchor,
     )
     label.grid(row=row_index, column=column_index, sticky="nsew")
@@ -410,16 +410,19 @@ def _get_correlation_cell_colors(column_index: int, row_index: int, value: objec
     if column_index == row_index:
         return "#dbeafe", CORRELATION_DIAGONAL_COLOR
     if numeric_value >= CORRELATION_POSITIVE_THRESHOLD:
-        return "#d9f2d9", CORRELATION_STRONG_POSITIVE_COLOR
+        return "#b8ebc9", CORRELATION_STRONG_POSITIVE_COLOR
     if numeric_value <= CORRELATION_NEGATIVE_THRESHOLD:
-        return "#f8d7da", CORRELATION_STRONG_NEGATIVE_COLOR
+        return "#f4bfd0", CORRELATION_STRONG_NEGATIVE_COLOR
     if numeric_value >= 0:
-        return "#eef7ee", "#2f4f2f"
-    return "#fbefef", "#6d2e2e"
+        return "#e3f5ea", "#1f5e45"
+    return "#fce8ef", "#8b2d4a"
 
 
 def _format_correlation_value(value: object) -> str:
-    return format_display_value(value)
+    numeric_value = float(value)
+    if abs(numeric_value) < 0.0005:
+        return "0.000"
+    return f"{numeric_value:+.3f}"
 
 
 def _format_preview_value(value: object) -> str:

@@ -37,11 +37,6 @@ class TestBuildSimpleFilterUpdate:
         assert filtered_col.max() <= 0.5
         assert filtered_col.min() >= -0.5
 
-    def test_history_entry_is_string(self, simple_df):
-        result = build_simple_filter_update(simple_df, "sensor", "", "-1.0", "1.0", keep_missing=True)
-        assert isinstance(result.history_entry, str)
-        assert "sensor" in result.history_entry
-
     def test_named_output_column(self, simple_df):
         result = build_simple_filter_update(simple_df, "sensor", "sensor_filtered", "-1.0", "1.0", keep_missing=True)
         assert "sensor_filtered" in result.dataframe.columns
@@ -70,13 +65,6 @@ class TestBuildSignalFilterUpdate:
         )
         assert "smooth" in result.dataframe.columns
 
-    def test_history_entry_contains_operation(self, simple_df):
-        result = build_signal_filter_update(
-            simple_df, "sensor", "median", "", window_size=5,
-            alpha=0.3, cutoff_hz=1.0, sample_spacing=0.01
-        )
-        assert "median" in result.history_entry
-
     def test_butterworth_lowpass(self, simple_df):
         result = build_signal_filter_update(
             simple_df, "sensor", "butterworth_lowpass", "", window_size=5,
@@ -102,14 +90,6 @@ class TestBuildDerivedSignalUpdate:
         )
         assert isinstance(result, FrameUpdate)
 
-    def test_history_entry_contains_operation_and_columns(self, simple_df):
-        result = build_derived_signal_update(
-            simple_df, "sensor", "normalized", "sensor_norm", reference_column=None, window_size=1
-        )
-        assert "normalized" in result.history_entry
-        assert "sensor" in result.history_entry
-        assert "sensor_norm" in result.history_entry
-
 
 # ── build_reset_update ────────────────────────────────────────────────────────
 
@@ -126,10 +106,6 @@ class TestBuildResetUpdate:
     def test_dataframe_contents_match_original(self, simple_df):
         result = build_reset_update(simple_df)
         pd.testing.assert_frame_equal(result.dataframe, simple_df)
-
-    def test_history_entry_describes_reset(self, simple_df):
-        result = build_reset_update(simple_df)
-        assert "reset" in result.history_entry.lower() or "original" in result.history_entry.lower()
 
 
 # ── resolve_default_output_names ──────────────────────────────────────────────

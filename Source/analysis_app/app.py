@@ -24,6 +24,11 @@ from .handlers import (
     compute_fft,
 )
 from .layout import build_analysis_workspace_ui
+from .rules_orchestrator import (
+    apply_cycle_method_rule,
+    apply_frequency_method_rule,
+    apply_signal_filter_rule,
+)
 from .refresh import (
     refresh_filter_controls,
     refresh_overview,
@@ -108,11 +113,14 @@ class AnalysisWorkspace(BaseAppShell):
         self.signal_filter_alpha_var = tk.StringVar(value="0.2")
         self.signal_filter_name_var = tk.StringVar()
         self.signal_filter_cutoff_var = tk.StringVar(value="10.0")
+        self.signal_filter_cutoff_high_var = tk.StringVar(value="20.0")
         self.signal_filter_order_var = tk.StringVar(value="4")
         self.signal_filter_spacing_var = tk.StringVar(value="0.0")
+        self.signal_filter_spacing_status_var = tk.StringVar(value="User-set")
 
         self.resample_time_var = tk.StringVar(value="Index")
         self.resample_spacing_var = tk.StringVar(value="1.0")
+        self.resample_spacing_status_var = tk.StringVar(value="User-set")
 
         self.derived_operation_var = tk.StringVar(value=DERIVED_OPERATIONS[0])
         self.derived_source_var = tk.StringVar()
@@ -127,9 +135,11 @@ class AnalysisWorkspace(BaseAppShell):
         self.fft_reference_var = tk.StringVar(value="Index")
         self.frequency_compare_var = tk.StringVar(value="")
         self.fft_sample_spacing_var = tk.StringVar(value="1.0")
+        self.fft_sample_spacing_status_var = tk.StringVar(value="User-set")
         self.fft_window_var = tk.StringVar(value=FFT_WINDOW_OPTIONS[0])
         self.fft_detrend_var = tk.BooleanVar(value=True)
         self.welch_segment_length_var = tk.StringVar(value="256")
+        self.welch_segment_length_status_var = tk.StringVar(value="User-set")
         self.welch_overlap_fraction_var = tk.StringVar(value="0.5")
         self.fft_summary_var = tk.StringVar(value=self._default_frequency_summary_text())
         self.frequency_expectation_var = tk.StringVar(value="Select a signal to see built-in hints for demo datasets.")
@@ -139,6 +149,7 @@ class AnalysisWorkspace(BaseAppShell):
         self.cycle_threshold_var = tk.StringVar(value="0.0")
         self.cycle_max_cycles_var = tk.StringVar(value="")
         self.cycle_prominence_var = tk.StringVar(value="0.0")
+        self.cycle_length_status_var = tk.StringVar(value="User-set")
         self.cycle_summary_var = tk.StringVar(value="Analyze equal-length cycles for the active column.")
         self.cycle_metric_toggle_vars: dict[str, tk.BooleanVar] = {
             "mean": tk.BooleanVar(value=True),
@@ -173,6 +184,9 @@ class AnalysisWorkspace(BaseAppShell):
         self._plot_y_selector_sync_in_progress = False
         self._frame_replacing = False
         self._refreshing_frequency_controls = False
+        self._applying_inferred_defaults = False
+        self._inferred_fields: set[str] = set()
+        self._user_edited_fields: set[str] = set()
 
         build_analysis_workspace_ui(self)
         self.active_column_var.trace_add("write", self._handle_active_column_changed)
@@ -184,10 +198,13 @@ class AnalysisWorkspace(BaseAppShell):
         self._bind_write(self._handle_output_defaults_changed,
                          self.signal_filter_operation_var, self.derived_operation_var)
         self.cycle_mode_var.trace_add("write", lambda *_: self._refresh_cycle_method_controls())
+        self.signal_filter_operation_var.trace_add("write", lambda *_: self._refresh_signal_filter_controls())
+        self._bind_inferred_field_traces()
         for metric_toggle_var in self.cycle_metric_toggle_vars.values():
             metric_toggle_var.trace_add("write", self._handle_cycle_metric_toggle_changed)
         self._refresh_all_views()
         self._refresh_cycle_method_controls()
+        self._refresh_signal_filter_controls()
         self._refresh_live_plot()
 
     def close(self) -> None:
@@ -209,26 +226,10 @@ class AnalysisWorkspace(BaseAppShell):
             self.on_close(self)
 
     def _refresh_cycle_method_controls(self) -> None:
-        mode = self.cycle_mode_var.get().strip() or "fixed_length"
-        # Hide all frames first
-        if hasattr(self, "cycle_fixed_frame") and self.cycle_fixed_frame is not None:
-            self.cycle_fixed_frame.grid_remove()
-        if hasattr(self, "cycle_edge_frame") and self.cycle_edge_frame is not None:
-            self.cycle_edge_frame.grid_remove()
-        if hasattr(self, "cycle_peak_frame") and self.cycle_peak_frame is not None:
-            self.cycle_peak_frame.grid_remove()
-        if hasattr(self, "cycle_max_frame") and self.cycle_max_frame is not None:
-            self.cycle_max_frame.grid_remove()
+        apply_cycle_method_rule(self)
 
-        # Show relevant frames
-        if mode == "fixed_length":
-            self.cycle_fixed_frame.grid()
-        elif mode in {"rising_edge", "zero_crossing"}:
-            self.cycle_edge_frame.grid()
-            self.cycle_max_frame.grid()
-        elif mode == "peak":
-            self.cycle_peak_frame.grid()
-            self.cycle_max_frame.grid()
+    def _refresh_signal_filter_controls(self) -> None:
+        apply_signal_filter_rule(self)
 
     def _ensure_current_summary(self) -> None:
         if self.session.last_summary is not None and self.session.last_summary_revision == self.session.working_revision:
@@ -246,6 +247,7 @@ class AnalysisWorkspace(BaseAppShell):
         self._refresh_frequency_expectation()
         self._refresh_frequency_method_controls()
         self._refresh_cycle_method_controls()
+        self._refresh_signal_filter_controls()
 
     def _refresh_summary_widgets(self) -> None:
         """Refresh sidebar labels, overview text, and statistics trees from the current session state.
@@ -426,7 +428,7 @@ class AnalysisWorkspace(BaseAppShell):
 
         selected_indices = self._get_selected_cycle_indices()
         if not selected_indices:
-            messagebox.showwarning("Warning", "Select at least one kept cycle to exclude")
+            self.notifications.warning("Select at least one kept cycle to exclude")
             return
 
         selected_index_set = set(selected_indices)
@@ -436,7 +438,7 @@ class AnalysisWorkspace(BaseAppShell):
             if active_index not in selected_index_set
         ]
         if not kept_full_indices:
-            messagebox.showwarning("Warning", "At least one cycle must remain after exclusion")
+            self.notifications.warning("At least one cycle must remain after exclusion")
             return
 
         try:
@@ -470,13 +472,13 @@ class AnalysisWorkspace(BaseAppShell):
 
         selected_full_indices = self._get_selected_cycle_full_indices()
         if not selected_full_indices:
-            messagebox.showwarning("Warning", "Select at least one excluded cycle to restore")
+            self.notifications.warning("Select at least one excluded cycle to restore")
             return
 
         kept_full_index_set = set(self._kept_cycle_full_indices)
         excluded_selected_indices = [full_index for full_index in selected_full_indices if full_index not in kept_full_index_set]
         if not excluded_selected_indices:
-            messagebox.showwarning("Warning", "Select at least one excluded cycle to restore")
+            self.notifications.warning("Select at least one excluded cycle to restore")
             return
 
         kept_full_indices = sorted(kept_full_index_set.union(excluded_selected_indices))
@@ -498,7 +500,7 @@ class AnalysisWorkspace(BaseAppShell):
 
     def _apply_kept_cycles_to_working_data(self) -> None:
         if self._latest_cycle_result is None:
-            messagebox.showwarning("Warning", "Run cycle analysis before applying kept cycles")
+            self.notifications.warning("Run cycle analysis before applying kept cycles")
             return
 
         try:
@@ -521,11 +523,10 @@ class AnalysisWorkspace(BaseAppShell):
 
         self._replace_working_frame(
             kept_frame,
-            history_entry=(
-                f"Applied kept cycles to working data: "
-                f"{self._latest_cycle_result.cycle_count} cycles, {len(kept_frame)} rows retained"
-            ),
             focus_column=self._latest_cycle_result.source_column,
+        )
+        self.notifications.success(
+            f"Applied kept cycles: {self._latest_cycle_result.cycle_count} cycles, {len(kept_frame)} rows retained"
         )
 
     def _clear_cycle_results(self, message: str | None = None) -> None:
@@ -549,7 +550,8 @@ class AnalysisWorkspace(BaseAppShell):
 
     def _reset_working_data(self) -> None:
         update = build_reset_update(self.session.original_frame)
-        self._replace_working_frame(update.dataframe, update.history_entry)
+        self._replace_working_frame(update.dataframe)
+        self.notifications.success("Reset working dataframe to the original loaded state")
 
     def _export_current_view(self) -> None:
         save_path = filedialog.asksaveasfilename(
@@ -562,7 +564,6 @@ class AnalysisWorkspace(BaseAppShell):
 
         self.session.working_frame.to_csv(save_path, sep=";", index=False)
         self.notifications.success(f"Exported to {os.path.basename(save_path)}")
-        messagebox.showinfo("Exported", f"Saved current view to:\n{save_path}")
 
     def open_documentation(self, relative_path: str) -> None:
         try:
@@ -573,7 +574,6 @@ class AnalysisWorkspace(BaseAppShell):
     def _replace_working_frame(
         self,
         dataframe: pd.DataFrame,
-        history_entry: str,
         role_overrides: dict[str, str] | None = None,
         focus_column: str | None = None,
     ) -> None:
@@ -581,7 +581,6 @@ class AnalysisWorkspace(BaseAppShell):
         self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
         self.session.working_revision += 1
         self.session.last_summary = None
-        self.notifications.success(history_entry)
         self.fft_summary_var.set(self._default_frequency_summary_text())
         self._clear_fft_results("Recompute the frequency analysis after data changes.")
         self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
@@ -633,6 +632,43 @@ class AnalysisWorkspace(BaseAppShell):
     def _handle_output_defaults_changed(self, *_args: object) -> None:
         self._set_default_output_names()
 
+    def _bind_inferred_field_traces(self) -> None:
+        field_to_var = {
+            "signal_filter_spacing": self.signal_filter_spacing_var,
+            "fft_sample_spacing": self.fft_sample_spacing_var,
+            "resample_spacing": self.resample_spacing_var,
+            "welch_segment_length": self.welch_segment_length_var,
+            "cycle_length": self.cycle_length_var,
+        }
+        for field_name, variable in field_to_var.items():
+            variable.trace_add("write", lambda *_args, name=field_name: self._handle_inferred_field_edited(name))
+
+    def _handle_inferred_field_edited(self, field_name: str) -> None:
+        if self._applying_inferred_defaults:
+            return
+        self._inferred_fields.discard(field_name)
+        self._user_edited_fields.add(field_name)
+        self._refresh_inferred_badges()
+
+    def _set_inferred_field_value(self, field_name: str, variable: tk.StringVar, value: str) -> None:
+        current_value = variable.get()
+        if current_value == value and field_name in self._inferred_fields:
+            return
+        self._applying_inferred_defaults = True
+        try:
+            variable.set(value)
+        finally:
+            self._applying_inferred_defaults = False
+        self._inferred_fields.add(field_name)
+        self._refresh_inferred_badges()
+
+    def _refresh_inferred_badges(self) -> None:
+        self.signal_filter_spacing_status_var.set("Inferred" if "signal_filter_spacing" in self._inferred_fields else "User-set")
+        self.fft_sample_spacing_status_var.set("Inferred" if "fft_sample_spacing" in self._inferred_fields else "User-set")
+        self.resample_spacing_status_var.set("Inferred" if "resample_spacing" in self._inferred_fields else "User-set")
+        self.welch_segment_length_status_var.set("Inferred" if "welch_segment_length" in self._inferred_fields else "User-set")
+        self.cycle_length_status_var.set("Inferred" if "cycle_length" in self._inferred_fields else "User-set")
+
     def _handle_role_widget_selection_changed(self, *_args: object) -> None:
         self._refresh_role_widget_styles()
 
@@ -641,29 +677,7 @@ class AnalysisWorkspace(BaseAppShell):
         self._refresh_active_column_badges()
 
     def _refresh_frequency_method_controls(self) -> None:
-        analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
-        uses_comparison = analysis_name in {"Transfer Estimate", "Coherence"}
-        uses_welch_specific = analysis_name in {"Welch PSD", "Transfer Estimate", "Coherence"}
-
-        # Show/hide comparison frame
-        if hasattr(self, "comparison_frame") and self.comparison_frame is not None:
-            if uses_comparison:
-                self.comparison_frame.grid()
-                self.frequency_compare_combo.state(["!disabled"])
-            else:
-                self.comparison_frame.grid_remove()
-                self.frequency_compare_combo.state(["disabled"])
-
-        # Show general frequency options for all methods
-        if hasattr(self, "freq_general_frame") and self.freq_general_frame is not None:
-            self.freq_general_frame.grid()
-
-        # Show Welch-specific options only for Welch/Transfer/Coherence
-        if hasattr(self, "welch_specific_frame") and self.welch_specific_frame is not None:
-            if uses_welch_specific:
-                self.welch_specific_frame.grid()
-            else:
-                self.welch_specific_frame.grid_remove()
+        apply_frequency_method_rule(self)
 
     def _default_frequency_summary_text(self) -> str:
         analysis_name = self.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]

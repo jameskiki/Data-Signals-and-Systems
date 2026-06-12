@@ -30,6 +30,11 @@ except ImportError as error:  # pragma: no cover - runtime dependency check
     ) from error
 
 
+SPECTRAL_SCREENSHOT_MAX_ROWS = 2500
+CYCLE_SCREENSHOT_MAX_ROWS = 1800
+CYCLE_SCREENSHOT_MAX_CYCLES = 12
+
+
 def _pump_ui(root: tk.Tk, seconds: float = 0.2) -> None:
     """Process pending Tk events and wait a short moment for redraw."""
 
@@ -209,6 +214,40 @@ def _set_frequency_compare_column(workspace) -> None:
         if candidate != active_column:
             workspace.frequency_compare_var.set(candidate)
             return
+
+
+def _shorten_dataset_for_screenshots(
+    app: DataPreparationApp,
+    dataset_path: str,
+    *,
+    max_rows: int,
+    max_cycles: int | None = None,
+) -> None:
+    """Trim loaded demo data so screenshots emphasize readable local behavior."""
+
+    dataframe = app.data_frames.get(dataset_path)
+    if dataframe is None or dataframe.empty:
+        return
+
+    shortened = dataframe
+    if max_cycles is not None and "true_cycle_index" in dataframe.columns:
+        cycle_ids = [int(cycle_id) for cycle_id in dataframe["true_cycle_index"].dropna().unique()]
+        cycle_ids.sort()
+        if len(cycle_ids) > max_cycles:
+            max_cycle_id = cycle_ids[max_cycles - 1]
+            shortened = dataframe[dataframe["true_cycle_index"] <= max_cycle_id]
+
+    if len(shortened) > max_rows:
+        shortened = shortened.iloc[:max_rows]
+
+    if len(shortened) == len(dataframe):
+        return
+
+    shortened = shortened.reset_index(drop=True).copy()
+    if "time_s" in shortened.columns:
+        first_time = float(shortened["time_s"].iloc[0])
+        shortened["time_s"] = shortened["time_s"] - first_time
+    app.data_frames[dataset_path] = shortened
 
 
 def _capture_filtering_sheet(root: tk.Tk, workspace, output_path: Path) -> None:
@@ -444,6 +483,11 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
         root.attributes("-topmost", False)
 
         dataset_path = app._load_demo_dataset(SPECTRAL_REFERENCE_DEMO.key, show_message=True)
+        _shorten_dataset_for_screenshots(
+            app,
+            dataset_path,
+            max_rows=SPECTRAL_SCREENSHOT_MAX_ROWS,
+        )
         app._select_file_in_listbox(dataset_path)
         _pump_ui(root, 0.6)
 
@@ -479,6 +523,12 @@ def generate_screenshots(output_dir: Path) -> list[Path]:
         _cancel_pending_after_jobs(root)
 
         cycle_dataset_path = app._load_demo_dataset(CYCLE_VALIDATION_DEMO.key, show_message=True)
+        _shorten_dataset_for_screenshots(
+            app,
+            cycle_dataset_path,
+            max_rows=CYCLE_SCREENSHOT_MAX_ROWS,
+            max_cycles=CYCLE_SCREENSHOT_MAX_CYCLES,
+        )
         app._select_file_in_listbox(cycle_dataset_path)
         _pump_ui(root, 0.6)
 

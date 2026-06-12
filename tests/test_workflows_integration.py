@@ -125,12 +125,11 @@ class AnalysisWorkspaceStub:
         except Exception as error:  # pragma: no cover
             failed.append(error)
 
-    def _replace_working_frame(self, dataframe, history_entry, role_overrides=None, focus_column=None):
+    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None):
         self.session.working_frame = dataframe
         self.replace_calls.append(
             {
                 "dataframe": dataframe,
-                "history_entry": history_entry,
                 "role_overrides": role_overrides,
                 "focus_column": focus_column,
             }
@@ -250,4 +249,4 @@ def test_split_dataset_then_resample_workflow():
     handlers.apply_resample(workspace)
 
     assert len(workspace.replace_calls) == 1
-    assert "Resampled to uniform grid" in workspace.replace_calls[0]["history_entry"]
+    assert any("Resampled to uniform grid" in msg for msg in workspace.notifications.success_messages)

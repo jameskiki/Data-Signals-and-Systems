@@ -21,8 +21,33 @@ from tkinter import TclError, messagebox
 class BaseAppShell:
     """Mixin providing error-dialog handling and var-binding utilities."""
 
+    def _ensure_notifications(self):
+        """Ensure a NotificationManager instance exists on the shell."""
+        if hasattr(self, "notifications") and self.notifications is not None:
+            return self.notifications
+        from Source.shared.notifications import NotificationManager
+
+        self.notifications = NotificationManager()
+        return self.notifications
+
+    def notify_info(self, message: str, details: str | None = None) -> None:
+        """Post an informational notification."""
+        self._ensure_notifications().info(message, details)
+
+    def notify_success(self, message: str, details: str | None = None) -> None:
+        """Post a success notification."""
+        self._ensure_notifications().success(message, details)
+
+    def notify_warning(self, message: str, details: str | None = None) -> None:
+        """Post a warning notification."""
+        self._ensure_notifications().warning(message, details)
+
+    def notify_error(self, message: str, details: str | None = None) -> None:
+        """Post an error notification."""
+        self._ensure_notifications().error(message, details)
+
     @contextmanager
-    def _error_dialog(self, title: str):
+    def _error_dialog(self, title: str, *, modal_fallback: bool = True):
         """Context manager that shows a modal error dialog if an exception is raised.
 
         Usage::
@@ -36,7 +61,9 @@ class BaseAppShell:
         try:
             yield _failed
         except Exception as error:
-            messagebox.showerror(title, str(error))
+            self.notify_error(title, str(error))
+            if modal_fallback:
+                messagebox.showerror(title, str(error))
             _failed.append(error)
 
     def _sync_canvas_size(self, canvas, figure) -> bool:

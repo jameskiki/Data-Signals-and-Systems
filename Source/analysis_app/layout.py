@@ -233,26 +233,46 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
     )
     workspace.signal_filter_operation_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
 
-    ttk.Label(controls, text="Window size").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_window_var).grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+    # Window size frame (moving_average, median, high_pass)
+    workspace.signal_filter_window_frame = ttk.Frame(controls)
+    workspace.signal_filter_window_frame.columnconfigure(1, weight=1)
+    ttk.Label(workspace.signal_filter_window_frame, text="Window size").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_window_frame, textvariable=workspace.signal_filter_window_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.signal_filter_window_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Alpha (exp. smoothing)").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_alpha_var).grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+    # Alpha frame (exponential_smoothing)
+    workspace.signal_filter_alpha_frame = ttk.Frame(controls)
+    workspace.signal_filter_alpha_frame.columnconfigure(1, weight=1)
+    ttk.Label(workspace.signal_filter_alpha_frame, text="Alpha (exp. smoothing)").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_alpha_frame, textvariable=workspace.signal_filter_alpha_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.signal_filter_alpha_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Cutoff freq [Hz]").grid(row=4, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_cutoff_var).grid(row=4, column=1, sticky="ew", padx=5, pady=5)
+    # Butterworth frame (butterworth_lowpass / highpass / bandpass)
+    workspace.signal_filter_butterworth_frame = ttk.Frame(controls)
+    workspace.signal_filter_butterworth_frame.columnconfigure(1, weight=1)
+    ttk.Label(workspace.signal_filter_butterworth_frame, text="Cutoff freq [Hz]").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_butterworth_frame, textvariable=workspace.signal_filter_cutoff_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.signal_filter_bandpass_frame = ttk.Frame(workspace.signal_filter_butterworth_frame)
+    workspace.signal_filter_bandpass_frame.columnconfigure(1, weight=1)
+    ttk.Label(workspace.signal_filter_bandpass_frame, text="High cutoff freq [Hz]").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_bandpass_frame, textvariable=workspace.signal_filter_cutoff_high_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    workspace.signal_filter_bandpass_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+    ttk.Label(workspace.signal_filter_butterworth_frame, text="Filter order").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_butterworth_frame, textvariable=workspace.signal_filter_order_var).grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Label(workspace.signal_filter_butterworth_frame, text="Sample spacing [s]").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(workspace.signal_filter_butterworth_frame, textvariable=workspace.signal_filter_spacing_var).grid(row=3, column=1, sticky="ew", padx=5, pady=5)
+    tk.Label(
+        workspace.signal_filter_butterworth_frame,
+        textvariable=workspace.signal_filter_spacing_status_var,
+        fg="#1d4ed8",
+    ).grid(row=3, column=2, sticky="w", padx=5, pady=5)
+    workspace.signal_filter_butterworth_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
 
-    ttk.Label(controls, text="Filter order").grid(row=5, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_order_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
-
-    ttk.Label(controls, text="Sample spacing [s]").grid(row=6, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_spacing_var).grid(row=6, column=1, sticky="ew", padx=5, pady=5)
-
-    ttk.Label(controls, text="New column name").grid(row=7, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(controls, textvariable=workspace.signal_filter_name_var).grid(row=7, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Label(controls, text="New column name").grid(row=5, column=0, sticky="w", padx=5, pady=5)
+    ttk.Entry(controls, textvariable=workspace.signal_filter_name_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
 
     ttk.Button(controls, text="Apply Signal Filter", command=workspace._apply_signal_filter).grid(
-        row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
+        row=6, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
     )
 
     help_text = (
@@ -262,10 +282,10 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
         "high_pass: original signal minus low-pass trend\n"
         "butterworth_lowpass: zero-phase Butterworth LP\n"
         "butterworth_highpass: zero-phase Butterworth HP\n"
-        "butterworth_bandpass: zero-phase Butterworth BP\n"
+        "butterworth_bandpass: zero-phase Butterworth BP (set low and high cutoffs)\n"
         "  Butterworth filters need cutoff, order, and spacing"
     )
-    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=9, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky="w", padx=5, pady=5)
     controls.columnconfigure(1, weight=1)
 
 
@@ -279,6 +299,13 @@ def build_resample_tab(workspace, parent: ttk.Frame) -> None:
 
     ttk.Label(controls, text="Target spacing").grid(row=1, column=0, sticky="w", padx=5, pady=5)
     ttk.Entry(controls, textvariable=workspace.resample_spacing_var).grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    tk.Label(controls, textvariable=workspace.resample_spacing_status_var, fg="#1d4ed8").grid(
+        row=1,
+        column=2,
+        sticky="w",
+        padx=5,
+        pady=5,
+    )
 
     ttk.Button(controls, text="Resample to Uniform Grid", command=workspace._apply_resample).grid(
         row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
@@ -400,6 +427,13 @@ def build_frequency_tab(workspace) -> None:
     workspace.fft_sample_spacing_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
     workspace.fft_sample_spacing_entry = ttk.Entry(workspace.freq_general_frame, textvariable=workspace.fft_sample_spacing_var)
     workspace.fft_sample_spacing_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    tk.Label(workspace.freq_general_frame, textvariable=workspace.fft_sample_spacing_status_var, fg="#1d4ed8").grid(
+        row=0,
+        column=2,
+        sticky="w",
+        padx=5,
+        pady=5,
+    )
 
     workspace.fft_window_label = ttk.Label(workspace.freq_general_frame, text="Window shape")
     workspace.fft_window_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
@@ -418,6 +452,13 @@ def build_frequency_tab(workspace) -> None:
     workspace.welch_segment_length_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
     workspace.welch_segment_length_entry = ttk.Entry(workspace.welch_specific_frame, textvariable=workspace.welch_segment_length_var)
     workspace.welch_segment_length_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    tk.Label(workspace.welch_specific_frame, textvariable=workspace.welch_segment_length_status_var, fg="#1d4ed8").grid(
+        row=0,
+        column=2,
+        sticky="w",
+        padx=5,
+        pady=5,
+    )
 
     workspace.welch_overlap_fraction_label = ttk.Label(workspace.welch_specific_frame, text="Welch overlap")
     workspace.welch_overlap_fraction_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
@@ -509,6 +550,13 @@ def build_cycles_tab(workspace) -> None:
     workspace.cycle_fixed_frame = ttk.Frame(controls)
     ttk.Label(workspace.cycle_fixed_frame, text="Cycle length").grid(row=0, column=0, sticky="w", padx=5, pady=5)
     ttk.Entry(workspace.cycle_fixed_frame, textvariable=workspace.cycle_length_var).grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+    tk.Label(workspace.cycle_fixed_frame, textvariable=workspace.cycle_length_status_var, fg="#1d4ed8").grid(
+        row=0,
+        column=2,
+        sticky="w",
+        padx=5,
+        pady=5,
+    )
     workspace.cycle_fixed_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
 
     # Rising edge & zero crossing

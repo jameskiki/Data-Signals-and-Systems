@@ -81,7 +81,7 @@ def apply_signal_filter(
     new_column: str,
     window_size: int = 5,
     alpha: float = 0.2,
-    cutoff_hz: float = 1.0,
+    cutoff_hz: float | list[float] = 1.0,
     sample_spacing: float = 0.0,
     filter_order: int = 4,
 ) -> pd.DataFrame:

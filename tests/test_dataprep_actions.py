@@ -11,9 +11,17 @@ from Source.datapreparation_app.datasets import DatasetContext
 class DummyNotifications:
     def __init__(self):
         self.success_messages = []
+        self.warning_messages = []
+        self.info_messages = []
 
     def success(self, message):
         self.success_messages.append(message)
+
+    def warning(self, message, details=None):
+        self.warning_messages.append((message, details))
+
+    def info(self, message, details=None):
+        self.info_messages.append((message, details))
 
 
 class DummyApp:
@@ -109,12 +117,10 @@ def test_split_selected_dataset_reports_error(monkeypatch):
 
 def test_export_clean_data_warns_without_datasets(monkeypatch):
     app = DummyApp()
-    warnings = []
-    monkeypatch.setattr(actions.messagebox, "showwarning", lambda title, msg: warnings.append((title, msg)))
 
     actions.export_clean_data(app)
 
-    assert warnings == [("Warning", "No data loaded")]
+    assert app.notifications.warning_messages == [("No data loaded", None)]
 
 
 def test_export_clean_data_success(monkeypatch):
@@ -174,13 +180,9 @@ def test_apply_selected_column_role_warns_when_selection_missing(monkeypatch):
     app.session.role_editor_column = ""
     app.session.role_editor_value = ""
     app.dataset_contexts = {"C:/tmp/a.csv": DatasetContext(column_roles={})}
-    warnings = []
-
-    monkeypatch.setattr(actions.messagebox, "showwarning", lambda title, msg: warnings.append((title, msg)))
-
     actions.apply_selected_column_role(app)
 
-    assert warnings == [("Warning", "Select a column and a role first")]
+    assert app.notifications.warning_messages == [("Select a column and a role first", None)]
 
 
 def test_open_analysis_workspace_appends_workspace(monkeypatch):

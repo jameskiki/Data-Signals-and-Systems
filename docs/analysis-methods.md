@@ -65,16 +65,20 @@ Expected result: the new filtered column keeps only the larger ringing excursion
 
 **Window-based filters:**
 
-- `moving_average`: centered rolling mean for low-pass smoothing.
-- `median`: centered rolling median for spike-resistant smoothing.
-- `exponential_smoothing`: recursive smoothing controlled by `alpha`.
-- `high_pass`: original signal minus a rolling-mean trend.
+| Filter | Required parameter | Notes |
+|---|---|---|
+| `moving_average` | `window_size > 0` | Centered rolling mean. |
+| `median` | `window_size > 0` | Centered rolling median, spike-resistant. |
+| `exponential_smoothing` | `alpha > 0` | Recursive decay; α close to 1 = fast decay. |
+| `high_pass` | `window_size > 0` | Original minus rolling-mean trend. |
 
 **Butterworth filters (zero-phase, `sosfiltfilt`):**
 
-- `butterworth_lowpass`: zero-phase low-pass filter. Requires cutoff frequency (Hz), sample spacing, and filter order.
-- `butterworth_highpass`: zero-phase high-pass filter. Same parameters as lowpass.
-- `butterworth_bandpass`: zero-phase band-pass filter. Requires low and high cutoff frequencies, sample spacing, and filter order.
+| Filter | Required parameters | Notes |
+|---|---|---|
+| `butterworth_lowpass` | `cutoff_hz > 0`, `sample_spacing > 0`, `filter_order > 0` | Zero-phase LP. |
+| `butterworth_highpass` | `cutoff_hz > 0`, `sample_spacing > 0`, `filter_order > 0` | Zero-phase HP. |
+| `butterworth_bandpass` | `cutoff_hz > 0`, `cutoff_hz_high > cutoff_hz`, `sample_spacing > 0`, `filter_order > 0` | Zero-phase BP with a low/high cutoff pair. |
 
 All Butterworth variants use `scipy.signal.sosfiltfilt` for zero-phase filtering, which avoids the phase distortion of a single-pass IIR filter at the cost of doubling the effective filter order.
 
@@ -119,11 +123,13 @@ For the formal note on the current derived-signal operations, see [latex/derived
 
 The frequency tab exposes five methods:
 
-- `FFT Amplitude`: one-sided amplitude spectrum for dominant frequency inspection.
-- `Welch PSD`: averaged power spectral density estimate for smoother spectral inspection.
-- `Transfer Estimate`: frequency response magnitude $|H(f)| = S_{xy}/S_{xx}$ between a comparison (input) signal and the active (output) signal. Also provides the phase response. Requires a comparison column.
-- `Coherence`: magnitude-squared coherence $\gamma^2(f) = |S_{xy}|^2 / (S_{xx} \cdot S_{yy})$ between a comparison signal and the active signal. Values range from 0 (no linear relationship) to 1 (perfect linear relationship at that frequency). Requires a comparison column.
-- `Spectrogram`: short-time FFT producing a time-frequency heatmap (power vs. time vs. frequency). Useful for signals whose frequency content changes over time.
+| Method | Required parameters | Notes |
+|---|---|---|
+| `FFT Amplitude` | `sample_spacing > 0` | One-sided amplitude spectrum. |
+| `Welch PSD` | `sample_spacing > 0`, `segment_length > 0` | Averaged PSD estimate. |
+| `Transfer Estimate` | `comparison_signal` (non-empty), `sample_spacing > 0`, `segment_length > 0` | Frequency response magnitude and phase. |
+| `Coherence` | `comparison_signal` (non-empty), `sample_spacing > 0`, `segment_length > 0` | Magnitude-squared coherence 0–1. |
+| `Spectrogram` | `sample_spacing > 0`, `segment_length > 0` | Time-frequency heatmap. |
 
 Current behavior:
 

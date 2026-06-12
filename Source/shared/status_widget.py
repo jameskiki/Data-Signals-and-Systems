@@ -12,6 +12,7 @@ class StatusBar(tk.Frame):
     def __init__(self, parent: tk.Widget, notification_manager: NotificationManager):
         super().__init__(parent, relief=tk.SUNKEN, bg="#f0f0f0", height=25)
         self.notification_manager = notification_manager
+        self._dismiss_job_id: str | None = None
         self.pack_propagate(False)
 
         # Color scheme for severity levels
@@ -64,6 +65,13 @@ class StatusBar(tk.Frame):
 
     def _update_display(self, notification: Notification | None) -> None:
         """Update the display based on the current notification."""
+        if self._dismiss_job_id is not None:
+            try:
+                self.after_cancel(self._dismiss_job_id)
+            except tk.TclError:
+                pass
+            self._dismiss_job_id = None
+
         if notification is None:
             self._show_ready()
         else:
@@ -80,7 +88,7 @@ class StatusBar(tk.Frame):
 
             # Auto-dismiss after the specified time
             if notification.auto_dismiss_ms:
-                self.after(notification.auto_dismiss_ms, lambda: self.notification_manager.clear())
+                self._dismiss_job_id = self.after(notification.auto_dismiss_ms, self.notification_manager.clear)
 
     def _show_ready(self) -> None:
         """Show the ready state."""

@@ -2,7 +2,43 @@
 
 ## [Unreleased]
 
+### Added
+- **Dynamic Options Refactor (Rules in Code)** — all analysis-method control rules moved to
+  `Source/analysis_app/rules.py` (pure Python, no Tk) and applied via
+  `Source/analysis_app/rules_orchestrator.py`:
+  - 16 rule IDs across Frequency (5), Signal Filter (7), and Cycle (4) domains.
+  - `get_rule` / `validate_params` pure helpers for programmatic lookup and preflight checks.
+  - Frame show/hide, widget enable/disable, and stale-value correction driven by rules.
+- **Preflight validation gates** in `handlers.py` for `compute_fft`, `apply_signal_filter`,
+  and `compute_cycle_analysis` — invalid or missing required params are caught with a clear
+  warning before any computation runs.
+- **Bandpass high-cutoff field** — `butterworth_bandpass` now exposes a separate
+  *High cutoff freq [Hz]* entry (hidden for LP/HP); low > high ordering is validated.
+- **Data-inferred defaults** — on every control refresh the workspace auto-fills these fields
+  from the time-role column and active signal when the user has not yet set a value:
+  - Signal filter sample spacing
+  - FFT index step size
+  - Resample target spacing (when a real time column is selected)
+  - Welch segment length (nearest power-of-two ≤ sample count, capped at 256)
+  - Fixed-cycle length (dominant spectral period of the active signal)
+- **Inferred / User-set badges** — five spacing/length fields display a blue *Inferred* or
+  *User-set* label that updates live; flips to *User-set* the moment the user edits a field.
+  Implemented via `_inferred_fields` tracker, `_set_inferred_field_value`, and
+  `_refresh_inferred_badges` in `AnalysisWorkspace`.
+- Signal Filter tab restructured into three named frames
+  (`signal_filter_window_frame`, `signal_filter_alpha_frame`, `signal_filter_butterworth_frame`)
+  so the orchestrator can show/hide the right subset of controls per operation.
+- 66 new automated tests covering rules, handler preflight gates, bandpass plumbing,
+  spacing inference, badge tracking, and analysis-length inference.
+
 ### Changed
+- `_refresh_frequency_method_controls` and `_refresh_cycle_method_controls` in
+  `AnalysisWorkspace` replaced by single-line orchestrator calls; new
+  `_refresh_signal_filter_controls` wired for Signal Filter operation changes.
+- `butterworth_bandpass` `cutoff_hz` parameter now accepts `float | list[float]` throughout
+  `signals.py`, `actions.py`, and `handlers.py`.
+- Parameter requirement tables in `docs/analysis-methods.md` updated to reflect rule definitions.
+
 - Consolidated plotting presentation under a shared contract in `shared/plot_options.py` and `shared/plot_utils.py`.
 - Unified Preview and Analysis time-series generic plotting behavior (labels/grid/legend/format defaults now come from shared contract fields).
 - Applied shared axis presentation helpers to specialized Frequency and Cycle plots while preserving existing analytical layouts.

@@ -64,7 +64,7 @@ def load_files(app) -> None:
 		summary_lines = [" | ".join(parse_info), report_text]
 		if error_messages:
 			summary_lines.extend(["", "Warnings:", *error_messages])
-		messagebox.showinfo("Load summary", "\n".join(summary_lines))
+		app.notifications.info("Load summary", details="\n".join(summary_lines))
 
 	def _poll_load_queue() -> None:
 		nonlocal worker_done
@@ -140,9 +140,9 @@ def load_all_demo_test_signals(app) -> None:
 		summary_lines += failed_keys
 
 	if failed_keys:
-		messagebox.showwarning("Demo/Test Signals Loaded (with errors)", "\n".join(summary_lines))
+		app.notifications.warning("Demo/Test Signals Loaded (with errors)", details="\n".join(summary_lines))
 	else:
-		messagebox.showinfo("Demo/Test Signals Loaded", "\n".join(summary_lines))
+		app.notifications.success("Demo/Test Signals Loaded", details="\n".join(summary_lines))
 
 def _load_demo_dataset(app, demo_key: str, show_message: bool = True) -> str:
 	spec, dataframe = create_demo_dataset(demo_key)
@@ -162,9 +162,9 @@ def _load_demo_dataset(app, demo_key: str, show_message: bool = True) -> str:
 		refresh_dataset_table(app)
 		select_dataset_in_table(app, dataset_path)
 		app._refresh_dataset_preparation_views()
-		messagebox.showinfo(
+		app.notifications.success(
 			"Demo/Test Signal Loaded",
-			"\n".join(
+			details="\n".join(
 				[
 					f"Created synthetic validation dataset:\n{os.path.basename(dataset_path)}",
 					"",
@@ -202,7 +202,7 @@ def merge_selected_files(app) -> None:
 	if not selected_file_paths:
 		return
 	if len(selected_file_paths) < 2:
-		messagebox.showwarning("Warning", "Select at least two files to merge")
+		app.notifications.warning("Select at least two files to merge")
 		return
 
 	save_path = filedialog.asksaveasfilename(
@@ -392,7 +392,7 @@ def unload_selected_files(app) -> None:
 
 def export_clean_data(app) -> None:
 	if not app.data_frames:
-		messagebox.showwarning("Warning", "No data loaded")
+		app.notifications.warning("No data loaded")
 		return
 
 	output_dir = filedialog.askdirectory(title="Select output directory")
@@ -410,7 +410,7 @@ def apply_selected_column_role(app) -> None:
 	column_name = app.session.role_editor_column.strip()
 	role_name = app.session.role_editor_value.strip()
 	if not column_name or not role_name:
-		messagebox.showwarning("Warning", "Select a column and a role first")
+		app.notifications.warning("Select a column and a role first")
 		return
 
 	context = app.dataset_contexts.get(selected_path)

@@ -27,9 +27,13 @@ class DummyNotifications:
 
     def __init__(self):
         self.success_messages = []
+        self.warning_messages = []
 
     def success(self, message):
         self.success_messages.append(message)
+
+    def warning(self, message, details=None):
+        self.warning_messages.append((message, details))
 
 
 class DummyWorkspace:
@@ -51,6 +55,7 @@ class DummyWorkspace:
         self.signal_filter_window_var = DummyVar("5")
         self.signal_filter_alpha_var = DummyVar("0.3")
         self.signal_filter_cutoff_var = DummyVar("10.0")
+        self.signal_filter_cutoff_high_var = DummyVar("20.0")
         self.signal_filter_spacing_var = DummyVar("0.1")
         self.signal_filter_order_var = DummyVar("4")
 
@@ -91,11 +96,10 @@ class DummyWorkspace:
         except Exception as error:  # pragma: no cover - mirrors production behavior
             failed.append(error)
 
-    def _replace_working_frame(self, dataframe, history_entry, role_overrides=None, focus_column=None):
+    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None):
         self.replace_calls.append(
             {
                 "dataframe": dataframe,
-                "history_entry": history_entry,
                 "role_overrides": role_overrides,
                 "focus_column": focus_column,
             }
@@ -117,13 +121,11 @@ class DummyWorkspace:
 def test_apply_filter_warns_without_active_column(monkeypatch):
     workspace = DummyWorkspace()
     workspace.active_column_var.set("")
-    warnings = []
-    monkeypatch.setattr(handlers.messagebox, "showwarning", lambda title, msg: warnings.append((title, msg)))
 
     handlers.apply_filter(workspace)
 
-    assert len(warnings) == 1
-    assert "active analysis column" in warnings[0][1]
+    assert len(workspace.notifications.warning_messages) == 1
+    assert "active analysis column" in workspace.notifications.warning_messages[0][0]
     assert workspace.replace_calls == []
 
 
@@ -134,16 +136,16 @@ def test_apply_filter_replaces_frame_with_role_override(monkeypatch):
     monkeypatch.setattr(
         handlers,
         "build_simple_filter_update",
-        lambda *args, **kwargs: FrameUpdate(updated, "Applied simple filter"),
+        lambda *args, **kwargs: FrameUpdate(updated),
     )
 
     handlers.apply_filter(workspace)
 
     assert len(workspace.replace_calls) == 1
     call = workspace.replace_calls[0]
-    assert call["history_entry"] == "Applied simple filter"
     assert call["focus_column"] == "sensor_filt"
     assert call["role_overrides"] == {"sensor_filt": "pressure"}
+    assert "Created sensor_filt from sensor using simple filtering" in workspace.notifications.success_messages
 
 
 def test_apply_signal_filter_parses_ui_values_and_clears_name(monkeypatch):
@@ -152,7 +154,7 @@ def test_apply_signal_filter_parses_ui_values_and_clears_name(monkeypatch):
 
     def fake_update(*args, **kwargs):
         captured.update(kwargs)
-        return FrameUpdate(workspace.session.working_frame.assign(custom_smooth=[1.0, 2.0]), "Applied signal filter")
+        return FrameUpdate(workspace.session.working_frame.assign(custom_smooth=[1.0, 2.0]))
 
     monkeypatch.setattr(handlers, "build_signal_filter_update", fake_update)
 
@@ -166,16 +168,35 @@ def test_apply_signal_filter_parses_ui_values_and_clears_name(monkeypatch):
     assert workspace.signal_filter_name_var.get() == ""
 
 
+def test_apply_signal_filter_bandpass_passes_cutoff_pair(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_bandpass")
+    workspace.signal_filter_cutoff_var.set("5.0")
+    workspace.signal_filter_cutoff_high_var.set("20.0")
+    workspace.signal_filter_spacing_var.set("0.1")
+    workspace.signal_filter_order_var.set("4")
+    captured = {}
+
+    def fake_update(*args, **kwargs):
+        captured.update(kwargs)
+        return FrameUpdate(workspace.session.working_frame.assign(bandpass=[1.0, 2.0]))
+
+    monkeypatch.setattr(handlers, "build_signal_filter_update", fake_update)
+
+    handlers.apply_signal_filter(workspace)
+
+    assert captured["cutoff_hz"] == [5.0, 20.0]
+    assert workspace.signal_filter_name_var.get() == ""
+
+
 def test_apply_resample_warns_for_index_time_column(monkeypatch):
     workspace = DummyWorkspace()
     workspace.resample_time_var.set("Index")
-    warnings = []
-    monkeypatch.setattr(handlers.messagebox, "showwarning", lambda title, msg: warnings.append((title, msg)))
 
     handlers.apply_resample(workspace)
 
-    assert len(warnings) == 1
-    assert "time column" in warnings[0][1]
+    assert len(workspace.notifications.warning_messages) == 1
+    assert "time column" in workspace.notifications.warning_messages[0][0]
     assert workspace.replace_calls == []
 
 
@@ -188,7 +209,7 @@ def test_apply_resample_replaces_working_frame(monkeypatch):
     handlers.apply_resample(workspace)
 
     assert len(workspace.replace_calls) == 1
-    assert "Resampled to uniform grid" in workspace.replace_calls[0]["history_entry"]
+    assert any("Resampled to uniform grid" in msg for msg in workspace.notifications.success_messages)
 
 
 def test_apply_derived_signal_converts_time_role_to_signal(monkeypatch):
@@ -200,7 +221,7 @@ def test_apply_derived_signal_converts_time_role_to_signal(monkeypatch):
     monkeypatch.setattr(
         handlers,
         "build_derived_signal_update",
-        lambda *args, **kwargs: FrameUpdate(updated, "Created derived"),
+        lambda *args, **kwargs: FrameUpdate(updated),
     )
 
     handlers.apply_derived_signal(workspace)
@@ -244,3 +265,192 @@ def test_compute_cycle_analysis_fixed_length_renders_result(monkeypatch):
 
     assert workspace.render_cycle_calls == [cycle_result]
     assert "Analyzed 3 cycles" in workspace.notifications.success_messages[0]
+
+
+# ---------------------------------------------------------------------------
+# Preflight blocking — signal filter
+# ---------------------------------------------------------------------------
+
+def test_apply_signal_filter_butterworth_blocked_when_sample_spacing_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_lowpass")
+    workspace.signal_filter_spacing_var.set("0.0")
+    workspace.signal_filter_cutoff_var.set("10.0")
+    workspace.signal_filter_order_var.set("4")
+    handlers.apply_signal_filter(workspace)
+
+    assert len(workspace.notifications.warning_messages) == 1
+    warning_message, warning_details = workspace.notifications.warning_messages[0]
+    assert "Signal Filter" in warning_message
+    assert warning_details is not None
+    assert "sample_spacing" in warning_details
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_butterworth_blocked_when_cutoff_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_highpass")
+    workspace.signal_filter_spacing_var.set("0.01")
+    workspace.signal_filter_cutoff_var.set("0.0")
+    workspace.signal_filter_order_var.set("4")
+    handlers.apply_signal_filter(workspace)
+
+    assert any(
+        details is not None and "cutoff_hz" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_bandpass_blocked_when_high_cutoff_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_bandpass")
+    workspace.signal_filter_spacing_var.set("0.01")
+    workspace.signal_filter_cutoff_var.set("5.0")
+    workspace.signal_filter_cutoff_high_var.set("0.0")
+    workspace.signal_filter_order_var.set("4")
+    handlers.apply_signal_filter(workspace)
+
+    assert any(
+        details is not None and "cutoff_hz_high" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_bandpass_blocked_when_high_cutoff_below_low_cutoff(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_bandpass")
+    workspace.signal_filter_spacing_var.set("0.01")
+    workspace.signal_filter_cutoff_var.set("20.0")
+    workspace.signal_filter_cutoff_high_var.set("10.0")
+    workspace.signal_filter_order_var.set("4")
+    handlers.apply_signal_filter(workspace)
+
+    assert any(
+        details is not None and "must be greater than 'cutoff_hz'" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_moving_average_blocked_when_window_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("moving_average")
+    workspace.signal_filter_window_var.set("0")
+    handlers.apply_signal_filter(workspace)
+
+    assert any(
+        details is not None and "window_size" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_exp_smoothing_blocked_when_alpha_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("exponential_smoothing")
+    workspace.signal_filter_alpha_var.set("0.0")
+    handlers.apply_signal_filter(workspace)
+
+    assert any(
+        details is not None and "alpha" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.replace_calls == []
+
+
+def test_apply_signal_filter_butterworth_proceeds_with_valid_params(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_lowpass")
+    workspace.signal_filter_spacing_var.set("0.01")
+    workspace.signal_filter_cutoff_var.set("10.0")
+    workspace.signal_filter_order_var.set("4")
+    monkeypatch.setattr(
+        handlers,
+        "build_signal_filter_update",
+        lambda *args, **kwargs: FrameUpdate(workspace.session.working_frame),
+    )
+
+    handlers.apply_signal_filter(workspace)
+
+    assert len(workspace.replace_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Preflight blocking — frequency analysis
+# ---------------------------------------------------------------------------
+
+def test_compute_fft_blocked_when_sample_spacing_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.fft_sample_spacing_var.set("0.0")
+    handlers.compute_fft(workspace)
+
+    assert any(
+        details is not None and "sample_spacing" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.render_fft_calls == []
+
+
+def test_compute_fft_transfer_blocked_when_comparison_missing(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.frequency_analysis_var.set("Transfer Estimate")
+    workspace.frequency_compare_var.set("")
+    workspace.fft_sample_spacing_var.set("0.01")
+    workspace.welch_segment_length_var.set("256")
+    handlers.compute_fft(workspace)
+
+    assert any(
+        details is not None and "comparison_signal" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.render_fft_calls == []
+
+
+def test_compute_fft_coherence_blocked_when_comparison_missing(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.frequency_analysis_var.set("Coherence")
+    workspace.frequency_compare_var.set("")
+    workspace.fft_sample_spacing_var.set("0.01")
+    workspace.welch_segment_length_var.set("256")
+    handlers.compute_fft(workspace)
+
+    assert any(
+        details is not None and "comparison_signal" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.render_fft_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Preflight blocking — cycle analysis
+# ---------------------------------------------------------------------------
+
+def test_compute_cycle_analysis_blocked_when_cycle_length_zero(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.cycle_mode_var.set("fixed_length")
+    workspace.cycle_length_var.set("0")
+    handlers.compute_cycle_analysis(workspace)
+
+    assert any(
+        details is not None and "cycle_length" in details
+        for _message, details in workspace.notifications.warning_messages
+    )
+    assert workspace.render_cycle_calls == []
+
+
+def test_compute_cycle_analysis_rising_edge_not_blocked_by_preflight(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.cycle_mode_var.set("rising_edge")
+    workspace.cycle_reference_var.set("Index")
+    workspace.cycle_threshold_var.set("0.0")
+    workspace.cycle_length_var.set("0")
+    cycle_result = SimpleNamespace(cycle_count=2, cycle_length=0)
+    monkeypatch.setattr(handlers, "detect_rising_edge_cycle_ranges", lambda *args, **kwargs: [])
+    monkeypatch.setattr(handlers, "compute_cycle_analysis_from_ranges", lambda *args, **kwargs: cycle_result)
+
+    handlers.compute_cycle_analysis(workspace)
+
+    # rising_edge has no required_positive params so preflight does not block
+    assert workspace.render_cycle_calls == [cycle_result]

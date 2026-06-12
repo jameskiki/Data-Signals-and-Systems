@@ -6,8 +6,6 @@ datapreparation_app/actions.py.  The corresponding AnalysisWorkspace methods
 are thin one-line delegations to these functions.
 """
 
-from tkinter import messagebox
-
 from Source.data_ops.cycles import (
     compute_cycle_analysis_from_ranges,
     compute_fixed_length_cycle_analysis,
@@ -30,6 +28,7 @@ from .actions import (
     build_signal_filter_update,
     build_simple_filter_update,
 )
+from .rules import get_rule, validate_params
 from .state import UI_FREQUENCY_ANALYSIS_METHODS
 
 
@@ -37,7 +36,7 @@ def apply_filter(workspace) -> None:
     """Read filter UI state and apply a simple value-range filter."""
     column = workspace.active_column_var.get().strip()
     if not column:
-        messagebox.showwarning("Warning", "Select an active analysis column")
+        workspace.notifications.warning("Select an active analysis column")
         return
 
     output_column = resolve_filtered_column_name(column, workspace.filter_output_name_var.get())
@@ -56,10 +55,10 @@ def apply_filter(workspace) -> None:
 
     workspace._replace_working_frame(
         update.dataframe,
-        update.history_entry,
         role_overrides={output_column: workspace.column_roles.get(column, "signal")},
         focus_column=output_column,
     )
+    workspace.notifications.success(f"Created {output_column} from {column} using simple filtering")
 
 
 def apply_signal_filter(workspace) -> None:
@@ -67,10 +66,33 @@ def apply_signal_filter(workspace) -> None:
     source_column = workspace.active_column_var.get().strip()
     operation = workspace.signal_filter_operation_var.get().strip()
     if not source_column:
-        messagebox.showwarning("Warning", "Select an active analysis column")
+        workspace.notifications.warning("Select an active analysis column")
         return
 
+    rule = get_rule("signal_filter", operation)
+    if rule is not None:
+        workspace_vars = {
+            "window_size": workspace.signal_filter_window_var.get(),
+            "alpha": workspace.signal_filter_alpha_var.get(),
+            "cutoff_hz": workspace.signal_filter_cutoff_var.get(),
+            "cutoff_hz_high": workspace.signal_filter_cutoff_high_var.get(),
+            "sample_spacing": workspace.signal_filter_spacing_var.get(),
+            "filter_order": workspace.signal_filter_order_var.get(),
+        }
+        errors = validate_params(rule, workspace_vars)
+        if errors:
+            workspace.notifications.warning("Signal Filter validation failed", details="\n".join(errors))
+            return
+
     output_column = resolve_filtered_column_name(source_column, workspace.signal_filter_name_var.get())
+    cutoff_hz: float | list[float]
+    if operation == "butterworth_bandpass":
+        cutoff_hz = [
+            float(workspace.signal_filter_cutoff_var.get() or "10.0"),
+            float(workspace.signal_filter_cutoff_high_var.get() or "20.0"),
+        ]
+    else:
+        cutoff_hz = float(workspace.signal_filter_cutoff_var.get() or "10.0")
 
     with workspace._error_dialog("Signal Filter Error") as _failed:
         update = build_signal_filter_update(
@@ -80,7 +102,7 @@ def apply_signal_filter(workspace) -> None:
             output_name=workspace.signal_filter_name_var.get(),
             window_size=int(workspace.signal_filter_window_var.get() or "5"),
             alpha=float(workspace.signal_filter_alpha_var.get() or "0.2"),
-            cutoff_hz=float(workspace.signal_filter_cutoff_var.get() or "10.0"),
+            cutoff_hz=cutoff_hz,
             sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
             filter_order=int(workspace.signal_filter_order_var.get() or "4"),
         )
@@ -89,10 +111,10 @@ def apply_signal_filter(workspace) -> None:
 
     workspace._replace_working_frame(
         update.dataframe,
-        update.history_entry,
         role_overrides={output_column: workspace.column_roles.get(source_column, "signal")},
         focus_column=output_column,
     )
+    workspace.notifications.success(f"Created {output_column} using {operation} on {source_column}")
     workspace.signal_filter_name_var.set("")
 
 
@@ -100,7 +122,7 @@ def apply_resample(workspace) -> None:
     """Read resample UI state and resample the working frame to a uniform grid."""
     time_column = workspace.resample_time_var.get().strip()
     if not time_column or time_column == "Index":
-        messagebox.showwarning("Warning", "Select a time column for resampling")
+        workspace.notifications.warning("Select a time column for resampling")
         return
 
     with workspace._error_dialog("Resample Error") as _failed:
@@ -115,7 +137,9 @@ def apply_resample(workspace) -> None:
 
     workspace._replace_working_frame(
         resampled,
-        f"Resampled to uniform grid (spacing={target_spacing}) using {time_column}",
+    )
+    workspace.notifications.success(
+        f"Resampled to uniform grid (spacing={target_spacing}) using {time_column}"
     )
 
 
@@ -126,7 +150,7 @@ def apply_derived_signal(workspace) -> None:
     new_column = workspace.derived_name_var.get().strip()
     reference_column = workspace.derived_reference_var.get().strip() or "Index"
     if not source_column:
-        messagebox.showwarning("Warning", "Select an active analysis column")
+        workspace.notifications.warning("Select an active analysis column")
         return
 
     with workspace._error_dialog("Derived Signal Error") as _failed:
@@ -146,10 +170,10 @@ def apply_derived_signal(workspace) -> None:
         derived_role = "signal"
     workspace._replace_working_frame(
         update.dataframe,
-        update.history_entry,
         role_overrides={new_column: derived_role},
         focus_column=new_column,
     )
+    workspace.notifications.success(f"Created {new_column} using {operation} on {source_column}")
     workspace.derived_name_var.set("")
 
 
@@ -157,11 +181,23 @@ def compute_fft(workspace) -> None:
     """Read frequency-analysis UI state and run the selected spectral computation."""
     source_column = workspace.active_column_var.get().strip()
     if not source_column:
-        messagebox.showwarning("Warning", "Select an active analysis column")
+        workspace.notifications.warning("Select an active analysis column")
         return
 
-    reference_column = workspace.fft_reference_var.get().strip() or "Index"
     analysis_name = workspace.frequency_analysis_var.get().strip() or UI_FREQUENCY_ANALYSIS_METHODS[0]
+    rule = get_rule("frequency", analysis_name)
+    if rule is not None:
+        workspace_vars = {
+            "sample_spacing": workspace.fft_sample_spacing_var.get(),
+            "segment_length": workspace.welch_segment_length_var.get(),
+            "comparison_signal": workspace.frequency_compare_var.get().strip(),
+        }
+        errors = validate_params(rule, workspace_vars)
+        if errors:
+            workspace.notifications.warning("Frequency Analysis validation failed", details="\n".join(errors))
+            return
+
+    reference_column = workspace.fft_reference_var.get().strip() or "Index"
     with workspace._error_dialog("Frequency Analysis Error") as _failed:
         common_kwargs = {
             "dataframe": workspace.session.working_frame,
@@ -218,8 +254,19 @@ def compute_cycle_analysis(workspace) -> None:
     """Read cycle-analysis UI state and run cycle detection + analysis."""
     source_column = workspace.active_column_var.get().strip()
     if not source_column:
-        messagebox.showwarning("Warning", "Select an active analysis column")
+        workspace.notifications.warning("Select an active analysis column")
         return
+
+    cycle_mode = workspace.cycle_mode_var.get().strip() or "fixed_length"
+    rule = get_rule("cycle", cycle_mode)
+    if rule is not None:
+        workspace_vars = {
+            "cycle_length": workspace.cycle_length_var.get().strip(),
+        }
+        errors = validate_params(rule, workspace_vars)
+        if errors:
+            workspace.notifications.warning("Cycle Analysis validation failed", details="\n".join(errors))
+            return
 
     time_column = workspace._get_cycle_time_column()
 
@@ -227,7 +274,6 @@ def compute_cycle_analysis(workspace) -> None:
         cycle_length = int(workspace.cycle_length_var.get().strip() or "0")
         max_cycles_text = workspace.cycle_max_cycles_var.get().strip()
         max_cycles = int(max_cycles_text) if max_cycles_text else None
-        cycle_mode = workspace.cycle_mode_var.get().strip() or "fixed_length"
         if cycle_mode == "rising_edge":
             reference_column = workspace.cycle_reference_var.get().strip() or "Index"
             threshold = float(workspace.cycle_threshold_var.get().strip() or "0.0")

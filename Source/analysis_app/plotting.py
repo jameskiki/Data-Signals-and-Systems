@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from Source.data_ops.cycles import CycleAnalysisResult
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
@@ -45,7 +45,7 @@ def refresh_live_plot(workspace) -> None:
 def update_plot(workspace) -> None:
     selected_columns = workspace._get_selected_plot_y_columns()
     if not selected_columns:
-        messagebox.showwarning("Warning", "Select at least one Y column")
+        workspace.notifications.warning("Select at least one Y column")
         return
 
     x_column = workspace.plot_x_var.get().strip() or "Index"

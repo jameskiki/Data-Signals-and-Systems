@@ -10,10 +10,9 @@ from Source.data_ops.signals import add_derived_column, apply_signal_filter
 
 @dataclass(frozen=True)
 class FrameUpdate:
-    """A dataframe update plus its history description."""
+    """A dataframe update produced by an analysis operation."""
 
     dataframe: pd.DataFrame
-    history_entry: str
 
 
 def build_simple_filter_update(
@@ -35,10 +34,7 @@ def build_simple_filter_update(
         maximum_value=maximum_value,
         keep_missing=keep_missing,
     )
-    return FrameUpdate(
-        dataframe=filtered_frame,
-        history_entry=f"Created {output_column} from {active_column} using simple filtering",
-    )
+    return FrameUpdate(dataframe=filtered_frame)
 
 
 def build_signal_filter_update(
@@ -48,7 +44,7 @@ def build_signal_filter_update(
     output_name: str,
     window_size: int,
     alpha: float,
-    cutoff_hz: float = 1.0,
+    cutoff_hz: float | list[float] = 1.0,
     sample_spacing: float = 0.0,
     filter_order: int = 4,
 ) -> FrameUpdate:
@@ -66,10 +62,7 @@ def build_signal_filter_update(
         sample_spacing=sample_spacing,
         filter_order=filter_order,
     )
-    return FrameUpdate(
-        dataframe=filtered_frame,
-        history_entry=f"Created {output_column} using {operation} on {source_column}",
-    )
+    return FrameUpdate(dataframe=filtered_frame)
 
 
 def build_derived_signal_update(
@@ -90,19 +83,13 @@ def build_derived_signal_update(
         second_column=reference_column,
         window_size=window_size,
     )
-    return FrameUpdate(
-        dataframe=derived_frame,
-        history_entry=f"Created {new_column} using {operation} on {source_column}",
-    )
+    return FrameUpdate(dataframe=derived_frame)
 
 
 def build_reset_update(original_frame: pd.DataFrame) -> FrameUpdate:
     """Reset the working dataframe to its original state."""
 
-    return FrameUpdate(
-        dataframe=original_frame.copy(),
-        history_entry="Reset working dataframe to the original loaded state",
-    )
+    return FrameUpdate(dataframe=original_frame.copy())
 
 
 def resolve_default_output_names(
