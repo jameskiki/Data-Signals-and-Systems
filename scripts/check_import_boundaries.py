@@ -17,7 +17,7 @@ def _run(cmd: list[str]) -> int:
 
 
 def main() -> int:
-    return _run([sys.executable, "-m", "pytest", "Tests/test_import_boundaries.py", "-q"])
+    return _run([sys.executable, "-m", "pytest", "tests/test_import_boundaries.py", "-q"])
 
 
 if __name__ == "__main__":

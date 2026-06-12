@@ -12,7 +12,7 @@ from collections.abc import Sequence
 VENV_DIR = ".venv"
 PYTHON_EXE = os.path.join(VENV_DIR, "Scripts", "python.exe") if os.name == "nt" else os.path.join(VENV_DIR, "bin", "python")
 PYINSTALLER_EXE = os.path.join(VENV_DIR, "Scripts", "pyinstaller.exe") if os.name == "nt" else os.path.join(VENV_DIR, "bin", "pyinstaller")
-DEPENDENCIES: list[str] = ["pandas", "matplotlib", "numpy"]
+REQUIREMENTS_FILE = "requirements.txt"
 
 def run(cmd: Sequence[str]) -> None:
     """
@@ -36,8 +36,8 @@ def main() -> None:
     # Upgrade pip
     run([PYTHON_EXE, "-m", "pip", "install", "--upgrade", "pip"])
 
-    # Install dependencies
-    run([PYTHON_EXE, "-m", "pip", "install", *DEPENDENCIES, "pyinstaller"])
+    # Install pinned project dependencies from a single source of truth.
+    run([PYTHON_EXE, "-m", "pip", "install", "-r", REQUIREMENTS_FILE])
 
     # Build EXE into the repository's renamed artifact folders.
     run([PYINSTALLER_EXE, "EvalData.py", "--workpath", "Build", "--distpath", "Dist"])
