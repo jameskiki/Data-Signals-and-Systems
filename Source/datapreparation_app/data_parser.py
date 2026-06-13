@@ -57,6 +57,8 @@ class DataParser:
             return "."
         return "," if comma_score > dot_score else "."
 
+    _DATETIME_PROBE_SIZE = 200
+
     @staticmethod
     def parse_datetime_series(series: pd.Series) -> pd.Series:
         """
@@ -75,6 +77,8 @@ class DataParser:
         stripped = stripped[stripped != ""]
         if stripped.empty:
             return series
+        # Probe format detection on a small sample to avoid O(formats × n_rows) overhead.
+        probe = stripped.iloc[: DataParser._DATETIME_PROBE_SIZE]
         formats = [
             "%Y %m %d %H:%M:%S:%f",
             "%Y-%m-%d %H:%M:%S",
@@ -91,12 +95,12 @@ class DataParser:
             "%m/%d/%Y",
         ]
         for fmt in formats:
-            parsed = pd.to_datetime(stripped, format=fmt, errors="coerce")
+            parsed = pd.to_datetime(probe, format=fmt, errors="coerce")
             if DataParser._is_sufficient_datetime_parse(parsed):
                 return pd.to_datetime(series.astype(str).str.strip(), format=fmt, errors="coerce")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Could not infer format.*")
-            parsed = pd.to_datetime(stripped, errors="coerce")
+            parsed = pd.to_datetime(probe, errors="coerce")
         if DataParser._is_sufficient_datetime_parse(parsed):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="Could not infer format.*")
@@ -128,6 +132,10 @@ class DataParser:
         _report(0.0, 100.0, "Reading file header")
         sep = ";"
         skiprows = 0
+        comma_pattern = re.compile(r"^[-+]?\d{1,3}(?:\.\d{3})*,\d+$")
+        dot_pattern = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})*\.\d+$")
+        comma_score = 0
+        dot_score = 0
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline()
             if first_line.lower().strip().startswith("sep="):
@@ -143,8 +151,24 @@ class DataParser:
                         continue
                     f.seek(position)
                     break
+            # Decimal detection: skip header row then sample up to 20 data lines.
+            f.readline()  # consume header row
+            lines_read = 0
+            while lines_read < 20:
+                line = f.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                for part in (p.strip() for p in line.split(sep)):
+                    if comma_pattern.match(part):
+                        comma_score += 1
+                    elif dot_pattern.match(part):
+                        dot_score += 1
+                lines_read += 1
         _report(20.0, 100.0, "Detecting decimal marker")
-        decimal_marker = DataParser.detect_decimal_marker(file_path, sep, skiprows)
+        decimal_marker = "," if comma_score > dot_score else "."
         _report(40.0, 100.0, "Reading tabular data")
         df = pd.read_csv(
             file_path,
@@ -153,6 +177,8 @@ class DataParser:
             skipinitialspace=True,
             header=0,
             decimal=decimal_marker,
+            engine="c",
+            low_memory=False,
         )
         _report(70.0, 100.0, "Cleaning columns")
         if df.columns.size > 0:
