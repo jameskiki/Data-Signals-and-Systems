@@ -43,6 +43,7 @@ from .state import (
     FFT_WINDOW_OPTIONS,
     PREVIEW_ROW_LIMIT,
     AnalysisSession,
+    PlotStyleVars,
     UI_FREQUENCY_ANALYSIS_METHODS,
 )
 from .views import render_correlation_view, render_dataframe_preview, render_statistics_tree
@@ -131,6 +132,7 @@ class AnalysisWorkspace(BaseAppShell):
         self.plot_x_var = tk.StringVar(value="Index")
         self.plot_y_selection_summary_var = tk.StringVar(value="No numeric channels available")
         self.plot_subplots_var = tk.BooleanVar(value=True)
+        self.style_vars = PlotStyleVars()
         self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
         self.fft_reference_var = tk.StringVar(value="Index")
         self.frequency_compare_var = tk.StringVar(value="")
@@ -317,7 +319,7 @@ class AnalysisWorkspace(BaseAppShell):
         return plotting_ops.build_time_series_plot_options(selected_columns, x_column, use_subplots)
 
     def _get_default_plot_style(self) -> PlotStyle:
-        return plotting_ops.get_default_plot_style()
+        return plotting_ops.get_default_plot_style(self.style_vars)
 
     def _render_plot_figure(self, figure: plt.Figure) -> None:
         return plotting_ops.render_plot_figure(self, figure)

@@ -245,18 +245,40 @@ def apply_axis_contract(
 ) -> None:
     """Apply shared axis presentation defaults to reduce drift across plot families."""
 
-    axis.set_title(title, fontsize=style.title_fontsize)
-    axis.set_xlabel(x_label, fontsize=style.label_fontsize)
-    axis.set_ylabel(y_label, fontsize=style.label_fontsize)
+    axis.set_title(title, fontsize=style.title_fontsize, fontfamily=style.font_family)
+    axis.set_xlabel(x_label, fontsize=style.label_fontsize, fontfamily=style.font_family)
+    axis.set_ylabel(y_label, fontsize=style.label_fontsize, fontfamily=style.font_family)
+    axis.tick_params(axis="both", labelsize=style.tick_fontsize)
+    for item in axis.get_xticklabels() + axis.get_yticklabels():
+        item.set_fontfamily(style.font_family)
     if style.show_legend and axis.lines:
         handles, labels = axis.get_legend_handles_labels()
         has_public_labels = any(label and not label.startswith("_") for label in labels)
         if handles and has_public_labels:
             axis.legend(fontsize=style.legend_fontsize, loc=style.legend_location)
     if style.show_grid:
-        axis.grid(True, alpha=style.grid_alpha)
+        axis.grid(
+            True,
+            which="major",
+            alpha=style.grid_alpha,
+            linestyle=style.grid_line_style,
+            linewidth=style.grid_line_width,
+            color=style.grid_color,
+        )
     else:
-        axis.grid(False)
+        axis.grid(False, which="major")
+    if style.show_subgrid:
+        axis.minorticks_on()
+        axis.grid(
+            True,
+            which="minor",
+            alpha=style.subgrid_alpha,
+            linestyle=style.subgrid_line_style,
+            linewidth=style.subgrid_line_width,
+            color=style.subgrid_color,
+        )
+    else:
+        axis.grid(False, which="minor")
 
 
 def _apply_axis_contract(

@@ -139,6 +139,9 @@ def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:
 
     controls.columnconfigure(1, weight=1)
 
+    # --- Collapsible Plot Style panel ---
+    _build_style_panel(workspace, parent)
+
     workspace.plot_notebook = ttk.Notebook(parent)
     workspace.plot_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -155,6 +158,144 @@ def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:
     workspace.frequency_plot_container.pack(fill=tk.BOTH, expand=True)
     workspace.cycle_plot_container = ttk.Frame(workspace.cycle_plot_tab)
     workspace.cycle_plot_container.pack(fill=tk.BOTH, expand=True)
+
+
+def _build_style_panel(workspace, parent: ttk.LabelFrame) -> None:
+    """Build a collapsible Plot Style panel and attach it to parent."""
+
+    _LEGEND_LOCATIONS = [
+        "best", "upper right", "upper left", "lower right", "lower left",
+        "upper center", "lower center", "center left", "center right", "center",
+    ]
+    _MARKERS = ["o", "s", "^", "v", "D", "+", "x", ".", "None"]
+    _FONT_FAMILIES = ["sans-serif", "serif", "monospace"]
+
+    style_vars = workspace.style_vars
+
+    # Toggle button row
+    toggle_frame = ttk.Frame(parent)
+    toggle_frame.pack(fill=tk.X, padx=5, pady=(0, 2))
+
+    _panel_visible = tk.BooleanVar(value=False)
+
+    # Content frame (hidden by default)
+    content_frame = ttk.LabelFrame(parent, text="Plot Style", padding=4)
+
+    def _toggle():
+        if _panel_visible.get():
+            content_frame.pack_forget()
+            _panel_visible.set(False)
+            toggle_btn.config(text="▶ Plot Style")
+        else:
+            content_frame.pack(fill=tk.X, padx=5, pady=(0, 4), before=workspace.plot_notebook)
+            _panel_visible.set(True)
+            toggle_btn.config(text="▼ Plot Style")
+
+    toggle_btn = ttk.Button(toggle_frame, text="▶ Plot Style", command=_toggle)
+    toggle_btn.pack(side=tk.LEFT)
+
+    # ── Row 0: checkbuttons ──────────────────────────────────────────────────
+    check_row = ttk.Frame(content_frame)
+    check_row.pack(fill=tk.X, pady=(2, 0))
+    ttk.Checkbutton(check_row, text="Grid", variable=style_vars.show_grid).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Checkbutton(check_row, text="Subgrid", variable=style_vars.show_subgrid).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Checkbutton(check_row, text="Legend", variable=style_vars.show_legend).pack(side=tk.LEFT)
+
+    # ── Row 1: alpha sliders ─────────────────────────────────────────────────
+    alpha_row = ttk.Frame(content_frame)
+    alpha_row.pack(fill=tk.X, pady=(4, 0))
+    ttk.Label(alpha_row, text="Grid α").grid(row=0, column=0, sticky="w", padx=(0, 4))
+    ttk.Scale(alpha_row, from_=0.0, to=1.0, orient=tk.HORIZONTAL,
+              variable=style_vars.grid_alpha).grid(row=0, column=1, sticky="ew", padx=(0, 12))
+    ttk.Label(alpha_row, text="Subgrid α").grid(row=0, column=2, sticky="w", padx=(0, 4))
+    ttk.Scale(alpha_row, from_=0.0, to=1.0, orient=tk.HORIZONTAL,
+              variable=style_vars.subgrid_alpha).grid(row=0, column=3, sticky="ew")
+    alpha_row.columnconfigure(1, weight=1)
+    alpha_row.columnconfigure(3, weight=1)
+
+    # ── Row 2: line width / marker size spinboxes ────────────────────────────
+    line_row = ttk.Frame(content_frame)
+    line_row.pack(fill=tk.X, pady=(4, 0))
+
+    vcmd_float = (parent.register(lambda v: _validate_float(v, 0.1, 50.0)), "%P")
+
+    ttk.Label(line_row, text="Line width").grid(row=0, column=0, sticky="w", padx=(0, 4))
+    ttk.Spinbox(
+        line_row, from_=0.1, to=10.0, increment=0.1, width=6,
+        textvariable=style_vars.line_width,
+        validate="focusout", validatecommand=vcmd_float,
+    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
+    ttk.Label(line_row, text="Marker size").grid(row=0, column=2, sticky="w", padx=(0, 4))
+    ttk.Spinbox(
+        line_row, from_=0.5, to=20.0, increment=0.5, width=6,
+        textvariable=style_vars.marker_size,
+        validate="focusout", validatecommand=vcmd_float,
+    ).grid(row=0, column=3, sticky="w")
+
+    # ── Row 3: fontsize spinboxes ─────────────────────────────────────────────
+    font_row = ttk.Frame(content_frame)
+    font_row.pack(fill=tk.X, pady=(4, 0))
+
+    vcmd_int = (parent.register(lambda v: _validate_int(v, 4, 32)), "%P")
+
+    for col, (label, var) in enumerate([
+        ("Title", style_vars.title_fontsize),
+        ("Label", style_vars.label_fontsize),
+        ("Tick", style_vars.tick_fontsize),
+        ("Legend", style_vars.legend_fontsize),
+    ]):
+        ttk.Label(font_row, text=label).grid(row=0, column=col * 2, sticky="w", padx=(0 if col == 0 else 8, 2))
+        ttk.Spinbox(
+            font_row, from_=4, to=32, increment=1, width=4,
+            textvariable=var,
+            validate="focusout", validatecommand=vcmd_int,
+        ).grid(row=0, column=col * 2 + 1, sticky="w")
+
+    # ── Row 4: comboboxes ─────────────────────────────────────────────────────
+    combo_row = ttk.Frame(content_frame)
+    combo_row.pack(fill=tk.X, pady=(4, 0))
+
+    ttk.Label(combo_row, text="Font").grid(row=0, column=0, sticky="w", padx=(0, 4))
+    ttk.Combobox(
+        combo_row, textvariable=style_vars.font_family,
+        values=_FONT_FAMILIES, state="readonly", width=12,
+    ).grid(row=0, column=1, sticky="w", padx=(0, 12))
+
+    ttk.Label(combo_row, text="Marker").grid(row=0, column=2, sticky="w", padx=(0, 4))
+    ttk.Combobox(
+        combo_row, textvariable=style_vars.marker,
+        values=_MARKERS, state="readonly", width=6,
+    ).grid(row=0, column=3, sticky="w", padx=(0, 12))
+
+    ttk.Label(combo_row, text="Legend pos").grid(row=0, column=4, sticky="w", padx=(0, 4))
+    ttk.Combobox(
+        combo_row, textvariable=style_vars.legend_location,
+        values=_LEGEND_LOCATIONS, state="readonly", width=12,
+    ).grid(row=0, column=5, sticky="w")
+
+    # ── Row 5: reset button ──────────────────────────────────────────────────
+    reset_row = ttk.Frame(content_frame)
+    reset_row.pack(fill=tk.X, pady=(6, 2))
+    ttk.Button(
+        reset_row, text="Reset to Defaults",
+        command=style_vars.reset_to_defaults,
+    ).pack(side=tk.RIGHT)
+
+
+def _validate_float(value: str, lo: float, hi: float) -> bool:
+    """Spinbox focusout validator — accept any parseable float in [lo, hi]."""
+    try:
+        return lo <= float(value) <= hi
+    except (ValueError, TypeError):
+        return False
+
+
+def _validate_int(value: str, lo: int, hi: int) -> bool:
+    """Spinbox focusout validator — accept any parseable int in [lo, hi]."""
+    try:
+        return lo <= int(value) <= hi
+    except (ValueError, TypeError):
+        return False
 
 
 def build_preview_tab(workspace) -> None:

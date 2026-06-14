@@ -20,6 +20,7 @@ from Source.shared.demo_catalog import get_demo_frequency_guides
 from Source.shared.plot_options import PlotOptions, PlotStyle
 from Source.shared.plot_utils import apply_axis_contract, create_plot_figure
 
+from .state import PlotStyleVars
 from .views import render_cycle_metrics_tree, render_fft_peaks_tree
 
 
@@ -80,8 +81,40 @@ def build_time_series_plot_options(
     )
 
 
-def get_default_plot_style() -> PlotStyle:
-    return PlotStyle()
+def get_default_plot_style(style_vars: PlotStyleVars | None = None) -> PlotStyle:
+    """Return a PlotStyle built from UI variables, or defaults if none provided."""
+    if style_vars is None:
+        return PlotStyle()
+    _d = PlotStyle()
+
+    def _safe_float(var, default: float) -> float:
+        try:
+            return float(var.get())
+        except (ValueError, tk.TclError):
+            return default
+
+    def _safe_int(var, default: int) -> int:
+        try:
+            return int(var.get())
+        except (ValueError, tk.TclError):
+            return default
+
+    return PlotStyle(
+        show_grid=style_vars.show_grid.get(),
+        show_subgrid=style_vars.show_subgrid.get(),
+        show_legend=style_vars.show_legend.get(),
+        grid_alpha=round(_safe_float(style_vars.grid_alpha, _d.grid_alpha), 2),
+        subgrid_alpha=round(_safe_float(style_vars.subgrid_alpha, _d.subgrid_alpha), 2),
+        line_width=max(0.1, _safe_float(style_vars.line_width, _d.line_width)),
+        marker_size=max(0.5, _safe_float(style_vars.marker_size, _d.marker_size)),
+        title_fontsize=max(4, _safe_int(style_vars.title_fontsize, _d.title_fontsize)),
+        label_fontsize=max(4, _safe_int(style_vars.label_fontsize, _d.label_fontsize)),
+        tick_fontsize=max(4, _safe_int(style_vars.tick_fontsize, _d.tick_fontsize)),
+        legend_fontsize=max(4, _safe_int(style_vars.legend_fontsize, _d.legend_fontsize)),
+        font_family=style_vars.font_family.get() or _d.font_family,
+        marker=style_vars.marker.get() or _d.marker,
+        legend_location=style_vars.legend_location.get() or _d.legend_location,
+    )
 
 
 def get_cycle_time_column(workspace) -> str | None:
