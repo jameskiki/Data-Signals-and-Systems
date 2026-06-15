@@ -6,6 +6,7 @@ import pandas as pd
 
 from Source.data_ops.models import DataSummary
 from Source.data_ops.spectral import FFT_WINDOW_OPTIONS
+from Source.shared.plot_style_state import PlotStyleVars
 
 
 ANALYSIS_WINDOW_GEOMETRY = "1450x900"
@@ -47,3 +48,4 @@ class AnalysisSession:
     last_summary: DataSummary | None = None
     last_summary_revision: int = -1
     working_revision: int = 0
+

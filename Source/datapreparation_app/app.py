@@ -54,6 +54,7 @@ from Source.shared.column_roles import summarize_column_roles
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.base_app_shell import BaseAppShell
 from Source.shared.notifications import NotificationManager
+from Source.shared.plot_style_state import PlotStyleVars
 from Source.shared.plot_utils import normalize_x_values
 from .state import (
     APP_TITLE,
@@ -75,6 +76,7 @@ class DataPreparationApp(BaseAppShell):
         self.root = root
         self.root.title(APP_TITLE)
         self.root.geometry(WINDOW_GEOMETRY)
+        self.root.protocol("WM_DELETE_WINDOW", self._handle_app_close)
         self.session = DataPreparationSession()
 
         # Preserve the config surface expected by workflow helpers.
@@ -93,7 +95,10 @@ class DataPreparationApp(BaseAppShell):
         self._preview_plot_figure: plt.Figure | None = None
         self._preview_plot_canvas: FigureCanvasTkAgg | None = None
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
+        self._style_dialog: tk.Toplevel | None = None
         self.notifications = NotificationManager()
+        self.style_vars = PlotStyleVars()
+        self.style_vars.load_from_file()
 
         self.selected_dataset_var = tk.StringVar(value="No dataset selected")
         self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")
@@ -356,6 +361,31 @@ class DataPreparationApp(BaseAppShell):
         if dialog.winfo_exists():
             dialog.grab_release()
             dialog.destroy()
+
+    def _apply_plot_style_settings(self) -> None:
+        """Apply current global plot style to the Data Preparation preview plot."""
+
+        selected_path = self._get_single_selected_file_path()
+        if selected_path is None:
+            return
+        dataframe = self.data_frames[selected_path]
+        context = self.dataset_contexts.get(selected_path, DatasetContext())
+        self._refresh_preview_with_range(dataframe, context.column_roles)
+
+    def _handle_app_close(self) -> None:
+        """Persist plot style and close the root window cleanly."""
+
+        self.style_vars.save_to_file()
+        if self._style_dialog is not None:
+            try:
+                self._style_dialog.destroy()
+            except tk.TclError:
+                pass
+            self._style_dialog = None
+        if self._preview_plot_figure is not None:
+            plt.close(self._preview_plot_figure)
+            self._preview_plot_figure = None
+        self.root.destroy()
 
     def _refresh_dataset_preparation_views(self) -> None:
         selected_path = self._get_single_selected_file_path()

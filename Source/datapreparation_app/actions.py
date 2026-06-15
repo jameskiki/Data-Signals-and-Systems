@@ -181,7 +181,12 @@ def plot_selected_data(app) -> None:
 	if not selected_file_paths:
 		return
 
-	options = PlotOptionsDialog(app.root, app.data_frames[selected_file_paths[0]], app.PLOT_WINDOW_TITLE).show()
+	options = PlotOptionsDialog(
+		app.root,
+		app.data_frames[selected_file_paths[0]],
+		app.PLOT_WINDOW_TITLE,
+		default_style=app.style_vars.to_plot_style(),
+	).show()
 	if options is None or not options.cols_to_plot:
 		return
 

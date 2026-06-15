@@ -20,6 +20,7 @@ from Source.shared.demo_catalog import get_demo_frequency_guides
 from Source.shared.plot_options import PlotOptions, PlotStyle
 from Source.shared.plot_utils import apply_axis_contract, create_plot_figure
 
+from .state import PlotStyleVars
 from .views import render_cycle_metrics_tree, render_fft_peaks_tree
 
 
@@ -28,10 +29,12 @@ def refresh_live_plot(workspace) -> None:
         clear_plot_container(workspace)
         return
 
+    style = get_default_plot_style(workspace.style_vars)
     plot_options = build_time_series_plot_options(
         selected_columns=workspace.session.selected_y_columns,
         x_column=workspace.session.selected_x_column,
         use_subplots=workspace.session.use_subplots,
+        style=style,
     )
     figure = create_plot_figure(
         plot_options,
@@ -53,10 +56,12 @@ def update_plot(workspace) -> None:
     workspace.session.selected_y_columns = selected_columns
     workspace.session.use_subplots = workspace.plot_subplots_var.get()
 
+    style = get_default_plot_style(workspace.style_vars)
     plot_options = build_time_series_plot_options(
         selected_columns=selected_columns,
         x_column=x_column,
         use_subplots=workspace.session.use_subplots,
+        style=style,
     )
     figure = create_plot_figure(
         plot_options,
@@ -71,17 +76,22 @@ def build_time_series_plot_options(
     selected_columns: list[str],
     x_column: str,
     use_subplots: bool,
+    style: PlotStyle | None = None,
 ) -> PlotOptions:
     return PlotOptions(
         cols_to_plot=selected_columns,
         xcol=x_column,
         use_subplots=use_subplots,
         y_label="Value",
+        style=style if style is not None else PlotStyle(),
     )
 
 
-def get_default_plot_style() -> PlotStyle:
-    return PlotStyle()
+def get_default_plot_style(style_vars: PlotStyleVars | None = None) -> PlotStyle:
+    """Return a PlotStyle built from UI variables, or defaults if none provided."""
+    if style_vars is None:
+        return PlotStyle()
+    return style_vars.to_plot_style()
 
 
 def get_cycle_time_column(workspace) -> str | None:
@@ -146,7 +156,7 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
         value_column_label=result.value_column_label,
     )
 
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
     frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
     amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
@@ -220,7 +230,7 @@ def render_spectrogram_result(workspace, result: SpectrogramResult) -> None:
     )
 
     power_db = 10.0 * np.log10(result.power.T + 1e-20)
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
     mesh = axis.pcolormesh(
         result.times,
@@ -302,7 +312,7 @@ def render_cycle_result(
 
 
 def render_cycle_plot(workspace, result: CycleAnalysisResult) -> None:
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     all_cycles = result.cycles_frame.to_numpy()
     max_cycle_len = all_cycles.shape[1]
     all_cycle_count = all_cycles.shape[0]

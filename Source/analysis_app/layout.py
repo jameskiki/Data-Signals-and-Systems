@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from Source.shared.documentation_links import DOCUMENTATION_LINKS
+from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
 from .state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
 from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
@@ -13,6 +14,18 @@ def build_analysis_workspace_ui(workspace) -> None:
     """Build the full analysis workspace UI."""
 
     menu_bar = tk.Menu(workspace.window)
+
+    view_menu = tk.Menu(menu_bar, tearoff=0)
+    view_menu.add_command(
+        label="Plot Style...",
+        command=lambda: open_plot_style_dialog(
+            workspace,
+            root_window=workspace.window,
+            on_apply=workspace._refresh_live_plot,
+        ),
+    )
+    menu_bar.add_cascade(label="View", menu=view_menu)
+
     help_menu = tk.Menu(menu_bar, tearoff=0)
     for documentation_link in DOCUMENTATION_LINKS:
         help_menu.add_command(
