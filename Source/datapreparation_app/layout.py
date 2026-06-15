@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from Source.shared.documentation_links import DOCUMENTATION_LINKS
+from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
 from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
@@ -49,6 +50,17 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     analysis_menu = tk.Menu(menu_bar, tearoff=0)
     analysis_menu.add_command(label="Open Analysis Workspace", command=app.open_analysis_workspace)
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
+
+    view_menu = tk.Menu(menu_bar, tearoff=0)
+    view_menu.add_command(
+        label="Plot Style...",
+        command=lambda: open_plot_style_dialog(
+            app,
+            root_window=app.root,
+            on_apply=app._apply_plot_style_settings,
+        ),
+    )
+    menu_bar.add_cascade(label="View", menu=view_menu)
 
     help_menu = tk.Menu(menu_bar, tearoff=0)
     for documentation_link in DOCUMENTATION_LINKS:

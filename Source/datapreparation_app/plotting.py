@@ -8,7 +8,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
-from Source.shared.plot_options import PlotOptions
+from Source.shared.plot_options import PlotOptions, PlotStyle
 from Source.shared.plot_utils import create_plot_figure
 
 from .datasets import get_column_role, sort_columns_by_role
@@ -16,10 +16,11 @@ from .datasets import get_column_role, sort_columns_by_role
 class PlotOptionsDialog:
     """Modal dialog for choosing plot columns and axis options."""
 
-    def __init__(self, parent: tk.Tk, df: pd.DataFrame, window_title: str) -> None:
+    def __init__(self, parent: tk.Tk, df: pd.DataFrame, window_title: str, default_style: PlotStyle | None = None) -> None:
         self.parent = parent
         self.df = df
         self.window_title = window_title
+        self.default_style = default_style or PlotStyle()
         self.result: PlotOptions | None = None
 
     def show(self) -> PlotOptions | None:
@@ -75,6 +76,7 @@ class PlotOptionsDialog:
                 cols_to_plot=ycols,
                 xcol=xcol,
                 use_subplots=use_subplots_var.get(),
+                style=self.default_style,
             )
             dialog.destroy()
 
@@ -170,6 +172,7 @@ def refresh_preview_plot(
         use_subplots=False,
         title="Overlay Plot",
         y_label="Value",
+        style=app.style_vars.to_plot_style() if hasattr(app, "style_vars") else PlotStyle(),
     )
 
     dummy_path = "preview"

@@ -133,6 +133,8 @@ class AnalysisWorkspace(BaseAppShell):
         self.plot_y_selection_summary_var = tk.StringVar(value="No numeric channels available")
         self.plot_subplots_var = tk.BooleanVar(value=True)
         self.style_vars = PlotStyleVars()
+        self.style_vars.load_from_file()
+        self._style_dialog: tk.Toplevel | None = None
         self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
         self.fft_reference_var = tk.StringVar(value="Index")
         self.frequency_compare_var = tk.StringVar(value="")
@@ -212,6 +214,13 @@ class AnalysisWorkspace(BaseAppShell):
     def close(self) -> None:
         """Destroy the window and release plotting resources."""
 
+        self.style_vars.save_to_file()
+        if self._style_dialog is not None:
+            try:
+                self._style_dialog.destroy()
+            except tk.TclError:
+                pass
+            self._style_dialog = None
         if self._plot_figure is not None:
             plt.close(self._plot_figure)
             self._plot_figure = None

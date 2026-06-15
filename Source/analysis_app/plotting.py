@@ -29,10 +29,12 @@ def refresh_live_plot(workspace) -> None:
         clear_plot_container(workspace)
         return
 
+    style = get_default_plot_style(workspace.style_vars)
     plot_options = build_time_series_plot_options(
         selected_columns=workspace.session.selected_y_columns,
         x_column=workspace.session.selected_x_column,
         use_subplots=workspace.session.use_subplots,
+        style=style,
     )
     figure = create_plot_figure(
         plot_options,
@@ -54,10 +56,12 @@ def update_plot(workspace) -> None:
     workspace.session.selected_y_columns = selected_columns
     workspace.session.use_subplots = workspace.plot_subplots_var.get()
 
+    style = get_default_plot_style(workspace.style_vars)
     plot_options = build_time_series_plot_options(
         selected_columns=selected_columns,
         x_column=x_column,
         use_subplots=workspace.session.use_subplots,
+        style=style,
     )
     figure = create_plot_figure(
         plot_options,
@@ -72,12 +76,14 @@ def build_time_series_plot_options(
     selected_columns: list[str],
     x_column: str,
     use_subplots: bool,
+    style: PlotStyle | None = None,
 ) -> PlotOptions:
     return PlotOptions(
         cols_to_plot=selected_columns,
         xcol=x_column,
         use_subplots=use_subplots,
         y_label="Value",
+        style=style if style is not None else PlotStyle(),
     )
 
 
@@ -85,36 +91,7 @@ def get_default_plot_style(style_vars: PlotStyleVars | None = None) -> PlotStyle
     """Return a PlotStyle built from UI variables, or defaults if none provided."""
     if style_vars is None:
         return PlotStyle()
-    _d = PlotStyle()
-
-    def _safe_float(var, default: float) -> float:
-        try:
-            return float(var.get())
-        except (ValueError, tk.TclError):
-            return default
-
-    def _safe_int(var, default: int) -> int:
-        try:
-            return int(var.get())
-        except (ValueError, tk.TclError):
-            return default
-
-    return PlotStyle(
-        show_grid=style_vars.show_grid.get(),
-        show_subgrid=style_vars.show_subgrid.get(),
-        show_legend=style_vars.show_legend.get(),
-        grid_alpha=round(_safe_float(style_vars.grid_alpha, _d.grid_alpha), 2),
-        subgrid_alpha=round(_safe_float(style_vars.subgrid_alpha, _d.subgrid_alpha), 2),
-        line_width=max(0.1, _safe_float(style_vars.line_width, _d.line_width)),
-        marker_size=max(0.5, _safe_float(style_vars.marker_size, _d.marker_size)),
-        title_fontsize=max(4, _safe_int(style_vars.title_fontsize, _d.title_fontsize)),
-        label_fontsize=max(4, _safe_int(style_vars.label_fontsize, _d.label_fontsize)),
-        tick_fontsize=max(4, _safe_int(style_vars.tick_fontsize, _d.tick_fontsize)),
-        legend_fontsize=max(4, _safe_int(style_vars.legend_fontsize, _d.legend_fontsize)),
-        font_family=style_vars.font_family.get() or _d.font_family,
-        marker=style_vars.marker.get() or _d.marker,
-        legend_location=style_vars.legend_location.get() or _d.legend_location,
-    )
+    return style_vars.to_plot_style()
 
 
 def get_cycle_time_column(workspace) -> str | None:
@@ -179,7 +156,7 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
         value_column_label=result.value_column_label,
     )
 
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
     frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
     amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
@@ -253,7 +230,7 @@ def render_spectrogram_result(workspace, result: SpectrogramResult) -> None:
     )
 
     power_db = 10.0 * np.log10(result.power.T + 1e-20)
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
     mesh = axis.pcolormesh(
         result.times,
@@ -335,7 +312,7 @@ def render_cycle_result(
 
 
 def render_cycle_plot(workspace, result: CycleAnalysisResult) -> None:
-    style = get_default_plot_style()
+    style = get_default_plot_style(workspace.style_vars)
     all_cycles = result.cycles_frame.to_numpy()
     max_cycle_len = all_cycles.shape[1]
     all_cycle_count = all_cycles.shape[0]
