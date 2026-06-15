@@ -57,22 +57,26 @@ def write_dataframe_csv_with_progress(
 
     total_rows = int(len(dataframe))
     if total_rows == 0:
-        dataframe.to_csv(output_path, sep=sep, index=False)
+        with open(output_path, "w", newline="", encoding="utf-8") as fh:
+            dataframe.to_csv(fh, sep=sep, index=False)
         if progress_callback is not None:
             progress_callback(0, 0)
         return
 
-    written_rows = 0
-    for start in range(0, total_rows, chunk_size):
-        end = min(start + chunk_size, total_rows)
-        is_first_chunk = start == 0
-        dataframe.iloc[start:end].to_csv(
-            output_path,
-            sep=sep,
-            index=False,
-            mode="w" if is_first_chunk else "a",
-            header=is_first_chunk,
-        )
-        written_rows = end
-        if progress_callback is not None:
-            progress_callback(written_rows, total_rows)
+    # Without a progress callback there is no need to slice the dataframe into
+    # chunks; write it in a single shot through one file handle.
+    if progress_callback is None:
+        with open(output_path, "w", newline="", encoding="utf-8") as fh:
+            dataframe.to_csv(fh, sep=sep, index=False)
+        return
+
+    with open(output_path, "w", newline="", encoding="utf-8") as fh:
+        for start in range(0, total_rows, chunk_size):
+            end = min(start + chunk_size, total_rows)
+            dataframe.iloc[start:end].to_csv(
+                fh,
+                sep=sep,
+                index=False,
+                header=start == 0,
+            )
+            progress_callback(end, total_rows)
