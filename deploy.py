@@ -40,7 +40,7 @@ def main() -> None:
     run([PYTHON_EXE, "-m", "pip", "install", "-r", REQUIREMENTS_FILE])
 
     # Build EXE into the repository's renamed artifact folders.
-    run([PYINSTALLER_EXE, "EvalData.py", "--workpath", "Build", "--distpath", "Dist"])
+    run([PYINSTALLER_EXE, "EvalData.spec", "--workpath", "Build", "--distpath", "Dist"])
 
 if __name__ == "__main__":
     main()
