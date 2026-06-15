@@ -56,7 +56,7 @@ COLUMNS = [
 SIZES = {
     "small":  10_000,
     "medium": 50_000,
-    "large":  10_000_000,
+    "large":  1_000_000,
 }
 
 RUNS = 3  # median of N runs per case
