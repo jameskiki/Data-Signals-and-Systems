@@ -13,6 +13,25 @@ import pandas as pd
 
 MIN_DATETIME_PARSE_RATIO = 0.8
 
+# Compiled once at import time — used in both load_file and parse_datetime_series.
+_DATETIME_COL_RE = re.compile(r"(time|date|timestamp)", re.I)
+
+_DATETIME_FORMATS = [
+    "%Y %m %d %H:%M:%S:%f",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y %m %d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d.%m.%Y",
+    "%d/%m/%Y %H:%M:%S",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y",
+    "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y",
+]
+
 
 class DataParser:
     """
@@ -73,38 +92,26 @@ class DataParser:
         if pd.api.types.is_numeric_dtype(series):
             return series
         candidate_mask = series.notna()
-        stripped = series[candidate_mask].astype(str).str.strip()
+        # Compute the full stripped representation once; reuse for both probing and
+        # the final parse so we avoid a second O(n) .astype(str).str.strip() pass.
+        full_stripped = series.astype(str).str.strip()
+        stripped = full_stripped[candidate_mask]
         stripped = stripped[stripped != ""]
         if stripped.empty:
             return series
         # Probe format detection on a small sample to avoid O(formats × n_rows) overhead.
         probe = stripped.iloc[: DataParser._DATETIME_PROBE_SIZE]
-        formats = [
-            "%Y %m %d %H:%M:%S:%f",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y %m %d %H:%M:%S",
-            "%Y-%m-%d %H:%M",
-            "%Y-%m-%d",
-            "%d.%m.%Y %H:%M:%S",
-            "%d.%m.%Y %H:%M",
-            "%d.%m.%Y",
-            "%d/%m/%Y %H:%M:%S",
-            "%d/%m/%Y %H:%M",
-            "%d/%m/%Y",
-            "%m/%d/%Y %H:%M:%S",
-            "%m/%d/%Y",
-        ]
-        for fmt in formats:
+        for fmt in _DATETIME_FORMATS:
             parsed = pd.to_datetime(probe, format=fmt, errors="coerce")
             if DataParser._is_sufficient_datetime_parse(parsed):
-                return pd.to_datetime(series.astype(str).str.strip(), format=fmt, errors="coerce")
+                return pd.to_datetime(full_stripped, format=fmt, errors="coerce")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Could not infer format.*")
             parsed = pd.to_datetime(probe, errors="coerce")
         if DataParser._is_sufficient_datetime_parse(parsed):
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="Could not infer format.*")
-                return pd.to_datetime(series.astype(str).str.strip(), errors="coerce")
+                return pd.to_datetime(full_stripped, errors="coerce")
         return series
 
     @staticmethod
@@ -136,6 +143,7 @@ class DataParser:
         dot_pattern = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})*\.\d+$")
         comma_score = 0
         dot_score = 0
+        dt_format_map: dict[str, str] = {}
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline()
             if first_line.lower().strip().startswith("sep="):
@@ -151,8 +159,16 @@ class DataParser:
                         continue
                     f.seek(position)
                     break
-            # Decimal detection: skip header row then sample up to 20 data lines.
-            f.readline()  # consume header row
+            # Capture column names; sample datetime-like column values and decimal
+            # markers — all in a single sequential read with no extra file opens.
+            header_line = f.readline()
+            col_names_raw = [c.strip() for c in header_line.split(sep)]
+            dt_col_indices: dict[int, str] = {
+                i: name
+                for i, name in enumerate(col_names_raw)
+                if _DATETIME_COL_RE.search(name)
+            }
+            dt_col_samples: dict[int, list[str]] = {i: [] for i in dt_col_indices}
             lines_read = 0
             while lines_read < 20:
                 line = f.readline()
@@ -161,12 +177,31 @@ class DataParser:
                 line = line.strip()
                 if not line:
                     continue
-                for part in (p.strip() for p in line.split(sep)):
+                parts = [p.strip() for p in line.split(sep)]
+                for idx in dt_col_indices:
+                    if idx < len(parts):
+                        val = parts[idx]
+                        if val:
+                            dt_col_samples[idx].append(val)
+                for part in parts:
                     if comma_pattern.match(part):
                         comma_score += 1
                     elif dot_pattern.match(part):
                         dot_score += 1
                 lines_read += 1
+        # Detect a datetime format for each candidate column from the sample rows.
+        # Columns with a confirmed format are parsed inline by read_csv (C engine,
+        # single pass); any that remain object dtype fall back to parse_datetime_series.
+        for idx, col_name in dt_col_indices.items():
+            samples = dt_col_samples.get(idx, [])
+            if not samples:
+                continue
+            probe = pd.Series(samples)
+            for fmt in _DATETIME_FORMATS:
+                parsed_probe = pd.to_datetime(probe, format=fmt, errors="coerce")
+                if DataParser._is_sufficient_datetime_parse(parsed_probe):
+                    dt_format_map[col_name] = fmt
+                    break
         _report(20.0, 100.0, "Detecting decimal marker")
         decimal_marker = "," if comma_score > dot_score else "."
         _report(40.0, 100.0, "Reading tabular data")
@@ -179,6 +214,8 @@ class DataParser:
             decimal=decimal_marker,
             engine="c",
             low_memory=False,
+            parse_dates=list(dt_format_map) if dt_format_map else False,
+            date_format=dt_format_map if dt_format_map else None,
         )
         _report(70.0, 100.0, "Cleaning columns")
         if df.columns.size > 0:
@@ -186,11 +223,13 @@ class DataParser:
             if (last_col == "" or str(last_col).startswith("Unnamed")) and df.iloc[:, -1].isna().all():
                 df = df.iloc[:, :-1]
 
-        datetime_columns = [col for col in df.columns if re.search(r"(time|date|timestamp)", str(col), re.I)]
+        datetime_columns = [col for col in df.columns if _DATETIME_COL_RE.search(str(col))]
         datetime_total = max(1, len(datetime_columns))
         for index, col in enumerate(datetime_columns, start=1):
             progress = 70.0 + (index / datetime_total) * 30.0
             _report(progress, 100.0, f"Parsing datetime columns ({index}/{datetime_total})")
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                continue  # already parsed inline by read_csv
             parsed = DataParser.parse_datetime_series(df[col])
             if pd.api.types.is_datetime64_any_dtype(parsed):
                 df[col] = parsed
