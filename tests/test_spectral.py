@@ -86,6 +86,17 @@ class TestWelchPSD:
         result = compute_welch_psd(sine_5hz_100fs, "signal", reference_column="time_s")
         assert result.phase is None
 
+    def test_segment_metadata_is_populated(self, sine_5hz_100fs):
+        result = compute_welch_psd(
+            sine_5hz_100fs,
+            "signal",
+            reference_column="time_s",
+            segment_length=128,
+            overlap_fraction=0.5,
+        )
+        assert result.segment_count is not None and result.segment_count > 0
+        assert result.segment_length is not None and result.segment_length >= 4
+
 
 # ── Transfer Estimate ────────────────────────────────────────────────
 
@@ -110,6 +121,18 @@ class TestTransferEstimate:
         )
         assert result.nyquist_frequency > 0
 
+    def test_segment_metadata_is_populated(self, two_column_df):
+        result = compute_transfer_estimate(
+            two_column_df,
+            "sensor_a",
+            comparison_column="sensor_b",
+            reference_column="time_s",
+            segment_length=128,
+            overlap_fraction=0.5,
+        )
+        assert result.segment_count is not None and result.segment_count > 0
+        assert result.segment_length is not None and result.segment_length >= 4
+
 
 # ── Coherence ────────────────────────────────────────────────────────
 
@@ -127,6 +150,18 @@ class TestCoherence:
             two_column_df, "sensor_a", comparison_column="sensor_b", reference_column="time_s",
         )
         assert result.phase is None
+
+    def test_segment_metadata_is_populated(self, two_column_df):
+        result = compute_coherence_spectrum(
+            two_column_df,
+            "sensor_a",
+            comparison_column="sensor_b",
+            reference_column="time_s",
+            segment_length=128,
+            overlap_fraction=0.5,
+        )
+        assert result.segment_count is not None and result.segment_count > 0
+        assert result.segment_length is not None and result.segment_length >= 4
 
 
 # ── Spectrogram ──────────────────────────────────────────────────────

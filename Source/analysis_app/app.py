@@ -22,6 +22,9 @@ from .handlers import (
     apply_signal_filter,
     compute_cycle_analysis,
     compute_fft,
+    preview_filter_bode,
+    preview_signal_filter_residual,
+    preview_signal_filter_result,
 )
 from .layout import build_analysis_workspace_ui
 from .rules_orchestrator import (
@@ -118,6 +121,7 @@ class AnalysisWorkspace(BaseAppShell):
         self.signal_filter_order_var = tk.StringVar(value="4")
         self.signal_filter_spacing_var = tk.StringVar(value="0.0")
         self.signal_filter_spacing_status_var = tk.StringVar(value="User-set")
+        self.signal_filter_validation_var = tk.StringVar(value="")
 
         self.resample_time_var = tk.StringVar(value="Index")
         self.resample_spacing_var = tk.StringVar(value="1.0")
@@ -138,6 +142,7 @@ class AnalysisWorkspace(BaseAppShell):
         self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
         self.fft_reference_var = tk.StringVar(value="Index")
         self.frequency_compare_var = tk.StringVar(value="")
+        self.transfer_unwrap_phase_var = tk.BooleanVar(value=True)
         self.fft_sample_spacing_var = tk.StringVar(value="1.0")
         self.fft_sample_spacing_status_var = tk.StringVar(value="User-set")
         self.fft_window_var = tk.StringVar(value=FFT_WINDOW_OPTIONS[0])
@@ -146,6 +151,7 @@ class AnalysisWorkspace(BaseAppShell):
         self.welch_segment_length_status_var = tk.StringVar(value="User-set")
         self.welch_overlap_fraction_var = tk.StringVar(value="0.5")
         self.fft_summary_var = tk.StringVar(value=self._default_frequency_summary_text())
+        self.frequency_diagnostics_var = tk.StringVar(value=self._default_frequency_diagnostics_text())
         self.frequency_expectation_var = tk.StringVar(value="Select a signal to see built-in hints for demo datasets.")
         self.cycle_length_var = tk.StringVar(value="100")
         self.cycle_mode_var = tk.StringVar(value="fixed_length")
@@ -173,6 +179,7 @@ class AnalysisWorkspace(BaseAppShell):
         self._stats_tree: ttk.Treeview | None = None
         self._correlation_widget: tk.Widget | None = None
         self._fft_peaks_tree: ttk.Treeview | None = None
+        self._latest_frequency_result: FrequencySpectrumResult | None = None
         self._cycle_figure: plt.Figure | None = None
         self._cycle_canvas: FigureCanvasTkAgg | None = None
         self._cycle_toolbar: NavigationToolbar2Tk | None = None
@@ -201,6 +208,13 @@ class AnalysisWorkspace(BaseAppShell):
                          self.fft_reference_var, self.cycle_reference_var)
         self._bind_write(self._handle_output_defaults_changed,
                          self.signal_filter_operation_var, self.derived_operation_var)
+        self._bind_write(
+            lambda *_: self._refresh_signal_filter_controls(),
+            self.signal_filter_cutoff_var,
+            self.signal_filter_cutoff_high_var,
+            self.signal_filter_spacing_var,
+            self.signal_filter_order_var,
+        )
         self.cycle_mode_var.trace_add("write", lambda *_: self._refresh_cycle_method_controls())
         self.signal_filter_operation_var.trace_add("write", lambda *_: self._refresh_signal_filter_controls())
         self._bind_inferred_field_traces()
@@ -304,6 +318,15 @@ class AnalysisWorkspace(BaseAppShell):
     def _apply_signal_filter(self) -> None:
         return apply_signal_filter(self)
 
+    def _preview_filter_bode(self) -> None:
+        return preview_filter_bode(self)
+
+    def _preview_signal_filter_result(self) -> None:
+        return preview_signal_filter_result(self)
+
+    def _preview_signal_filter_residual(self) -> None:
+        return preview_signal_filter_residual(self)
+
     def _apply_resample(self) -> None:
         return apply_resample(self)
 
@@ -344,6 +367,49 @@ class AnalysisWorkspace(BaseAppShell):
 
     def _render_spectrogram_result(self, result: SpectrogramResult) -> None:
         return plotting_ops.render_spectrogram_result(self, result)
+
+    def _render_filter_bode_response(
+        self,
+        frequencies: np.ndarray,
+        magnitude_db: np.ndarray,
+        phase_deg: np.ndarray,
+        operation: str,
+    ) -> None:
+        return plotting_ops.render_filter_bode_response(self, frequencies, magnitude_db, phase_deg, operation)
+
+    def _render_signal_filter_preview(
+        self,
+        source_column: str,
+        operation: str,
+        original_series: pd.Series,
+        filtered_series: pd.Series,
+        sample_spacing: float,
+    ) -> None:
+        return plotting_ops.render_signal_filter_preview(
+            self,
+            source_column=source_column,
+            operation=operation,
+            original_series=original_series,
+            filtered_series=filtered_series,
+            sample_spacing=sample_spacing,
+        )
+
+    def _render_signal_filter_residual_preview(
+        self,
+        source_column: str,
+        operation: str,
+        original_series: pd.Series,
+        filtered_series: pd.Series,
+        sample_spacing: float,
+    ) -> None:
+        return plotting_ops.render_signal_filter_residual_preview(
+            self,
+            source_column=source_column,
+            operation=operation,
+            original_series=original_series,
+            filtered_series=filtered_series,
+            sample_spacing=sample_spacing,
+        )
 
     def _render_frequency_figure(self, figure: plt.Figure) -> None:
         return plotting_ops.render_frequency_figure(self, figure)
@@ -574,7 +640,22 @@ class AnalysisWorkspace(BaseAppShell):
             return
 
         self.session.working_frame.to_csv(save_path, sep=";", index=False)
-        self.notifications.success(f"Exported to {os.path.basename(save_path)}")
+
+        report_saved = False
+        result = self._latest_frequency_result
+        if result is not None and result.analysis_name in {"Transfer Estimate", "Coherence"}:
+            report_path = save_path + ".analysis_report.txt"
+            report_lines = self._build_frequency_export_lines(result)
+            with open(report_path, "w", encoding="utf-8") as report_file:
+                report_file.write("\n".join(report_lines) + "\n")
+            report_saved = True
+
+        if report_saved:
+            self.notifications.success(
+                f"Exported {os.path.basename(save_path)} with analysis report sidecar"
+            )
+        else:
+            self.notifications.success(f"Exported to {os.path.basename(save_path)}")
 
     def open_documentation(self, relative_path: str) -> None:
         try:
@@ -592,7 +673,9 @@ class AnalysisWorkspace(BaseAppShell):
         self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
         self.session.working_revision += 1
         self.session.last_summary = None
+        self._latest_frequency_result = None
         self.fft_summary_var.set(self._default_frequency_summary_text())
+        self._update_frequency_diagnostics(None)
         self._clear_fft_results("Recompute the frequency analysis after data changes.")
         self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
         self._clear_cycle_results("Recompute cycle analysis after data changes.")
@@ -618,7 +701,9 @@ class AnalysisWorkspace(BaseAppShell):
         self.filter_output_name_var.set("")
         self.signal_filter_name_var.set("")
         self.derived_name_var.set("")
+        self._latest_frequency_result = None
         self.fft_summary_var.set(self._default_frequency_summary_text())
+        self._update_frequency_diagnostics(None)
         self._clear_fft_results("Compute the frequency analysis for the currently active column.")
         self.cycle_summary_var.set("Analyze equal-length cycles for the active column.")
         self._clear_cycle_results("Compute cycle analysis for the currently active column.")
@@ -633,7 +718,9 @@ class AnalysisWorkspace(BaseAppShell):
             return
         self._refreshing_frequency_controls = True
         try:
+            self._latest_frequency_result = None
             self.fft_summary_var.set(self._default_frequency_summary_text())
+            self._update_frequency_diagnostics(None)
             self._refresh_frequency_method_controls()
             self._refresh_frequency_expectation()
             self._refresh_role_widget_styles()
@@ -695,6 +782,22 @@ class AnalysisWorkspace(BaseAppShell):
         if analysis_name == "Welch PSD":
             return "Ready to estimate a power spectral density for the selected signal."
         return "Ready to inspect the dominant frequencies in the selected signal."
+
+    @staticmethod
+    def _default_frequency_diagnostics_text() -> str:
+        return (
+            "Run Transfer Estimate or Coherence to view diagnostics "
+            "(confidence and dominant frequency bands) before export."
+        )
+
+    def _update_frequency_diagnostics(self, result: FrequencySpectrumResult | None) -> None:
+        if result is None:
+            self.frequency_diagnostics_var.set(self._default_frequency_diagnostics_text())
+            return
+        if result.analysis_name not in {"Transfer Estimate", "Coherence"}:
+            self.frequency_diagnostics_var.set(self._default_frequency_diagnostics_text())
+            return
+        self.frequency_diagnostics_var.set("\n".join(self._build_frequency_export_lines(result)))
 
     def _refresh_active_column_badges(self) -> None:
         active_column = self.active_column_var.get().strip()
@@ -822,8 +925,62 @@ class AnalysisWorkspace(BaseAppShell):
         ]
         if result.comparison_column:
             summary_parts.append(f"vs={result.comparison_column}")
+        if result.segment_count is not None:
+            summary_parts.append(f"segments={result.segment_count}")
+        if result.segment_length is not None:
+            summary_parts.append(f"seg_len={result.segment_length}")
         if result.uniformity_ratio > 0.05:
             summary_parts.append(f"nonuniformity~{format_display_percent(result.uniformity_ratio)}")
         if result.dominant_frequency > 0.8 * result.nyquist_frequency:
             summary_parts.append("\u26a0 dominant peak near Nyquist")
+        if result.analysis_name == "Coherence" and result.segment_count is not None:
+            if result.segment_count < 4:
+                summary_parts.append("coh_confidence=low")
+            elif result.segment_count < 8:
+                summary_parts.append("coh_confidence=moderate")
+            else:
+                summary_parts.append("coh_confidence=good")
         return " | ".join(summary_parts)
+
+    @staticmethod
+    def _build_frequency_export_lines(result: FrequencySpectrumResult) -> list[str]:
+        lines = [
+            f"Analysis: {result.analysis_name}",
+            f"Source signal: {result.source_column}",
+            f"Comparison signal: {result.comparison_column or '-'}",
+            f"Sampling frequency [Hz]: {format_display_number(result.sampling_frequency)}",
+            f"Sample spacing [s]: {format_display_number(result.sample_spacing)}",
+            f"Nyquist [Hz]: {format_display_number(result.nyquist_frequency)}",
+            f"Dominant frequency [Hz]: {format_display_number(result.dominant_frequency)}",
+            f"Dominant value ({result.value_column_label}): {format_display_number(result.dominant_amplitude)}",
+        ]
+        if result.segment_length is not None:
+            lines.append(f"Welch segment length: {result.segment_length}")
+        if result.overlap_fraction is not None:
+            lines.append(f"Welch overlap fraction: {format_display_percent(result.overlap_fraction)}")
+        if result.segment_count is not None:
+            lines.append(f"Welch segments used: {result.segment_count}")
+
+        if result.analysis_name == "Coherence" and result.segment_count is not None:
+            if result.segment_count < 4:
+                confidence = "low"
+            elif result.segment_count < 8:
+                confidence = "moderate"
+            else:
+                confidence = "good"
+            lines.append(f"Coherence confidence: {confidence}")
+            lines.append("Coherence interpretation bands: weak <0.2, moderate 0.2-0.5, strong 0.5-0.8, very strong >=0.8")
+
+        if result.analysis_name == "Transfer Estimate":
+            lines.append("Transfer phase interpretation: output phase relative to input phase.")
+
+        peak_count = min(len(result.peaks_frame.index), 5)
+        if peak_count > 0:
+            lines.append("")
+            lines.append("Top frequency bands:")
+            for _, row in result.peaks_frame.head(peak_count).iterrows():
+                lines.append(
+                    f"- {format_display_number(float(row['frequency_hz']))} Hz: "
+                    f"{format_display_number(float(row['amplitude']))}"
+                )
+        return lines

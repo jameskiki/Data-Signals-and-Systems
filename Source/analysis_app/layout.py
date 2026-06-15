@@ -284,8 +284,32 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
     ttk.Label(controls, text="New column name").grid(row=5, column=0, sticky="w", padx=5, pady=5)
     ttk.Entry(controls, textvariable=workspace.signal_filter_name_var).grid(row=5, column=1, sticky="ew", padx=5, pady=5)
 
-    ttk.Button(controls, text="Apply Signal Filter", command=workspace._apply_signal_filter).grid(
-        row=6, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
+    workspace.signal_filter_bode_button = ttk.Button(controls, text="Generate Bode Plot", command=workspace._preview_filter_bode)
+    workspace.signal_filter_bode_button.grid(
+        row=6, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 0)
+    )
+
+    workspace.signal_filter_preview_button = ttk.Button(
+        controls,
+        text="Preview Filter Result",
+        command=workspace._preview_signal_filter_result,
+    )
+    workspace.signal_filter_preview_button.grid(
+        row=7, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 0)
+    )
+
+    workspace.signal_filter_residual_button = ttk.Button(
+        controls,
+        text="Preview Residual Analysis",
+        command=workspace._preview_signal_filter_residual,
+    )
+    workspace.signal_filter_residual_button.grid(
+        row=8, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 0)
+    )
+
+    workspace.signal_filter_apply_button = ttk.Button(controls, text="Apply Signal Filter", command=workspace._apply_signal_filter)
+    workspace.signal_filter_apply_button.grid(
+        row=9, column=0, columnspan=2, sticky="ew", padx=5, pady=(5, 10)
     )
 
     help_text = (
@@ -296,9 +320,17 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
         "butterworth_lowpass: zero-phase Butterworth LP\n"
         "butterworth_highpass: zero-phase Butterworth HP\n"
         "butterworth_bandpass: zero-phase Butterworth BP (set low and high cutoffs)\n"
-        "  Butterworth filters need cutoff, order, and spacing"
+        "  Butterworth filters need cutoff, order, and spacing\n"
+        "Generate Bode Plot previews Butterworth magnitude and phase response."
     )
-    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+    ttk.Label(controls, text=help_text, justify=tk.LEFT).grid(row=10, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+    ttk.Label(
+        controls,
+        textvariable=workspace.signal_filter_validation_var,
+        justify=tk.LEFT,
+        foreground="#92400e",
+        wraplength=380,
+    ).grid(row=11, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
     controls.columnconfigure(1, weight=1)
 
 
@@ -433,6 +465,20 @@ def build_frequency_tab(workspace) -> None:
     workspace.frequency_compare_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
     workspace.comparison_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
 
+    workspace.transfer_phase_frame = ttk.Frame(controls)
+    workspace.transfer_unwrap_phase_checkbutton = ttk.Checkbutton(
+        workspace.transfer_phase_frame,
+        text="Unwrap transfer phase",
+        variable=workspace.transfer_unwrap_phase_var,
+    )
+    workspace.transfer_unwrap_phase_checkbutton.grid(row=0, column=0, sticky="w", padx=5, pady=(0, 5))
+    ttk.Label(
+        workspace.transfer_phase_frame,
+        text="Phase is shown as output relative to input (comparison -> signal).",
+        justify=tk.LEFT,
+    ).grid(row=1, column=0, sticky="w", padx=5, pady=(0, 5))
+    workspace.transfer_phase_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
+
 
     # --- General frequency options (shown for all methods) ---
     workspace.freq_general_frame = ttk.Frame(controls)
@@ -457,7 +503,7 @@ def build_frequency_tab(workspace) -> None:
         values=FFT_WINDOW_OPTIONS,
     )
     workspace.fft_window_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-    workspace.freq_general_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
+    workspace.freq_general_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
 
     # --- Welch-specific options (only for Welch, Transfer, Coherence) ---
     workspace.welch_specific_frame = ttk.Frame(controls)
@@ -477,10 +523,10 @@ def build_frequency_tab(workspace) -> None:
     workspace.welch_overlap_fraction_label.grid(row=1, column=0, sticky="w", padx=5, pady=5)
     workspace.welch_overlap_fraction_entry = ttk.Entry(workspace.welch_specific_frame, textvariable=workspace.welch_overlap_fraction_var)
     workspace.welch_overlap_fraction_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-    workspace.welch_specific_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
+    workspace.welch_specific_frame.grid(row=7, column=0, columnspan=2, sticky="ew")
 
     ttk.Button(controls, text="Analyze Spectrum", command=workspace._compute_fft).grid(
-        row=7,
+        row=8,
         column=0,
         columnspan=2,
         sticky="ew",
@@ -493,7 +539,7 @@ def build_frequency_tab(workspace) -> None:
         text="FFT: single-shot spectrum. Welch: averaged PSD. Transfer Estimate / Coherence: two-signal relationship (set comparison signal). Spectrogram: time-frequency heatmap. Use X / reference for time-based spacing.",
         justify=tk.LEFT,
         wraplength=380,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
+    ).grid(row=9, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 5))
 
     ttk.Label(workspace.frequency_tab, textvariable=workspace.fft_summary_var, wraplength=680, justify=tk.LEFT).pack(
         anchor="w",
@@ -506,6 +552,15 @@ def build_frequency_tab(workspace) -> None:
         wraplength=680,
         justify=tk.LEFT,
     ).pack(anchor="w", padx=10, pady=(0, 8))
+
+    diagnostics_frame = ttk.LabelFrame(workspace.frequency_tab, text="Frequency Diagnostics")
+    diagnostics_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+    ttk.Label(
+        diagnostics_frame,
+        textvariable=workspace.frequency_diagnostics_var,
+        wraplength=680,
+        justify=tk.LEFT,
+    ).pack(anchor="w", padx=8, pady=6)
 
     pane = ttk.Panedwindow(workspace.frequency_tab, orient=tk.HORIZONTAL)
     pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))

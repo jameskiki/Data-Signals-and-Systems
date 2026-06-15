@@ -156,6 +156,10 @@ Current behavior:
 - `Remove trend before analysis` subtracts the mean before the spectrum calculation.
 - The result view shows both the plotted spectrum and a ranked peak table (except for the spectrogram, which shows a heatmap).
 - `Transfer Estimate` and `Coherence` require a comparison column to be set; without it, the analysis cannot run.
+- `Transfer Estimate` supports a `Unwrap transfer phase` toggle to switch phase display between wrapped and unwrapped views.
+- `Coherence` adds visual interpretation bands (`weak`, `moderate`, `strong`, `very strong`) and a segment-confidence cue based on Welch segment count.
+- The `Frequency Diagnostics` panel shows live transfer/coherence report lines (including confidence and top bands) before export.
+- `Export Current View` writes an additional `<csv>.analysis_report.txt` sidecar when the latest frequency result is Transfer Estimate or Coherence.
 
 For the current formal note behind FFT and Welch, see [latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 

@@ -164,11 +164,22 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
 
     if has_phase:
         figure, (axis, phase_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=True)
-        phase_values = np.degrees(result.phase[1:]) if result.phase.size > 1 else np.degrees(result.phase)
+        phase_radians = result.phase[1:] if result.phase.size > 1 else result.phase
+        unwrap_phase = bool(getattr(workspace, "transfer_unwrap_phase_var", None).get()) if hasattr(workspace, "transfer_unwrap_phase_var") else False
+        if result.analysis_name == "Transfer Estimate" and unwrap_phase:
+            phase_radians = np.unwrap(phase_radians)
+        phase_values = np.degrees(phase_radians)
         phase_axis.plot(frequencies, phase_values, linewidth=1.0, color="#c62828")
-        apply_axis_contract(phase_axis, title="", x_label="Frequency [Hz]", y_label="Phase [deg]", style=style)
-        phase_axis.set_ylim(-200, 200)
-        phase_axis.set_yticks([-180, -90, 0, 90, 180])
+        phase_title = ""
+        phase_label = "Phase [deg]"
+        if result.analysis_name == "Transfer Estimate":
+            phase_mode_text = "unwrapped" if unwrap_phase else "wrapped"
+            phase_title = f"Transfer Phase ({phase_mode_text}; output relative to input)"
+            phase_label = "Phase [deg] (output/input)"
+        apply_axis_contract(phase_axis, title=phase_title, x_label="Frequency [Hz]", y_label=phase_label, style=style)
+        if not (result.analysis_name == "Transfer Estimate" and unwrap_phase):
+            phase_axis.set_ylim(-200, 200)
+            phase_axis.set_yticks([-180, -90, 0, 90, 180])
         phase_axis.margins(x=0.02)
         apply_numeric_axis_format(phase_axis, format_x=True, format_y=False)
     else:
@@ -176,6 +187,42 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
     axis.plot(frequencies, amplitudes, linewidth=1.2)
     apply_axis_contract(axis, title=result.plot_title, x_label="Frequency [Hz]", y_label=result.y_axis_label, style=style)
     axis.margins(x=0.02)
+
+    if result.analysis_name == "Coherence":
+        axis.set_ylim(-0.02, 1.02)
+        axis.axhspan(0.0, 0.2, color="#991b1b", alpha=0.06, linewidth=0)
+        axis.axhspan(0.2, 0.5, color="#92400e", alpha=0.05, linewidth=0)
+        axis.axhspan(0.5, 0.8, color="#065f46", alpha=0.04, linewidth=0)
+        axis.axhspan(0.8, 1.0, color="#14532d", alpha=0.06, linewidth=0)
+        for marker in (0.2, 0.5, 0.8):
+            axis.axhline(marker, color="#334155", linestyle="--", linewidth=0.7, alpha=0.45)
+        axis.text(0.99, 0.06, "weak", transform=axis.transAxes, ha="right", va="bottom", fontsize=7, color="#991b1b")
+        axis.text(0.99, 0.36, "moderate", transform=axis.transAxes, ha="right", va="center", fontsize=7, color="#92400e")
+        axis.text(0.99, 0.67, "strong", transform=axis.transAxes, ha="right", va="center", fontsize=7, color="#166534")
+        axis.text(0.99, 0.94, "very strong", transform=axis.transAxes, ha="right", va="top", fontsize=7, color="#14532d")
+
+        segment_count = result.segment_count if result.segment_count is not None else 0
+        if segment_count < 4:
+            adequacy_text = f"Low confidence: only {segment_count} Welch segments"
+            adequacy_color = "#991b1b"
+        elif segment_count < 8:
+            adequacy_text = f"Moderate confidence: {segment_count} Welch segments"
+            adequacy_color = "#92400e"
+        else:
+            adequacy_text = f"Good confidence: {segment_count} Welch segments"
+            adequacy_color = "#166534"
+        axis.text(
+            0.01,
+            0.98,
+            adequacy_text,
+            transform=axis.transAxes,
+            ha="left",
+            va="top",
+            fontsize=8,
+            color=adequacy_color,
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "edgecolor": adequacy_color, "alpha": 0.75},
+        )
+
     expected_guides = get_demo_frequency_guides(workspace.session.working_frame, result.source_column, result.analysis_name)
     for guide_index, (frequency_hz, label) in enumerate(expected_guides):
         if frequency_hz <= 0 or frequency_hz > float(frequencies[-1] if frequencies.size else 0.0):
@@ -264,6 +311,165 @@ def render_frequency_figure(workspace, figure: plt.Figure) -> None:
         draw_idle_on_reuse=True,
     )
     workspace.plot_notebook.select(workspace.frequency_plot_tab)
+
+
+def render_filter_bode_response(
+    workspace,
+    frequencies: np.ndarray,
+    magnitude_db: np.ndarray,
+    phase_deg: np.ndarray,
+    operation: str,
+) -> None:
+    """Render a two-panel Bode-style response plot in the frequency plot area."""
+
+    style = get_default_plot_style(workspace.style_vars)
+    figure, (magnitude_axis, phase_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=True)
+
+    magnitude_axis.plot(frequencies, magnitude_db, linewidth=1.4, color="#2563eb")
+    apply_axis_contract(
+        magnitude_axis,
+        title=f"Bode Magnitude — {operation}",
+        x_label="",
+        y_label="Magnitude [dB]",
+        style=style,
+    )
+    magnitude_axis.margins(x=0.02)
+    apply_numeric_axis_format(magnitude_axis, format_x=True, format_y=True)
+
+    phase_axis.plot(frequencies, phase_deg, linewidth=1.2, color="#c62828")
+    apply_axis_contract(
+        phase_axis,
+        title="Bode Phase",
+        x_label="Frequency [Hz]",
+        y_label="Phase [deg]",
+        style=style,
+    )
+    phase_axis.margins(x=0.02)
+    apply_numeric_axis_format(phase_axis, format_x=True, format_y=True)
+
+    figure.tight_layout()
+    render_frequency_figure(workspace, figure)
+
+
+def render_signal_filter_preview(
+    workspace,
+    source_column: str,
+    operation: str,
+    original_series: pd.Series,
+    filtered_series: pd.Series,
+    sample_spacing: float,
+) -> None:
+    """Render original and filtered signal overlay without modifying workspace data."""
+
+    style = get_default_plot_style(workspace.style_vars)
+    figure, axis = plt.subplots(figsize=(6.2, 3.8), dpi=100)
+
+    original_values = pd.to_numeric(original_series, errors="coerce").to_numpy(dtype=float)
+    filtered_values = pd.to_numeric(filtered_series, errors="coerce").to_numpy(dtype=float)
+    sample_indices = np.arange(len(original_values), dtype=float)
+    if sample_spacing > 0:
+        x_values = sample_indices * sample_spacing
+        x_label = "Time [s]"
+    else:
+        x_values = sample_indices
+        x_label = "Sample"
+
+    axis.plot(x_values, original_values, linewidth=1.0, color="#64748b", alpha=0.9, label="Original")
+    axis.plot(x_values, filtered_values, linewidth=1.4, color="#1d4ed8", alpha=0.95, label="Filtered")
+
+    apply_axis_contract(
+        axis,
+        title=f"Filter Preview — {source_column} ({operation})",
+        x_label=x_label,
+        y_label=source_column,
+        style=style,
+    )
+    axis.margins(x=0.02)
+    apply_numeric_axis_format(axis, format_x=True, format_y=True)
+
+    figure.tight_layout()
+    render_plot_figure(workspace, figure)
+    workspace.plot_notebook.select(workspace.signal_plot_tab)
+
+
+def render_signal_filter_residual_preview(
+    workspace,
+    source_column: str,
+    operation: str,
+    original_series: pd.Series,
+    filtered_series: pd.Series,
+    sample_spacing: float,
+) -> None:
+    """Render residual signal and quick residual spectrum preview."""
+
+    style = get_default_plot_style(workspace.style_vars)
+    figure, (residual_axis, spectrum_axis) = plt.subplots(2, 1, figsize=(6.2, 5.0), dpi=100, sharex=False)
+
+    original_values = pd.to_numeric(original_series, errors="coerce").to_numpy(dtype=float)
+    filtered_values = pd.to_numeric(filtered_series, errors="coerce").to_numpy(dtype=float)
+    residual_values = original_values - filtered_values
+
+    sample_indices = np.arange(len(residual_values), dtype=float)
+    if sample_spacing > 0:
+        x_values = sample_indices * sample_spacing
+        x_label = "Time [s]"
+    else:
+        x_values = sample_indices
+        x_label = "Sample"
+
+    residual_axis.plot(x_values, residual_values, linewidth=1.2, color="#b45309", label="Residual")
+    apply_axis_contract(
+        residual_axis,
+        title=f"Residual Preview — {source_column} ({operation})",
+        x_label=x_label,
+        y_label="Original - Filtered",
+        style=style,
+    )
+    residual_axis.margins(x=0.02)
+    apply_numeric_axis_format(residual_axis, format_x=True, format_y=True)
+
+    valid_residual = residual_values[np.isfinite(residual_values)]
+    if valid_residual.size >= 4:
+        centered = valid_residual - np.mean(valid_residual)
+        if sample_spacing > 0:
+            frequencies = np.fft.rfftfreq(centered.size, d=sample_spacing)
+            spectrum = np.abs(np.fft.rfft(centered)) / max(centered.size, 1)
+            spectrum_axis.plot(frequencies, spectrum, linewidth=1.1, color="#1d4ed8")
+            spectrum_x_label = "Frequency [Hz]"
+        else:
+            frequency_bins = np.arange(np.fft.rfft(centered).size, dtype=float)
+            spectrum = np.abs(np.fft.rfft(centered)) / max(centered.size, 1)
+            spectrum_axis.plot(frequency_bins, spectrum, linewidth=1.1, color="#1d4ed8")
+            spectrum_x_label = "FFT bin"
+        apply_axis_contract(
+            spectrum_axis,
+            title="Residual Spectrum",
+            x_label=spectrum_x_label,
+            y_label="Amplitude",
+            style=style,
+        )
+        spectrum_axis.margins(x=0.02)
+        apply_numeric_axis_format(spectrum_axis, format_x=True, format_y=True)
+    else:
+        spectrum_axis.text(
+            0.5,
+            0.5,
+            "Residual spectrum unavailable (need at least 4 finite samples).",
+            transform=spectrum_axis.transAxes,
+            ha="center",
+            va="center",
+        )
+        apply_axis_contract(
+            spectrum_axis,
+            title="Residual Spectrum",
+            x_label="",
+            y_label="",
+            style=style,
+        )
+
+    figure.tight_layout()
+    render_plot_figure(workspace, figure)
+    workspace.plot_notebook.select(workspace.signal_plot_tab)
 
 
 def render_cycle_result(

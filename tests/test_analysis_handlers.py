@@ -87,6 +87,9 @@ class DummyWorkspace:
         self.render_fft_calls = []
         self.render_spectrogram_calls = []
         self.render_cycle_calls = []
+        self.render_filter_preview_calls = []
+        self.render_filter_residual_calls = []
+        self.frequency_diagnostics_updates = []
 
     @contextmanager
     def _error_dialog(self, _title):
@@ -114,8 +117,17 @@ class DummyWorkspace:
     def _render_cycle_result(self, result):
         self.render_cycle_calls.append(result)
 
+    def _render_signal_filter_preview(self, **kwargs):
+        self.render_filter_preview_calls.append(kwargs)
+
+    def _render_signal_filter_residual_preview(self, **kwargs):
+        self.render_filter_residual_calls.append(kwargs)
+
     def _get_cycle_time_column(self):
         return "time_s"
+
+    def _update_frequency_diagnostics(self, result):
+        self.frequency_diagnostics_updates.append(result)
 
 
 def test_apply_filter_warns_without_active_column(monkeypatch):
@@ -173,7 +185,7 @@ def test_apply_signal_filter_bandpass_passes_cutoff_pair(monkeypatch):
     workspace.signal_filter_operation_var.set("butterworth_bandpass")
     workspace.signal_filter_cutoff_var.set("5.0")
     workspace.signal_filter_cutoff_high_var.set("20.0")
-    workspace.signal_filter_spacing_var.set("0.1")
+    workspace.signal_filter_spacing_var.set("0.01")
     workspace.signal_filter_order_var.set("4")
     captured = {}
 
@@ -239,6 +251,8 @@ def test_compute_fft_fft_branch_renders_result(monkeypatch):
     handlers.compute_fft(workspace)
 
     assert workspace.render_fft_calls == [fft_result]
+    assert workspace._latest_frequency_result is fft_result
+    assert workspace.frequency_diagnostics_updates == [fft_result]
     assert len(workspace.notifications.success_messages) == 1
     assert "Computed FFT Amplitude" in workspace.notifications.success_messages[0]
 
@@ -246,6 +260,7 @@ def test_compute_fft_fft_branch_renders_result(monkeypatch):
 def test_compute_fft_spectrogram_branch_renders_spectrogram(monkeypatch):
     workspace = DummyWorkspace()
     workspace.frequency_analysis_var.set("Spectrogram")
+    workspace._latest_frequency_result = object()
     spectrogram_result = SimpleNamespace(segment_length=128, sampling_frequency=100.0)
     monkeypatch.setattr(handlers, "compute_spectrogram", lambda **kwargs: spectrogram_result)
 
@@ -253,6 +268,8 @@ def test_compute_fft_spectrogram_branch_renders_spectrogram(monkeypatch):
 
     assert workspace.render_spectrogram_calls == [spectrogram_result]
     assert workspace.render_fft_calls == []
+    assert workspace._latest_frequency_result is None
+    assert workspace.frequency_diagnostics_updates == [None]
     assert "Spectrogram" in workspace.notifications.success_messages[0]
 
 
@@ -375,6 +392,64 @@ def test_apply_signal_filter_butterworth_proceeds_with_valid_params(monkeypatch)
     handlers.apply_signal_filter(workspace)
 
     assert len(workspace.replace_calls) == 1
+
+
+def test_preview_signal_filter_result_renders_overlay_without_replacing(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("moving_average")
+    monkeypatch.setattr(
+        handlers,
+        "build_signal_filter_update",
+        lambda *args, **kwargs: FrameUpdate(workspace.session.working_frame.assign(__preview_filter__=[0.9, 1.8])),
+    )
+
+    handlers.preview_signal_filter_result(workspace)
+
+    assert workspace.replace_calls == []
+    assert len(workspace.render_filter_preview_calls) == 1
+    call = workspace.render_filter_preview_calls[0]
+    assert call["source_column"] == "sensor"
+    assert call["operation"] == "moving_average"
+
+
+def test_preview_signal_filter_result_butterworth_blocks_on_invalid_settings(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_lowpass")
+    workspace.signal_filter_spacing_var.set("0.0")
+
+    handlers.preview_signal_filter_result(workspace)
+
+    assert len(workspace.render_filter_preview_calls) == 0
+    assert any("validation failed" in message.lower() for message, _details in workspace.notifications.warning_messages)
+
+
+def test_preview_signal_filter_residual_renders_without_replacing(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("moving_average")
+    monkeypatch.setattr(
+        handlers,
+        "build_signal_filter_update",
+        lambda *args, **kwargs: FrameUpdate(workspace.session.working_frame.assign(__preview_filter__=[0.9, 1.8])),
+    )
+
+    handlers.preview_signal_filter_residual(workspace)
+
+    assert workspace.replace_calls == []
+    assert len(workspace.render_filter_residual_calls) == 1
+    call = workspace.render_filter_residual_calls[0]
+    assert call["source_column"] == "sensor"
+    assert call["operation"] == "moving_average"
+
+
+def test_preview_signal_filter_residual_butterworth_blocks_on_invalid_settings(monkeypatch):
+    workspace = DummyWorkspace()
+    workspace.signal_filter_operation_var.set("butterworth_lowpass")
+    workspace.signal_filter_spacing_var.set("0.0")
+
+    handlers.preview_signal_filter_residual(workspace)
+
+    assert len(workspace.render_filter_residual_calls) == 0
+    assert any("validation failed" in message.lower() for message, _details in workspace.notifications.warning_messages)
 
 
 # ---------------------------------------------------------------------------

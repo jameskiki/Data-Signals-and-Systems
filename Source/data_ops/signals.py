@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy.signal import butter, hilbert, sosfiltfilt
+from scipy.signal import butter, hilbert, sosfiltfilt, sosfreqz
 
 from .filtering import resolve_filtered_column_name
 
@@ -116,6 +116,132 @@ def apply_signal_filter(
     working_frame = dataframe.copy()
     working_frame[resolved_column_name] = filtered_series
     return working_frame
+
+
+def compute_butterworth_response(
+    operation: str,
+    cutoff_hz: float | list[float],
+    sample_spacing: float,
+    filter_order: int,
+    n_points: int = 1024,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return frequency, magnitude-dB, and phase-deg response for a Butterworth filter."""
+
+    if sample_spacing <= 0:
+        raise ValueError("Sample spacing must be greater than zero for Butterworth filters")
+
+    fs = 1.0 / sample_spacing
+    nyquist = 0.5 * fs
+    clamped_order = max(1, min(int(filter_order), 10))
+
+    btype_map = {
+        "butterworth_lowpass": "low",
+        "butterworth_highpass": "high",
+        "butterworth_bandpass": "band",
+    }
+    if operation not in btype_map:
+        raise ValueError(f"Unsupported response operation: {operation}")
+
+    btype = btype_map[operation]
+    if btype == "band":
+        if not isinstance(cutoff_hz, (list, tuple)) or len(cutoff_hz) != 2:
+            raise ValueError("Band-pass requires two cutoff frequencies as [low, high]")
+        wn = [float(cutoff_hz[0]) / nyquist, float(cutoff_hz[1]) / nyquist]
+        if not (0 < wn[0] < wn[1] < 1):
+            raise ValueError("Band-pass cutoffs must satisfy 0 < f_low < f_high < Nyquist")
+    else:
+        wn = float(cutoff_hz) / nyquist
+        if not 0 < wn < 1:
+            raise ValueError(
+                f"Cutoff frequency {cutoff_hz} Hz is outside valid range (0, {nyquist}) Hz for fs={fs} Hz"
+            )
+
+    sos = butter(clamped_order, wn, btype=btype, output="sos")
+    frequencies, response = sosfreqz(sos, worN=max(64, int(n_points)), fs=fs)
+    magnitude_db = 20.0 * np.log10(np.maximum(np.abs(response), 1e-12))
+    phase_deg = np.degrees(np.angle(response))
+    return frequencies, magnitude_db, phase_deg
+
+
+def evaluate_butterworth_settings(
+    operation: str,
+    cutoff_hz: float | list[float] | str,
+    sample_spacing: float | str,
+    filter_order: int | str,
+) -> tuple[list[str], list[str]]:
+    """Validate Butterworth settings and return (errors, warnings)."""
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if operation not in {"butterworth_lowpass", "butterworth_highpass", "butterworth_bandpass"}:
+        return errors, warnings
+
+    try:
+        spacing_value = float(sample_spacing)
+        if spacing_value <= 0:
+            errors.append("Sample spacing must be greater than zero.")
+            return errors, warnings
+    except (TypeError, ValueError):
+        errors.append(f"Sample spacing must be numeric (got {sample_spacing!r}).")
+        return errors, warnings
+
+    try:
+        order_value = int(filter_order)
+    except (TypeError, ValueError):
+        errors.append(f"Filter order must be an integer (got {filter_order!r}).")
+        return errors, warnings
+
+    if order_value < 1:
+        errors.append("Filter order must be >= 1.")
+    elif order_value > 10:
+        warnings.append("Filter order above 10 will be clamped to 10.")
+    elif order_value >= 8:
+        warnings.append("High filter order may increase ringing near sharp transients.")
+
+    nyquist = 0.5 / spacing_value
+
+    def _warn_near_nyquist(value_hz: float, label: str) -> None:
+        if value_hz >= 0.8 * nyquist:
+            warnings.append(f"{label} is close to Nyquist ({nyquist:.6g} Hz); response may be sensitive.")
+
+    if operation == "butterworth_bandpass":
+        if not isinstance(cutoff_hz, (list, tuple)) or len(cutoff_hz) != 2:
+            errors.append("Band-pass requires low/high cutoffs as [low, high].")
+            return errors, warnings
+        try:
+            low_cutoff = float(cutoff_hz[0])
+            high_cutoff = float(cutoff_hz[1])
+        except (TypeError, ValueError):
+            errors.append(f"Band-pass cutoffs must be numeric (got {cutoff_hz!r}).")
+            return errors, warnings
+
+        if low_cutoff <= 0 or high_cutoff <= 0:
+            errors.append("Band-pass cutoffs must both be > 0.")
+        if low_cutoff >= high_cutoff:
+            errors.append("Band-pass requires low cutoff < high cutoff.")
+        if high_cutoff >= nyquist:
+            errors.append(f"High cutoff must be less than Nyquist ({nyquist:.6g} Hz).")
+        if not errors:
+            _warn_near_nyquist(high_cutoff, "High cutoff")
+            if (high_cutoff - low_cutoff) / max(high_cutoff, 1e-12) < 0.05:
+                warnings.append("Very narrow band-pass may be sensitive to noise and sample-rate uncertainty.")
+        return errors, warnings
+
+    try:
+        cutoff_value = float(cutoff_hz)
+    except (TypeError, ValueError):
+        errors.append(f"Cutoff must be numeric (got {cutoff_hz!r}).")
+        return errors, warnings
+
+    if cutoff_value <= 0:
+        errors.append("Cutoff must be > 0.")
+    elif cutoff_value >= nyquist:
+        errors.append(f"Cutoff must be less than Nyquist ({nyquist:.6g} Hz).")
+    else:
+        _warn_near_nyquist(cutoff_value, "Cutoff")
+
+    return errors, warnings
 
 
 def _apply_butterworth(

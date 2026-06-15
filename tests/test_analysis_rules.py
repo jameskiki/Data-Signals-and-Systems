@@ -248,21 +248,25 @@ class TestFrameVisibilityFields:
     def test_fft_hides_comparison_and_welch_frames(self):
         rule = get_rule("frequency", "FFT Amplitude")
         assert "comparison_frame" in rule.hide_frames
+        assert "transfer_phase_frame" in rule.hide_frames
         assert "welch_specific_frame" in rule.hide_frames
         assert "freq_general_frame" in rule.show_frames
 
     def test_transfer_estimate_shows_comparison_frame(self):
         rule = get_rule("frequency", "Transfer Estimate")
         assert "comparison_frame" in rule.show_frames
+        assert "transfer_phase_frame" in rule.show_frames
         assert "welch_specific_frame" in rule.show_frames
 
     def test_transfer_estimate_enables_comparison_combo(self):
         rule = get_rule("frequency", "Transfer Estimate")
         assert "frequency_compare_combo" in rule.enable_widgets
+        assert "transfer_unwrap_phase_checkbutton" in rule.enable_widgets
 
     def test_fft_disables_comparison_combo(self):
         rule = get_rule("frequency", "FFT Amplitude")
         assert "frequency_compare_combo" in rule.disable_widgets
+        assert "transfer_unwrap_phase_checkbutton" in rule.disable_widgets
 
     def test_cycle_fixed_length_shows_fixed_frame(self):
         rule = get_rule("cycle", "fixed_length")

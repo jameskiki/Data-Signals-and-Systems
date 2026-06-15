@@ -35,6 +35,9 @@ class FrequencySpectrumResult:
     y_axis_label: str
     plot_title: str
     value_column_label: str
+    segment_length: int | None = None
+    overlap_fraction: float | None = None
+    segment_count: int | None = None
 
 
 def compute_fft_spectrum(
@@ -218,6 +221,9 @@ def compute_welch_psd(
         y_axis_label="PSD",
         plot_title=f"Welch PSD of {source_column}",
         value_column_label="PSD",
+        segment_length=int(normalized_segment_length),
+        overlap_fraction=float(normalized_overlap_fraction),
+        segment_count=int(valid_count),
     )
 
 
@@ -276,6 +282,9 @@ def compute_transfer_estimate(
         y_axis_label="|H(f)| [dB]",
         plot_title=f"Transfer Estimate: {comparison_column} -> {source_column}",
         value_column_label="|H| [dB]",
+        segment_length=int(prepared["segment_length"]),
+        overlap_fraction=float(prepared["overlap_fraction"]),
+        segment_count=int(prepared["segment_count"]),
     )
 
 
@@ -331,6 +340,9 @@ def compute_coherence_spectrum(
         y_axis_label="Coherence",
         plot_title=f"Coherence: {comparison_column} -> {source_column}",
         value_column_label="Coh",
+        segment_length=int(prepared["segment_length"]),
+        overlap_fraction=float(prepared["overlap_fraction"]),
+        segment_count=int(prepared["segment_count"]),
     )
 
 
@@ -576,6 +588,9 @@ def _prepare_dual_signal_spectra(
         "sampling_frequency": float(1.0 / resolved_sample_spacing),
         "spacing_source_text": spacing_source_text,
         "uniformity_ratio": float(uniformity_ratio),
+        "segment_length": int(normalized_segment_length),
+        "overlap_fraction": float(normalized_overlap_fraction),
+        "segment_count": int(segment_count),
         "frequencies": frequencies,
         "cross_spectrum": cross_sum / segment_count,
         "auto_input": auto_input_sum / segment_count,
