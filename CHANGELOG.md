@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+- Frequency analysis UX and diagnostics increment:
+  - Butterworth `Generate Bode Plot` preview for LP/HP/BP with inline validation gating.
+  - `Preview Filter Result` and `Preview Residual Analysis` for non-mutating filter exploration.
+  - Transfer Estimate phase-view improvements including optional phase unwrapping and clearer phase labeling.
+  - Coherence interpretation overlays with confidence cues derived from Welch segment count.
+  - Live `Frequency Diagnostics` panel in the analysis workspace for Transfer/Coherence summaries.
+  - Export sidecar report `<csv>.analysis_report.txt` when latest frequency result is Transfer/Coherence.
+
+### Changed
+- Frequency result metadata now includes Welch segment context (`segment_length`, `overlap_fraction`, `segment_count`) and is surfaced in summary text and diagnostics.
+
 ## [v0.4.0] - 2026-06-12
 
 ### Added

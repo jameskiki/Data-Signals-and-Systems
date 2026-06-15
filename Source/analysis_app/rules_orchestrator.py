@@ -7,6 +7,7 @@ All Tk framework coupling lives here; rules.py stays Tk-free.
 """
 
 from .rules import get_rule
+from Source.data_ops.signals import evaluate_butterworth_settings
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,7 @@ def apply_signal_filter_rule(workspace) -> None:
         return
     _apply_frame_visibility(workspace, rule.show_frames, rule.hide_frames)
     _correct_stale_positive_values(workspace, rule)
+    _apply_signal_filter_validation_feedback(workspace, operation)
 
 
 def apply_cycle_method_rule(workspace) -> None:
@@ -109,3 +111,61 @@ def _correct_stale_positive_values(workspace, rule) -> None:
                 var.set("")
         except (ValueError, TypeError):
             pass
+
+
+def _apply_signal_filter_validation_feedback(workspace, operation: str) -> None:
+    """Show inline Butterworth validation and gate actions for invalid settings."""
+
+    validation_var = getattr(workspace, "signal_filter_validation_var", None)
+    apply_button = getattr(workspace, "signal_filter_apply_button", None)
+    bode_button = getattr(workspace, "signal_filter_bode_button", None)
+    preview_button = getattr(workspace, "signal_filter_preview_button", None)
+    residual_button = getattr(workspace, "signal_filter_residual_button", None)
+
+    if apply_button is not None:
+        apply_button.state(["!disabled"])
+    if bode_button is not None:
+        bode_button.state(["disabled"])
+    if preview_button is not None:
+        preview_button.state(["!disabled"])
+    if residual_button is not None:
+        residual_button.state(["!disabled"])
+
+    if operation not in {"butterworth_lowpass", "butterworth_highpass", "butterworth_bandpass"}:
+        if validation_var is not None:
+            validation_var.set("")
+        return
+
+    cutoff_hz: str | list[str]
+    if operation == "butterworth_bandpass":
+        cutoff_hz = [
+            workspace.signal_filter_cutoff_var.get(),
+            workspace.signal_filter_cutoff_high_var.get(),
+        ]
+    else:
+        cutoff_hz = workspace.signal_filter_cutoff_var.get()
+
+    errors, warnings = evaluate_butterworth_settings(
+        operation=operation,
+        cutoff_hz=cutoff_hz,
+        sample_spacing=workspace.signal_filter_spacing_var.get(),
+        filter_order=workspace.signal_filter_order_var.get(),
+    )
+
+    if validation_var is not None:
+        if errors:
+            validation_var.set("Validation error: " + " | ".join(errors))
+        elif warnings:
+            validation_var.set("Warning: " + " | ".join(warnings))
+        else:
+            validation_var.set("Butterworth settings look valid.")
+
+    if errors and apply_button is not None:
+        apply_button.state(["disabled"])
+    if errors and preview_button is not None:
+        preview_button.state(["disabled"])
+    if errors and residual_button is not None:
+        residual_button.state(["disabled"])
+
+    if not errors and bode_button is not None:
+        bode_button.state(["!disabled"])

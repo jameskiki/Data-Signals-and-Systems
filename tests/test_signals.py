@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from Source.data_ops.signals import add_derived_column, apply_signal_filter
+from Source.data_ops.signals import (
+    add_derived_column,
+    apply_signal_filter,
+    compute_butterworth_response,
+    evaluate_butterworth_settings,
+)
 
 
 # ── Derived columns ──────────────────────────────────────────────────
@@ -213,3 +218,67 @@ class TestFilterEdgeCases:
     def test_unknown_column_raises(self, noisy_sine):
         with pytest.raises(KeyError):
             apply_signal_filter(noisy_sine, "nonexistent", "moving_average", "out")
+
+
+class TestButterworthResponse:
+    def test_lowpass_response_shapes(self):
+        frequencies, magnitude_db, phase_deg = compute_butterworth_response(
+            operation="butterworth_lowpass",
+            cutoff_hz=20.0,
+            sample_spacing=0.005,
+            filter_order=4,
+            n_points=512,
+        )
+        assert frequencies.ndim == 1
+        assert magnitude_db.ndim == 1
+        assert phase_deg.ndim == 1
+        assert len(frequencies) == len(magnitude_db) == len(phase_deg)
+
+    def test_response_rejects_non_butterworth_operation(self):
+        with pytest.raises(ValueError, match="Unsupported response operation"):
+            compute_butterworth_response(
+                operation="moving_average",
+                cutoff_hz=20.0,
+                sample_spacing=0.005,
+                filter_order=4,
+            )
+
+    def test_bandpass_response_requires_ordered_cutoffs(self):
+        with pytest.raises(ValueError, match="Band-pass cutoffs"):
+            compute_butterworth_response(
+                operation="butterworth_bandpass",
+                cutoff_hz=[80.0, 20.0],
+                sample_spacing=0.005,
+                filter_order=4,
+            )
+
+
+class TestButterworthValidation:
+    def test_lowpass_validation_flags_nyquist_violation(self):
+        errors, warnings = evaluate_butterworth_settings(
+            operation="butterworth_lowpass",
+            cutoff_hz=60.0,
+            sample_spacing=0.01,
+            filter_order=4,
+        )
+        assert any("Nyquist" in message for message in errors)
+        assert warnings == []
+
+    def test_validation_warns_for_high_order(self):
+        errors, warnings = evaluate_butterworth_settings(
+            operation="butterworth_highpass",
+            cutoff_hz=10.0,
+            sample_spacing=0.01,
+            filter_order=9,
+        )
+        assert errors == []
+        assert any("ringing" in message for message in warnings)
+
+    def test_bandpass_validation_requires_low_below_high(self):
+        errors, _warnings = evaluate_butterworth_settings(
+            operation="butterworth_bandpass",
+            cutoff_hz=[20.0, 10.0],
+            sample_spacing=0.01,
+            filter_order=4,
+        )
+        assert any("low cutoff < high cutoff" in message for message in errors)

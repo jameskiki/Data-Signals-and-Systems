@@ -220,6 +220,12 @@ Some spacing/length fields are auto-filled from the active data until you edit t
 
 This behavior applies to signal-processing sample spacing, FFT index step size, resample target spacing, Welch segment length, and fixed-cycle length.
 
+Frequency workflow additions:
+
+- For `Transfer Estimate`, use `Unwrap transfer phase` when you want continuous phase trends across frequency.
+- For `Coherence`, the frequency plot includes quality bands and a confidence cue that depends on Welch segment count.
+- The `Frequency Diagnostics` panel summarizes confidence and top bands for Transfer/Coherence results before export.
+
 For a fuller task-to-tool mapping, see `which-tool-when.md`.
 
 ## Step 9: Export Results
@@ -229,6 +235,8 @@ There are several export paths:
 - `Files -> Export Clean Data`: writes cleaned versions of all currently loaded datasets to a chosen directory
 - `Merge` workflow from the main window: saves a merged CSV file
 - `Export Current View` in the analysis workspace: saves the current working dataframe as a CSV file
+
+When the latest frequency result is `Transfer Estimate` or `Coherence`, `Export Current View` also writes a sidecar report file named `<csv>.analysis_report.txt` with confidence and dominant-band diagnostics.
 
 Export behavior is described in more detail in `data-formats.md`.
 
