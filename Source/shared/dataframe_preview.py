@@ -7,7 +7,7 @@ from tkinter import ttk
 
 import pandas as pd
 
-from .column_roles import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from .column_roles import get_column_role_label
 from .display_format import format_display_value
 
 
@@ -19,8 +19,12 @@ def render_dataframe_preview(
     *,
     layout: str = "pack",
     empty_message: str | None = None,
-) -> tk.Canvas | None:
-    """Render a scrollable, role-colored preview of the first dataframe rows."""
+) -> ttk.Treeview | None:
+    """Render a scrollable preview of the first dataframe rows.
+
+    Uses a single Treeview widget instead of individual Label cells so that only
+    one Win32 HWND is allocated regardless of the number of rows or columns.
+    """
 
     _clear_container(container)
 
@@ -38,54 +42,29 @@ def render_dataframe_preview(
     outer_frame.rowconfigure(0, weight=1)
     outer_frame.columnconfigure(0, weight=1)
 
-    canvas = tk.Canvas(outer_frame, highlightthickness=0, borderwidth=0)
-    canvas.grid(row=0, column=0, sticky="nsew")
-    vertical_scrollbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=canvas.yview)
-    vertical_scrollbar.grid(row=0, column=1, sticky="ns")
-    horizontal_scrollbar = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=canvas.xview)
-    _place_horizontal_scrollbar(horizontal_scrollbar, layout=layout)
-    canvas.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
+    tree = ttk.Treeview(outer_frame, columns=columns, show="headings", selectmode="none")
+    tree.grid(row=0, column=0, sticky="nsew")
 
-    grid_frame = tk.Frame(canvas)
-    window_id = canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+    v_scroll = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=tree.yview)
+    v_scroll.grid(row=0, column=1, sticky="ns")
+    h_scroll = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+    _place_horizontal_scrollbar(h_scroll, layout=layout)
+    tree.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
-    _build_preview_cell(grid_frame, 0, 0, "#", "#eef2f6", "#444444", bold=True, anchor="center")
-    for column_index, column_name in enumerate(columns, start=1):
-        role_name = get_column_role(resolved_roles, column_name)
-        background, foreground = get_column_role_colors(role_name)
-        header_text = f"{column_name}\n[{get_column_role_label(resolved_roles, column_name)}]"
-        _build_preview_cell(grid_frame, 0, column_index, header_text, background, foreground, bold=True, anchor="w")
+    for col_name in columns:
+        role_label = get_column_role_label(resolved_roles, col_name)
+        tree.heading(col_name, text=f"{col_name} [{role_label}]")
+        tree.column(col_name, width=140, minwidth=60, stretch=False)
 
     formatted_frame = preview_frame.astype(object).where(pd.notna(preview_frame), "")
-    for row_index, row_values in enumerate(formatted_frame.itertuples(index=False, name=None), start=1):
-        _build_preview_cell(grid_frame, row_index, 0, str(row_index - 1), "#eef2f6", "#444444", anchor="e")
-        for column_index, value in enumerate(row_values, start=1):
-            column_name = str(preview_frame.columns[column_index - 1])
-            role_name = get_column_role(resolved_roles, column_name)
-            background, foreground = get_column_role_cell_colors(role_name)
-            _build_preview_cell(
-                grid_frame,
-                row_index,
-                column_index,
-                format_display_value(value),
-                background,
-                foreground,
-                anchor="w",
-            )
+    for row_values in formatted_frame.itertuples(index=False, name=None):
+        tree.insert("", "end", values=tuple(format_display_value(v) for v in row_values))
 
-    def _sync_scroll_region(_event: tk.Event | None = None) -> None:
-        canvas.configure(scrollregion=canvas.bbox("all"))
-
-    def _sync_window_size(event: tk.Event) -> None:
-        canvas.itemconfigure(window_id, height=max(event.height, grid_frame.winfo_reqheight()))
-
-    grid_frame.bind("<Configure>", _sync_scroll_region)
-    canvas.bind("<Configure>", _sync_window_size)
     if layout == "grid":
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
-    _sync_scroll_region()
-    return canvas
+
+    return tree
 
 
 def _clear_container(container: ttk.Frame) -> None:
@@ -116,31 +95,3 @@ def _render_empty_message(container: ttk.Frame, message: str, *, layout: str) ->
         container.columnconfigure(0, weight=1)
         return
     label.pack(anchor="w", padx=5, pady=5)
-
-
-def _build_preview_cell(
-    grid_frame: tk.Frame,
-    row_index: int,
-    column_index: int,
-    text: str,
-    background: str,
-    foreground: str,
-    bold: bool = False,
-    anchor: str = "w",
-) -> None:
-    font = ("TkDefaultFont", 9, "bold") if bold else ("TkDefaultFont", 9)
-    label = tk.Label(
-        grid_frame,
-        text=text,
-        bg=background,
-        fg=foreground,
-        borderwidth=1,
-        relief="solid",
-        padx=6,
-        pady=4,
-        justify=tk.LEFT,
-        anchor=anchor,
-        font=font,
-        wraplength=180,
-    )
-    label.grid(row=row_index, column=column_index, sticky="nsew")

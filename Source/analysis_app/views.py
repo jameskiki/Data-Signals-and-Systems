@@ -76,8 +76,8 @@ def render_dataframe_preview(
     dataframe: pd.DataFrame,
     row_limit: int,
     column_roles: dict[str, str] | None = None,
-) -> tk.Canvas:
-    """Render a scrollable, role-colored preview of the first rows of the dataframe."""
+) -> ttk.Treeview | None:
+    """Render a scrollable preview of the first rows of the dataframe."""
 
     return render_shared_dataframe_preview(container, dataframe, row_limit, column_roles, layout="pack")
 
@@ -336,34 +336,6 @@ def _get_cycle_tree_tags(row: object, is_outlier: bool) -> tuple[str, ...]:
 def _clear_container(container: ttk.Frame) -> None:
     for widget in container.winfo_children():
         widget.destroy()
-
-
-def _build_preview_cell(
-    grid_frame: tk.Frame,
-    row_index: int,
-    column_index: int,
-    text: str,
-    background: str,
-    foreground: str,
-    bold: bool = False,
-    anchor: str = "w",
-) -> None:
-    font = ("TkDefaultFont", 9, "bold") if bold else ("TkDefaultFont", 9)
-    label = tk.Label(
-        grid_frame,
-        text=text,
-        bg=background,
-        fg=foreground,
-        borderwidth=1,
-        relief="solid",
-        padx=6,
-        pady=4,
-        justify=tk.LEFT,
-        anchor=anchor,
-        font=font,
-        wraplength=180,
-    )
-    label.grid(row=row_index, column=column_index, sticky="nsew")
 
 
 def _measure_tree_column_width(

@@ -44,6 +44,7 @@ from .state import (
     ANALYSIS_WINDOW_GEOMETRY,
     DERIVED_OPERATIONS,
     FFT_WINDOW_OPTIONS,
+    PLOT_Y_SELECTOR_MAX_ITEMS,
     PREVIEW_ROW_LIMIT,
     AnalysisSession,
     PlotStyleVars,
@@ -192,6 +193,8 @@ class AnalysisWorkspace(BaseAppShell):
         self.plot_y_selector_button: ttk.Menubutton | None = None
         self.plot_y_selector_menu: tk.Menu | None = None
         self.plot_y_selection_vars: dict[str, tk.BooleanVar] = {}
+        self._plot_y_selector_hidden_count = 0
+        self._plot_y_selector_warning_shown = False
         self._plot_y_selector_sync_in_progress = False
         self._frame_replacing = False
         self._refreshing_frequency_controls = False
@@ -818,18 +821,28 @@ class AnalysisWorkspace(BaseAppShell):
         if self.plot_y_selector_menu is None or self.plot_y_selector_button is None:
             return
 
+        visible_columns = numeric_columns[:PLOT_Y_SELECTOR_MAX_ITEMS]
+        self._plot_y_selector_hidden_count = max(0, len(numeric_columns) - len(visible_columns))
         self.plot_y_selection_vars = {}
         self.plot_y_selector_menu.delete(0, tk.END)
-        if not numeric_columns:
+        if not visible_columns:
             self._clear_plot_y_column_selector()
             return
 
         self.plot_y_selector_menu.add_command(label="Select all", command=self._select_all_plot_y_columns)
         self.plot_y_selector_menu.add_command(label="Clear selection", command=self._clear_selected_plot_y_columns)
+        if self._plot_y_selector_hidden_count:
+            self.plot_y_selector_menu.add_separator()
+            self.plot_y_selector_menu.add_command(
+                label=(
+                    f"Showing first {len(visible_columns)} of {len(numeric_columns)} channels"
+                ),
+                state=tk.DISABLED,
+            )
         self.plot_y_selector_menu.add_separator()
 
         self._plot_y_selector_sync_in_progress = True
-        for column_name in numeric_columns:
+        for column_name in visible_columns:
             variable = tk.BooleanVar(value=column_name in selected_columns)
             variable.trace_add("write", self._handle_plot_y_column_selector_changed)
             self.plot_y_selection_vars[column_name] = variable
@@ -847,10 +860,17 @@ class AnalysisWorkspace(BaseAppShell):
             )
         self._plot_y_selector_sync_in_progress = False
         self.plot_y_selector_button.state(["!disabled"])
+        if self._plot_y_selector_hidden_count and not self._plot_y_selector_warning_shown:
+            self.notifications.warning(
+                "Channel selector limited for very wide datasets: showing first "
+                f"{len(visible_columns)} of {len(numeric_columns)} channels."
+            )
+            self._plot_y_selector_warning_shown = True
         self._update_plot_y_column_summary()
 
     def _clear_plot_y_column_selector(self) -> None:
         self.plot_y_selection_vars = {}
+        self._plot_y_selector_hidden_count = 0
         if self.plot_y_selector_menu is not None:
             self.plot_y_selector_menu.delete(0, tk.END)
         if self.plot_y_selector_button is not None:
@@ -864,17 +884,24 @@ class AnalysisWorkspace(BaseAppShell):
 
     def _update_plot_y_column_summary(self) -> None:
         selected_columns = self._get_selected_plot_y_columns()
+        limit_suffix = ""
+        if self._plot_y_selector_hidden_count:
+            shown_count = len(self.plot_y_selection_vars)
+            total_count = shown_count + self._plot_y_selector_hidden_count
+            limit_suffix = f" (showing {shown_count} of {total_count})"
         if not self.plot_y_selection_vars:
             self.plot_y_selection_summary_var.set("No numeric channels available")
             return
         if not selected_columns:
-            self.plot_y_selection_summary_var.set("Choose channels")
+            self.plot_y_selection_summary_var.set(f"Choose channels{limit_suffix}")
             return
         if len(selected_columns) <= 2:
-            self.plot_y_selection_summary_var.set(", ".join(selected_columns))
+            self.plot_y_selection_summary_var.set(f"{', '.join(selected_columns)}{limit_suffix}")
             return
         shown_columns = ", ".join(selected_columns[:2])
-        self.plot_y_selection_summary_var.set(f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}")
+        self.plot_y_selection_summary_var.set(
+            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
+        )
 
     def _select_all_plot_y_columns(self) -> None:
         self._plot_y_selector_sync_in_progress = True

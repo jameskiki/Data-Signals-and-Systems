@@ -58,11 +58,13 @@ from Source.shared.plot_style_state import PlotStyleVars
 from Source.shared.plot_utils import normalize_x_values
 from .state import (
     APP_TITLE,
+    COLUMN_SELECTOR_MAX_ITEMS,
     WINDOW_GEOMETRY,
     PLOT_WINDOW_TITLE,
     PLOT_WINDOW_GEOMETRY,
     LOG_FILE_TYPES,
     DataPreparationSession,
+    PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS,
     PREVIEW_ROW_LIMIT,
     PREVIEW_PLOT_MAX_COLUMNS,
     PREVIEW_PLOT_FIGURE_SIZE,
@@ -130,6 +132,10 @@ class DataPreparationApp(BaseAppShell):
         self._column_selector_button: ttk.Menubutton | None = None
         self._column_selector_menu: tk.Menu | None = None
         self._column_selection_vars: dict[str, tk.BooleanVar] = {}
+        self._column_selector_hidden_count = 0
+        self._column_selector_warning_shown = False
+        self._preview_plot_signal_hidden_count = 0
+        self._preview_plot_signal_warning_shown = False
         self._row_range_reset_button: ttk.Button | None = None
 
         build_main_ui(self, PREVIEW_ROW_LIMIT)
@@ -645,18 +651,28 @@ class DataPreparationApp(BaseAppShell):
         if self._column_selector_menu is None or self._column_selector_button is None:
             return
 
+        visible_columns = columns[:COLUMN_SELECTOR_MAX_ITEMS]
+        self._column_selector_hidden_count = max(0, len(columns) - len(visible_columns))
         self._column_selection_vars = {}
         self._column_selector_menu.delete(0, tk.END)
 
-        if not columns:
+        if not visible_columns:
             self._clear_column_selector()
             return
 
         self._column_selector_menu.add_command(label="Select all", command=self._select_all_columns)
         self._column_selector_menu.add_command(label="Clear selection", command=self._clear_selected_columns)
+        if self._column_selector_hidden_count:
+            self._column_selector_menu.add_separator()
+            self._column_selector_menu.add_command(
+                label=(
+                    f"Showing first {len(visible_columns)} of {len(columns)} columns"
+                ),
+                state=tk.DISABLED,
+            )
         self._column_selector_menu.add_separator()
 
-        for column_name in columns:
+        for column_name in visible_columns:
             variable = tk.BooleanVar(value=False)
             variable.trace_add("write", self._handle_column_selector_changed)
             self._column_selection_vars[column_name] = variable
@@ -674,10 +690,17 @@ class DataPreparationApp(BaseAppShell):
             )
 
         self._column_selector_button.state(["!disabled"])
+        if self._column_selector_hidden_count and not self._column_selector_warning_shown:
+            self.notifications.warning(
+                "Column selector limited for very wide datasets: showing first "
+                f"{len(visible_columns)} of {len(columns)} columns."
+            )
+            self._column_selector_warning_shown = True
         self._update_column_selection_summary()
 
     def _clear_column_selector(self) -> None:
         self._column_selection_vars = {}
+        self._column_selector_hidden_count = 0
         if self._column_selector_menu is not None:
             self._column_selector_menu.delete(0, tk.END)
         if self._column_selector_button is not None:
@@ -695,23 +718,35 @@ class DataPreparationApp(BaseAppShell):
         if self._preview_plot_signal_selector_menu is None or self._preview_plot_signal_selector_button is None:
             return
 
+        visible_columns = columns[:PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS]
+        self._preview_plot_signal_hidden_count = max(0, len(columns) - len(visible_columns))
         self._preview_plot_signal_vars = {}
         self._preview_plot_signal_selector_menu.delete(0, tk.END)
 
-        if not columns:
+        if not visible_columns:
             self._clear_preview_plot_signal_selector()
             return
 
         self._preview_plot_signal_selector_menu.add_command(label="Select all", command=self._select_all_preview_plot_signals)
         self._preview_plot_signal_selector_menu.add_command(label="Clear selection", command=self._clear_selected_preview_plot_signals)
+        if self._preview_plot_signal_hidden_count:
+            self._preview_plot_signal_selector_menu.add_separator()
+            self._preview_plot_signal_selector_menu.add_command(
+                label=(
+                    f"Showing first {len(visible_columns)} of {len(columns)} channels"
+                ),
+                state=tk.DISABLED,
+            )
         self._preview_plot_signal_selector_menu.add_separator()
 
-        resolved_selected_columns = [column for column in (selected_columns or columns[:max_columns]) if column in columns]
+        resolved_selected_columns = [
+            column for column in (selected_columns or visible_columns[:max_columns]) if column in visible_columns
+        ]
         if not resolved_selected_columns:
-            resolved_selected_columns = columns[:max_columns]
+            resolved_selected_columns = visible_columns[:max_columns]
         selected_column_set = set(resolved_selected_columns)
         self._preview_plot_signal_selector_sync_in_progress = True
-        for column_name in columns:
+        for column_name in visible_columns:
             variable = tk.BooleanVar(value=column_name in selected_column_set)
             variable.trace_add("write", self._handle_preview_plot_signal_selector_changed)
             self._preview_plot_signal_vars[column_name] = variable
@@ -730,10 +765,17 @@ class DataPreparationApp(BaseAppShell):
         self._preview_plot_signal_selector_sync_in_progress = False
 
         self._preview_plot_signal_selector_button.state(["!disabled"])
+        if self._preview_plot_signal_hidden_count and not self._preview_plot_signal_warning_shown:
+            self.notifications.warning(
+                "Preview channel selector limited for very wide datasets: showing first "
+                f"{len(visible_columns)} of {len(columns)} channels."
+            )
+            self._preview_plot_signal_warning_shown = True
         self._update_preview_plot_signal_summary()
 
     def _clear_preview_plot_signal_selector(self) -> None:
         self._preview_plot_signal_vars = {}
+        self._preview_plot_signal_hidden_count = 0
         if self._preview_plot_signal_selector_menu is not None:
             self._preview_plot_signal_selector_menu.delete(0, tk.END)
         if self._preview_plot_signal_selector_button is not None:
@@ -749,18 +791,23 @@ class DataPreparationApp(BaseAppShell):
     def _update_preview_plot_signal_summary(self) -> None:
         selected_columns = self._get_selected_preview_plot_columns_from_selector()
         self._set_selected_preview_plot_columns(selected_columns)
+        limit_suffix = ""
+        if self._preview_plot_signal_hidden_count:
+            shown_count = len(self._preview_plot_signal_vars)
+            total_count = shown_count + self._preview_plot_signal_hidden_count
+            limit_suffix = f" (showing {shown_count} of {total_count})"
         if not self._preview_plot_signal_vars:
             self._set_preview_plot_signal_summary("No channels available")
             return
         if not selected_columns:
-            self._set_preview_plot_signal_summary("Choose channels")
+            self._set_preview_plot_signal_summary(f"Choose channels{limit_suffix}")
             return
         if len(selected_columns) <= 2:
-            self._set_preview_plot_signal_summary(", ".join(selected_columns))
+            self._set_preview_plot_signal_summary(f"{', '.join(selected_columns)}{limit_suffix}")
             return
         shown_columns = ", ".join(selected_columns[:2])
         self._set_preview_plot_signal_summary(
-            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}"
+            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
         )
 
     def _select_all_preview_plot_signals(self) -> None:
@@ -788,17 +835,24 @@ class DataPreparationApp(BaseAppShell):
     def _update_column_selection_summary(self) -> None:
         selected_columns = self._get_selected_column_names()
         self._set_selected_columns(selected_columns)
+        limit_suffix = ""
+        if self._column_selector_hidden_count:
+            shown_count = len(self._column_selection_vars)
+            total_count = shown_count + self._column_selector_hidden_count
+            limit_suffix = f" (showing {shown_count} of {total_count})"
         if not self._column_selection_vars:
             self._set_column_selection_summary("No columns available")
             return
         if not selected_columns:
-            self._set_column_selection_summary("Choose columns")
+            self._set_column_selection_summary(f"Choose columns{limit_suffix}")
             return
         if len(selected_columns) <= 2:
-            self._set_column_selection_summary(", ".join(selected_columns))
+            self._set_column_selection_summary(f"{', '.join(selected_columns)}{limit_suffix}")
             return
         shown_columns = ", ".join(selected_columns[:2])
-        self._set_column_selection_summary(f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}")
+        self._set_column_selection_summary(
+            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
+        )
 
     def _select_all_columns(self) -> None:
         for variable in self._column_selection_vars.values():

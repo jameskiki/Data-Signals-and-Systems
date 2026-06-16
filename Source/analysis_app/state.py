@@ -11,6 +11,7 @@ from Source.shared.plot_style_state import PlotStyleVars
 
 ANALYSIS_WINDOW_GEOMETRY = "1450x900"
 PREVIEW_ROW_LIMIT = 200
+PLOT_Y_SELECTOR_MAX_ITEMS = 300
 DERIVED_OPERATIONS = [
     "delta", "ratio", "rolling_mean", "derivative", "normalized",
     "detrend", "integrate", "rms_envelope", "hilbert_envelope",
