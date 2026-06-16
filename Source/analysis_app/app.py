@@ -65,6 +65,12 @@ from Source.shared.column_roles import (
 )
 from Source.shared.base_app_shell import BaseAppShell
 from Source.shared.demo_catalog import describe_demo_frequency_expectations
+from Source.shared.table_adapter import (
+    is_tksheet_available,
+    set_configured_table_backend,
+    TREEVIEW_TABLE_BACKEND,
+    TKSHEET_TABLE_BACKEND,
+)
 
 from Source.data_ops.filtering import resolve_filtered_column_name
 from Source.data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
@@ -72,6 +78,7 @@ from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from Source.data_ops.summary import summarize_dataframe
 from Source.shared.plot_options import PlotOptions, PlotStyle
+from Source.shared.ui_state import UiStateVars
 from . import plotting as plotting_ops
 
 
@@ -137,8 +144,20 @@ class AnalysisWorkspace(BaseAppShell):
         self.plot_x_var = tk.StringVar(value="Index")
         self.plot_y_selection_summary_var = tk.StringVar(value="No numeric channels available")
         self.plot_subplots_var = tk.BooleanVar(value=True)
-        self.style_vars = PlotStyleVars()
+        self.style_vars = UiStateVars()
         self.style_vars.load_from_file()
+        preferred_table_backend = self.style_vars.table_backend.get()
+        try:
+            preferred_table_backend = set_configured_table_backend(preferred_table_backend)
+        except ValueError:
+            preferred_table_backend = TREEVIEW_TABLE_BACKEND
+            set_configured_table_backend(preferred_table_backend)
+        if preferred_table_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
+            preferred_table_backend = TREEVIEW_TABLE_BACKEND
+            set_configured_table_backend(preferred_table_backend)
+            self.style_vars.table_backend.set(preferred_table_backend)
+            self.style_vars.save_to_file()
+        self.table_backend_var = tk.StringVar(value=preferred_table_backend)
         self._style_dialog: tk.Toplevel | None = None
         self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
         self.fft_reference_var = tk.StringVar(value="Index")
@@ -303,7 +322,29 @@ class AnalysisWorkspace(BaseAppShell):
             self.session.working_frame,
             PREVIEW_ROW_LIMIT,
             self.column_roles,
+            backend=self.table_backend_var.get(),
         )
+
+    def _apply_table_backend_selection(self) -> None:
+        requested_backend = self.table_backend_var.get()
+        if requested_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
+            set_configured_table_backend(TREEVIEW_TABLE_BACKEND)
+            if self.table_backend_var.get() != TREEVIEW_TABLE_BACKEND:
+                self.table_backend_var.set(TREEVIEW_TABLE_BACKEND)
+            self.style_vars.table_backend.set(TREEVIEW_TABLE_BACKEND)
+            self.style_vars.save_to_file()
+            self.notify_warning(
+                "tksheet preview backend unavailable",
+                "Install the optional tksheet package to enable it from the View menu.",
+            )
+            return
+
+        normalized_backend = set_configured_table_backend(requested_backend)
+        if self.table_backend_var.get() != normalized_backend:
+            self.table_backend_var.set(normalized_backend)
+        self.style_vars.table_backend.set(normalized_backend)
+        self.style_vars.save_to_file()
+        self._refresh_preview()
 
     def _refresh_statistics(self) -> None:
         stats_frame = self.session.last_summary.statistics_frame if self.session.last_summary else pd.DataFrame()

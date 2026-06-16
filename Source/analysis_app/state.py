@@ -6,7 +6,7 @@ import pandas as pd
 
 from Source.data_ops.models import DataSummary
 from Source.data_ops.spectral import FFT_WINDOW_OPTIONS
-from Source.shared.plot_style_state import PlotStyleVars
+from Source.shared.ui_state import UiStateVars
 
 
 ANALYSIS_WINDOW_GEOMETRY = "1450x900"
@@ -34,6 +34,9 @@ CORRELATION_STRONG_POSITIVE_COLOR = "#0b3d2e"
 CORRELATION_STRONG_NEGATIVE_COLOR = "#7a1c3a"
 CORRELATION_DIAGONAL_COLOR = "#0d47a1"
 CORRELATION_HEADER_COLOR = "#444444"
+
+
+PlotStyleVars = UiStateVars
 
 
 @dataclass

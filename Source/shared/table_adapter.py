@@ -9,6 +9,7 @@ Optional: tksheet.Sheet (per-cell styling, feature-gated)
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -18,6 +19,41 @@ from tkinter import ttk
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+TABLE_BACKEND_ENV_VAR = "EVALDATA_TABLE_BACKEND"
+TREEVIEW_TABLE_BACKEND = "treeview"
+TKSHEET_TABLE_BACKEND = "tksheet"
+DEFAULT_TABLE_BACKEND = TREEVIEW_TABLE_BACKEND
+VALID_TABLE_BACKENDS = frozenset({TREEVIEW_TABLE_BACKEND, TKSHEET_TABLE_BACKEND})
+
+
+def normalize_table_backend(backend: str | None) -> str:
+    """Return a validated table backend name."""
+    normalized = (backend or DEFAULT_TABLE_BACKEND).lower().strip()
+    if normalized not in VALID_TABLE_BACKENDS:
+        raise ValueError(
+            f"Unknown {TABLE_BACKEND_ENV_VAR}: {normalized!r}. "
+            f"Must be '{TREEVIEW_TABLE_BACKEND}' or '{TKSHEET_TABLE_BACKEND}'."
+        )
+    return normalized
+
+
+def get_configured_table_backend() -> str:
+    """Return the configured preview table backend."""
+    return normalize_table_backend(os.getenv(TABLE_BACKEND_ENV_VAR, DEFAULT_TABLE_BACKEND))
+
+
+def set_configured_table_backend(backend: str) -> str:
+    """Persist the configured preview table backend for the current process."""
+    normalized = normalize_table_backend(backend)
+    os.environ[TABLE_BACKEND_ENV_VAR] = normalized
+    return normalized
+
+
+def is_tksheet_available() -> bool:
+    """Return whether the optional tksheet dependency can be imported."""
+    return importlib.util.find_spec("tksheet") is not None
 
 
 class TableWidgetAdapter(ABC):
@@ -105,7 +141,6 @@ class TTreeviewAdapter(TableWidgetAdapter):
             selectmode=selectmode,
             show="headings" if show_headings else "tree",
         )
-        self._tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
 
     def get_widget(self) -> ttk.Treeview:
         """Return the Treeview widget."""
@@ -118,12 +153,16 @@ class TTreeviewAdapter(TableWidgetAdapter):
         self._tree.configure(columns=columns)
         specs = column_specs or []
         for col, spec in zip(columns, specs):
-            self._tree.heading(col, text=spec.get("label", col))
+            self._tree.heading(
+                col,
+                text=spec.get("label", col),
+                anchor=spec.get("heading_anchor", spec.get("anchor", "center")),
+            )
             self._tree.column(
                 col,
                 width=spec.get("width", 100),
                 minwidth=spec.get("minwidth", 50),
-                anchor=spec.get("anchor", "e"),
+                anchor=spec.get("anchor", "center"),
                 stretch=spec.get("stretch", False),
             )
         # Handle remaining columns without specs
@@ -200,12 +239,28 @@ class TksheetAdapter(TableWidgetAdapter):
         # selection via disable_bindings if needed. For now, we'll allow selection.
         self._sheet = tksheet.Sheet(
             container,
-            theme="dark blue",
+            theme="light blue",
             row_height=25,
             column_width=100,
-            headers=[""] if show_headings else [],
+            default_header_height=2,
+            align="center",
+            header_align="center",
+            show_header=show_headings,
         )
-        self._sheet.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        self._sheet.set_options(
+            redraw=False,
+            table_bg="#ffffff",
+            table_fg="#111111",
+            header_bg="#ffffff",
+            header_fg="#111111",
+            index_bg="#ffffff",
+            index_fg="#111111",
+            table_grid_fg="#e1e1e1",
+            header_grid_fg="#d3d3d3",
+            index_grid_fg="#d3d3d3",
+            align="center",
+            header_align="center",
+        )
         self._columns: list[str] = []
 
     def get_widget(self) -> tk.Widget:
@@ -217,12 +272,34 @@ class TksheetAdapter(TableWidgetAdapter):
     ) -> None:
         """Configure tksheet columns."""
         self._columns = columns
-        self._sheet.data = [[col for col in columns]]  # Header row
-
         specs = column_specs or []
-        for idx, (col, spec) in enumerate(zip(columns, specs)):
+        header_labels = [spec.get("label", col) for col, spec in zip(columns, specs)]
+        if len(header_labels) < len(columns):
+            header_labels.extend(columns[len(header_labels) :])
+
+        # Keep headers separate from sheet data (tksheet renders these independently).
+        self._sheet.headers(header_labels if self._show_headings else [], redraw=False)
+        if self._show_headings and any("\n" in str(label) for label in header_labels):
+            self._sheet.set_header_height_lines(2, redraw=False)
+        self._sheet.total_columns(len(columns))
+        self._sheet.set_sheet_data([], reset_col_positions=True, reset_row_positions=True, redraw=False)
+        self._sheet.dehighlight_columns("all", redraw=False)
+
+        for idx, (_, spec) in enumerate(zip(columns, specs)):
             width = spec.get("width", 100)
             self._sheet.column_width(column=idx, width=width)
+            column_bg = spec.get("bg")
+            column_fg = spec.get("fg")
+            if column_bg is not None or column_fg is not None:
+                self._sheet.highlight_columns(
+                    idx,
+                    bg=column_bg if column_bg is not None else False,
+                    fg=column_fg if column_fg is not None else False,
+                    highlight_header=True,
+                    redraw=False,
+                    overwrite=True,
+                )
+        self._sheet.redraw()
 
     def insert_row(
         self,
@@ -231,8 +308,9 @@ class TksheetAdapter(TableWidgetAdapter):
         tags: tuple[str, ...] | None = None,
     ) -> str:
         """Insert a row into the tksheet."""
-        row_idx = len(self._sheet.data)
-        self._sheet.data.append(list(values))
+        self._sheet.insert_row(list(values), redraw=False)
+        row_idx = self._sheet.get_total_rows() - 1
+        self._sheet.redraw()
 
         # TODO: tksheet per-cell styling support (tag_name -> cell color mapping)
         # For now, we insert the row without style.
@@ -253,7 +331,7 @@ class TksheetAdapter(TableWidgetAdapter):
 
     def clear(self) -> None:
         """Remove all rows from the tksheet (keeping headers)."""
-        self._sheet.data = [[col for col in self._columns]]
+        self._sheet.set_sheet_data([], reset_row_positions=True, redraw=True)
 
     def set_selectmode(self, selectmode: str) -> None:
         """Set selection mode (stub for API compatibility)."""
@@ -266,10 +344,11 @@ def create_table_adapter(
     *,
     selectmode: str = "none",
     show_headings: bool = True,
+    backend: str | None = None,
 ) -> TableWidgetAdapter:
     """Factory function to create the appropriate table adapter.
 
-    Reads EVALDATA_TABLE_BACKEND environment variable:
+    Reads EVALDATA_TABLE_BACKEND environment variable unless *backend* is passed:
     - 'tksheet': Use tksheet.Sheet (requires tksheet package)
     - 'treeview' or unset: Use ttk.Treeview (default, always available)
 
@@ -277,6 +356,7 @@ def create_table_adapter(
         container: Parent ttk.Frame to host the widget.
         selectmode: Selection mode for the table.
         show_headings: Whether to show column headings.
+        backend: Optional explicit backend override.
 
     Returns:
         TableWidgetAdapter instance (TTreeviewAdapter or TksheetAdapter).
@@ -284,22 +364,22 @@ def create_table_adapter(
     Raises:
         ValueError: If EVALDATA_TABLE_BACKEND is set to an unknown backend.
     """
-    backend = os.getenv("EVALDATA_TABLE_BACKEND", "treeview").lower().strip()
+    backend_name = normalize_table_backend(backend) if backend is not None else get_configured_table_backend()
 
-    if backend == "treeview":
+    if backend_name == TREEVIEW_TABLE_BACKEND:
         return TTreeviewAdapter(container, selectmode=selectmode, show_headings=show_headings)
-    elif backend == "tksheet":
+    if backend_name == TKSHEET_TABLE_BACKEND:
         try:
             return TksheetAdapter(container, selectmode=selectmode, show_headings=show_headings)
         except ImportError:
             # Fallback to Treeview if tksheet not installed
             print(
-                f"Warning: EVALDATA_TABLE_BACKEND=tksheet but tksheet not installed. "
+                f"Warning: {TABLE_BACKEND_ENV_VAR}={TKSHEET_TABLE_BACKEND} but tksheet not installed. "
                 f"Falling back to Treeview."
             )
             return TTreeviewAdapter(container, selectmode=selectmode, show_headings=show_headings)
-    else:
-        raise ValueError(
-            f"Unknown EVALDATA_TABLE_BACKEND: {backend!r}. "
-            f"Must be 'treeview' or 'tksheet'."
-        )
+
+    raise ValueError(
+        f"Unknown {TABLE_BACKEND_ENV_VAR}: {backend_name!r}. "
+        f"Must be '{TREEVIEW_TABLE_BACKEND}' or '{TKSHEET_TABLE_BACKEND}'."
+    )

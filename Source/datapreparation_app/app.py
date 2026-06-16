@@ -54,8 +54,14 @@ from Source.shared.column_roles import summarize_column_roles
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.base_app_shell import BaseAppShell
 from Source.shared.notifications import NotificationManager
-from Source.shared.plot_style_state import PlotStyleVars
 from Source.shared.plot_utils import normalize_x_values
+from Source.shared.table_adapter import (
+    is_tksheet_available,
+    set_configured_table_backend,
+    TREEVIEW_TABLE_BACKEND,
+    TKSHEET_TABLE_BACKEND,
+)
+from Source.shared.ui_state import UiStateVars
 from .state import (
     APP_TITLE,
     COLUMN_SELECTOR_MAX_ITEMS,
@@ -99,8 +105,20 @@ class DataPreparationApp(BaseAppShell):
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
         self._style_dialog: tk.Toplevel | None = None
         self.notifications = NotificationManager()
-        self.style_vars = PlotStyleVars()
+        self.style_vars = UiStateVars()
         self.style_vars.load_from_file()
+        preferred_table_backend = self.style_vars.table_backend.get()
+        try:
+            preferred_table_backend = set_configured_table_backend(preferred_table_backend)
+        except ValueError:
+            preferred_table_backend = TREEVIEW_TABLE_BACKEND
+            set_configured_table_backend(preferred_table_backend)
+        if preferred_table_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
+            preferred_table_backend = TREEVIEW_TABLE_BACKEND
+            set_configured_table_backend(preferred_table_backend)
+            self.style_vars.table_backend.set(preferred_table_backend)
+            self.style_vars.save_to_file()
+        self.table_backend_var = tk.StringVar(value=preferred_table_backend)
 
         self.selected_dataset_var = tk.StringVar(value="No dataset selected")
         self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")
@@ -205,6 +223,36 @@ class DataPreparationApp(BaseAppShell):
 
     def _handle_output_dataset_name_changed(self, *_args: object) -> None:
         self._set_output_dataset_name(self.column_output_name_var.get(), update_var=False)
+
+    def _apply_table_backend_selection(self) -> None:
+        requested_backend = self.table_backend_var.get()
+        if requested_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
+            set_configured_table_backend(TREEVIEW_TABLE_BACKEND)
+            if self.table_backend_var.get() != TREEVIEW_TABLE_BACKEND:
+                self.table_backend_var.set(TREEVIEW_TABLE_BACKEND)
+            self.style_vars.table_backend.set(TREEVIEW_TABLE_BACKEND)
+            self.style_vars.save_to_file()
+            self.notify_warning(
+                "tksheet preview backend unavailable",
+                "Install the optional tksheet package to enable it from the View menu.",
+            )
+            return
+
+        normalized_backend = set_configured_table_backend(requested_backend)
+        if self.table_backend_var.get() != normalized_backend:
+            self.table_backend_var.set(normalized_backend)
+        self.style_vars.table_backend.set(normalized_backend)
+        self.style_vars.save_to_file()
+        self._refresh_active_preview_table()
+
+    def _refresh_active_preview_table(self) -> None:
+        selected_path = self._get_single_selected_file_path()
+        if selected_path is None:
+            return
+        dataframe = self.data_frames[selected_path]
+        context = self.dataset_contexts.get(selected_path, DatasetContext(source_paths=[selected_path], description=""))
+        preview_frame = self._get_row_range_filtered_frame(dataframe, context.column_roles)
+        refresh_preview_table(self, preview_frame, PREVIEW_ROW_LIMIT, context.column_roles)
 
     def load_files(self) -> None:
         return load_files(self)

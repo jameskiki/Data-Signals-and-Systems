@@ -70,11 +70,15 @@ class FakeMenu:
         self.master = master
         self.tearoff = tearoff
         self.commands = []
+        self.radiobuttons = []
         self.cascades = []
         self.separators = 0
 
     def add_command(self, **kwargs):
         self.commands.append(kwargs)
+
+    def add_radiobutton(self, **kwargs):
+        self.radiobuttons.append(kwargs)
 
     def add_cascade(self, **kwargs):
         self.cascades.append(kwargs)
@@ -134,7 +138,13 @@ def test_analysis_workspace_uses_nested_panes(monkeypatch):
     monkeypatch.setattr(analysis_layout, "build_notebook", lambda *_args: None)
     monkeypatch.setattr(analysis_layout, "build_plot_panel", lambda *_args: None)
 
-    workspace = SimpleNamespace(window=FakeWidget(), notifications=object(), open_documentation=lambda _path: None)
+    workspace = SimpleNamespace(
+        window=FakeWidget(),
+        notifications=object(),
+        table_backend_var=object(),
+        _apply_table_backend_selection=lambda: None,
+        open_documentation=lambda _path: None,
+    )
 
     analysis_layout.build_analysis_workspace_ui(workspace)
 
@@ -160,6 +170,7 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
     app = SimpleNamespace(
         root=FakeWidget(),
         notifications=object(),
+        table_backend_var=object(),
         load_files=lambda: None,
         _load_demo_dataset=lambda _key: None,
         load_all_demo_test_signals=lambda: None,
@@ -170,6 +181,7 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
         split_selected_dataset=lambda: None,
         plot_selected_data=lambda: None,
         open_analysis_workspace=lambda: None,
+        _apply_table_backend_selection=lambda: None,
         open_documentation=lambda _path: None,
     )
 

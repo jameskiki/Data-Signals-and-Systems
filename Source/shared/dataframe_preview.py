@@ -2,14 +2,43 @@
 
 from __future__ import annotations
 
+import pathlib
+import re
+import sys
 import tkinter as tk
 from tkinter import ttk
+from typing import Protocol, cast
 
 import pandas as pd
 
-from .column_roles import get_column_role_label
-from .display_format import format_display_value
-from .table_adapter import create_table_adapter
+try:
+    from .column_roles import get_column_role_label
+    from .column_roles import get_column_role
+    from .column_roles import get_column_role_cell_colors
+    from .display_format import format_display_value
+    from .table_adapter import create_table_adapter
+except ImportError:
+    workspace_root = pathlib.Path(__file__).resolve().parents[2]
+    workspace_root_str = str(workspace_root)
+    if workspace_root_str not in sys.path:
+        sys.path.insert(0, workspace_root_str)
+    from Source.shared.column_roles import get_column_role_label
+    from Source.shared.column_roles import get_column_role
+    from Source.shared.column_roles import get_column_role_cell_colors
+    from Source.shared.display_format import format_display_value
+    from Source.shared.table_adapter import create_table_adapter
+
+
+class _ScrollableWidget(Protocol):
+    def grid(self, **kwargs: object) -> object: ...
+
+    def yview(self, *args: object) -> tuple[float, float] | None: ...
+
+    def xview(self, *args: object) -> tuple[float, float] | None: ...
+
+    def configure(self, **kwargs: object) -> object: ...
+
+    def destroy(self) -> None: ...
 
 
 def render_dataframe_preview(
@@ -20,11 +49,13 @@ def render_dataframe_preview(
     *,
     layout: str = "pack",
     empty_message: str | None = None,
+    backend: str | None = None,
 ) -> tk.Widget | None:
     """Render a scrollable preview of the first dataframe rows.
 
     Uses a table widget adapter to support multiple backends (Treeview, tksheet, etc).
-    The backend is selected via EVALDATA_TABLE_BACKEND environment variable.
+    The backend is selected via the optional *backend* override or the
+    EVALDATA_TABLE_BACKEND environment variable.
     Defaults to ttk.Treeview for compatibility.
     """
 
@@ -45,17 +76,23 @@ def render_dataframe_preview(
     outer_frame.columnconfigure(0, weight=1)
 
     # Create adapter and configure widget
-    adapter = create_table_adapter(outer_frame, selectmode="none")
+    adapter = create_table_adapter(outer_frame, selectmode="none", backend=backend)
     
     # Build column specs with headers and metadata
     column_specs = []
     for col_name in columns:
         role_label = get_column_role_label(resolved_roles, col_name)
+        role_name = get_column_role(resolved_roles, col_name)
+        role_bg, role_fg = get_column_role_cell_colors(role_name)
         column_specs.append({
-            "label": f"{col_name} [{role_label}]",
-            "width": 140,
+            "label": _build_compact_header_label(col_name, role_label),
+            "width": 120,
             "minwidth": 60,
+            "anchor": "center",
+            "heading_anchor": "center",
             "stretch": False,
+            "bg": role_bg,
+            "fg": role_fg,
         })
     
     adapter.configure_columns(columns, column_specs)
@@ -66,18 +103,31 @@ def render_dataframe_preview(
         adapter.insert_row(tuple(format_display_value(v) for v in row_values))
 
     # Set up scrollbars
-    widget = adapter.get_widget()
+    widget = cast(_ScrollableWidget, adapter.get_widget())
+    widget.grid(row=0, column=0, sticky="nsew")
+    if hasattr(widget, "set_header_height_lines") and any("\n" in spec.get("label", "") for spec in column_specs):
+        # tksheet computes header geometry after the widget is laid out.
+        # Apply multi-line header height only after grid() so line 2 is visible.
+        widget.set_header_height_lines(2, redraw=False)
+        if hasattr(widget, "redraw"):
+            widget.redraw()
     v_scroll = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=widget.yview)
     v_scroll.grid(row=0, column=1, sticky="ns")
     h_scroll = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=widget.xview)
     _place_horizontal_scrollbar(h_scroll, layout=layout)
-    widget.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+    try:
+        widget.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+    except tk.TclError:
+        # Some widgets (for example tksheet) do not expose Tk's
+        # -xscrollcommand / -yscrollcommand options and manage scrolling internally.
+        v_scroll.destroy()
+        h_scroll.destroy()
 
     if layout == "grid":
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
 
-    return widget
+    return cast(tk.Widget, widget)
 
 
 def _clear_container(container: ttk.Frame) -> None:
@@ -108,3 +158,19 @@ def _render_empty_message(container: ttk.Frame, message: str, *, layout: str) ->
         container.columnconfigure(0, weight=1)
         return
     label.pack(anchor="w", padx=5, pady=5)
+
+
+def _build_compact_header_label(column_name: str, role_label: str) -> str:
+    """Build a compact multi-line header label.
+
+    If a column name ends with a bracketed suffix (typically units), move the
+    suffix to a second line. Otherwise, show the role label on line two.
+    """
+
+    match = re.fullmatch(r"\s*(.*?)\s*(\[[^\]]+\])\s*", column_name)
+    if match:
+        base_name = match.group(1).strip()
+        suffix = match.group(2).strip()
+        if base_name:
+            return f"{base_name}\n{suffix}"
+    return f"{column_name}\n[{role_label}]"

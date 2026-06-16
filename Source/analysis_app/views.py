@@ -76,10 +76,19 @@ def render_dataframe_preview(
     dataframe: pd.DataFrame,
     row_limit: int,
     column_roles: dict[str, str] | None = None,
-) -> ttk.Treeview | None:
+    *,
+    backend: str | None = None,
+) -> tk.Widget | None:
     """Render a scrollable preview of the first rows of the dataframe."""
 
-    return render_shared_dataframe_preview(container, dataframe, row_limit, column_roles, layout="pack")
+    return render_shared_dataframe_preview(
+        container,
+        dataframe,
+        row_limit,
+        column_roles,
+        layout="pack",
+        backend=backend,
+    )
 
 
 def render_statistics_tree(

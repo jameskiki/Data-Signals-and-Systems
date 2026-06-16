@@ -16,6 +16,21 @@ def build_analysis_workspace_ui(workspace) -> None:
     menu_bar = tk.Menu(workspace.window)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)
+    preview_backend_menu = tk.Menu(view_menu, tearoff=0)
+    preview_backend_menu.add_radiobutton(
+        label="Treeview",
+        value="treeview",
+        variable=workspace.table_backend_var,
+        command=workspace._apply_table_backend_selection,
+    )
+    preview_backend_menu.add_radiobutton(
+        label="tksheet",
+        value="tksheet",
+        variable=workspace.table_backend_var,
+        command=workspace._apply_table_backend_selection,
+    )
+    view_menu.add_cascade(label="Preview Table Backend", menu=preview_backend_menu)
+    view_menu.add_separator()
     view_menu.add_command(
         label="Plot Style...",
         command=lambda: open_plot_style_dialog(

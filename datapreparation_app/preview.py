@@ -4,9 +4,9 @@ import tkinter as tk
 from tkinter import ttk
 
 from matplotlib.widgets import SpanSelector
-from shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
-from shared.plot_utils import create_plot_figure
-from shared.plot_options import PlotOptions
+from Source.shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
+from Source.shared.plot_utils import create_plot_figure
+from Source.shared.plot_options import PlotOptions
 import pandas as pd
 
 from .datasets import (

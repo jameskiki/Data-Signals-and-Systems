@@ -30,6 +30,7 @@ def refresh_preview_table(app, dataframe: pd.DataFrame, row_limit: int, column_r
         column_roles,
         layout="grid",
         empty_message="The dataset is empty.",
+        backend=app.table_backend_var.get(),
     )
 
 
