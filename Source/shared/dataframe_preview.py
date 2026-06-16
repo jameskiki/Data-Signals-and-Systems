@@ -9,6 +9,7 @@ import pandas as pd
 
 from .column_roles import get_column_role_label
 from .display_format import format_display_value
+from .table_adapter import create_table_adapter
 
 
 def render_dataframe_preview(
@@ -19,11 +20,12 @@ def render_dataframe_preview(
     *,
     layout: str = "pack",
     empty_message: str | None = None,
-) -> ttk.Treeview | None:
+) -> tk.Widget | None:
     """Render a scrollable preview of the first dataframe rows.
 
-    Uses a single Treeview widget instead of individual Label cells so that only
-    one Win32 HWND is allocated regardless of the number of rows or columns.
+    Uses a table widget adapter to support multiple backends (Treeview, tksheet, etc).
+    The backend is selected via EVALDATA_TABLE_BACKEND environment variable.
+    Defaults to ttk.Treeview for compatibility.
     """
 
     _clear_container(container)
@@ -42,29 +44,40 @@ def render_dataframe_preview(
     outer_frame.rowconfigure(0, weight=1)
     outer_frame.columnconfigure(0, weight=1)
 
-    tree = ttk.Treeview(outer_frame, columns=columns, show="headings", selectmode="none")
-    tree.grid(row=0, column=0, sticky="nsew")
-
-    v_scroll = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=tree.yview)
-    v_scroll.grid(row=0, column=1, sticky="ns")
-    h_scroll = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
-    _place_horizontal_scrollbar(h_scroll, layout=layout)
-    tree.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
-
+    # Create adapter and configure widget
+    adapter = create_table_adapter(outer_frame, selectmode="none")
+    
+    # Build column specs with headers and metadata
+    column_specs = []
     for col_name in columns:
         role_label = get_column_role_label(resolved_roles, col_name)
-        tree.heading(col_name, text=f"{col_name} [{role_label}]")
-        tree.column(col_name, width=140, minwidth=60, stretch=False)
+        column_specs.append({
+            "label": f"{col_name} [{role_label}]",
+            "width": 140,
+            "minwidth": 60,
+            "stretch": False,
+        })
+    
+    adapter.configure_columns(columns, column_specs)
 
+    # Insert data rows
     formatted_frame = preview_frame.astype(object).where(pd.notna(preview_frame), "")
     for row_values in formatted_frame.itertuples(index=False, name=None):
-        tree.insert("", "end", values=tuple(format_display_value(v) for v in row_values))
+        adapter.insert_row(tuple(format_display_value(v) for v in row_values))
+
+    # Set up scrollbars
+    widget = adapter.get_widget()
+    v_scroll = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL, command=widget.yview)
+    v_scroll.grid(row=0, column=1, sticky="ns")
+    h_scroll = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=widget.xview)
+    _place_horizontal_scrollbar(h_scroll, layout=layout)
+    widget.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
 
     if layout == "grid":
         container.rowconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
 
-    return tree
+    return widget
 
 
 def _clear_container(container: ttk.Frame) -> None:
