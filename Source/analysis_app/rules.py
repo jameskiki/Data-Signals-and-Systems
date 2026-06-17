@@ -136,7 +136,7 @@ SIGNAL_FILTER_RULES: dict[str, ParameterRule] = {
         hide_frames=_WINDOW_HIDE,
         required_non_empty=(),
         required_positive=("window_size",),
-        hint="Set Window size (integer ≥ 2) for the low-pass trend to subtract.",
+        hint="Set Window size (integer ≥ 2) for the moving-average trend to subtract; this is not a Butterworth high-pass.",
     ),
     "butterworth_lowpass": ParameterRule(
         domain="signal_filter",

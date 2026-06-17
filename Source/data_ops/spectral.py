@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from scipy.signal import csd, find_peaks, get_window, spectrogram, welch
 
 
 FFT_WINDOW_OPTIONS = ["hann", "hamming", "blackman", "rectangular"]
@@ -32,9 +33,6 @@ class FrequencySpectrumResult:
     amplitudes: np.ndarray
     phase: np.ndarray | None
     peaks_frame: pd.DataFrame
-    y_axis_label: str
-    plot_title: str
-    value_column_label: str
     segment_length: int | None = None
     overlap_fraction: float | None = None
     segment_count: int | None = None
@@ -111,9 +109,6 @@ def compute_fft_spectrum(
         amplitudes=amplitudes,
         phase=None,
         peaks_frame=peaks_frame,
-        y_axis_label="Amplitude",
-        plot_title=f"FFT of {source_column}",
-        value_column_label="Amp",
     )
 
 
@@ -165,35 +160,20 @@ def compute_welch_psd(
         raise ValueError("Welch segment length must be at least 4")
 
     step = max(1, int(round(normalized_segment_length * (1.0 - normalized_overlap_fraction))))
+    noverlap = normalized_segment_length - step
     window_values = _build_window(window, normalized_segment_length)
-    window_power = float(np.sum(window_values * window_values))
-    if window_power == 0:
-        raise ValueError("Invalid Welch window configuration")
-
     working_values = values - values.mean() if detrend else values.copy()
-    segment_starts = list(range(0, values.size - normalized_segment_length + 1, step))
-    if not segment_starts:
-        segment_starts = [0]
-
-    n_freqs = normalized_segment_length // 2 + 1
-    segment_spectra = np.empty((len(segment_starts), n_freqs))
-    valid_count = 0
-    for start in segment_starts:
-        segment = working_values[start : start + normalized_segment_length]
-        if segment.size != normalized_segment_length:
-            continue
-        fft_values = np.fft.rfft(segment * window_values)
-        power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
-        if power_density.size > 2:
-            power_density[1:-1] *= 2.0
-        segment_spectra[valid_count] = power_density
-        valid_count += 1
-
-    if valid_count == 0:
-        raise ValueError("Unable to build Welch segments from the selected data")
-
-    frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
-    amplitudes = np.mean(segment_spectra[:valid_count], axis=0)
+    frequencies, amplitudes = welch(
+        working_values,
+        fs=1.0 / resolved_sample_spacing,
+        window=window_values,
+        nperseg=normalized_segment_length,
+        noverlap=noverlap,
+        detrend=False,
+        return_onesided=True,
+        scaling="density",
+    )
+    valid_count = len(range(0, values.size - normalized_segment_length + 1, step))
     dominant_index = _get_dominant_frequency_index(amplitudes)
     peaks_frame = _build_peak_frame(frequencies, amplitudes, peak_count)
 
@@ -218,9 +198,6 @@ def compute_welch_psd(
         amplitudes=amplitudes,
         phase=None,
         peaks_frame=peaks_frame,
-        y_axis_label="PSD",
-        plot_title=f"Welch PSD of {source_column}",
-        value_column_label="PSD",
         segment_length=int(normalized_segment_length),
         overlap_fraction=float(normalized_overlap_fraction),
         segment_count=int(valid_count),
@@ -279,9 +256,6 @@ def compute_transfer_estimate(
         amplitudes=amplitudes,
         phase=phase,
         peaks_frame=peaks_frame,
-        y_axis_label="|H(f)| [dB]",
-        plot_title=f"Transfer Estimate: {comparison_column} -> {source_column}",
-        value_column_label="|H| [dB]",
         segment_length=int(prepared["segment_length"]),
         overlap_fraction=float(prepared["overlap_fraction"]),
         segment_count=int(prepared["segment_count"]),
@@ -337,9 +311,6 @@ def compute_coherence_spectrum(
         amplitudes=amplitudes,
         phase=None,
         peaks_frame=peaks_frame,
-        y_axis_label="Coherence",
-        plot_title=f"Coherence: {comparison_column} -> {source_column}",
-        value_column_label="Coh",
         segment_length=int(prepared["segment_length"]),
         overlap_fraction=float(prepared["overlap_fraction"]),
         segment_count=int(prepared["segment_count"]),
@@ -398,39 +369,30 @@ def compute_spectrogram(
     normalized_segment_length = max(4, min(int(segment_length), values.size))
     if normalized_segment_length % 2 == 1:
         normalized_segment_length -= 1
+    if normalized_segment_length < 4:
+        raise ValueError("Spectrogram segment length must be at least 4")
 
     normalized_overlap_fraction = float(overlap_fraction)
+    if not 0 <= normalized_overlap_fraction < 1:
+        raise ValueError("Spectrogram overlap fraction must be between 0 and 1")
+
     step = max(1, int(round(normalized_segment_length * (1.0 - normalized_overlap_fraction))))
+    noverlap = normalized_segment_length - step
     window_values = _build_window(window, normalized_segment_length)
-    window_power = float(np.sum(window_values * window_values))
-    if window_power == 0:
-        raise ValueError("Invalid window configuration")
 
     working_values = values - values.mean() if detrend else values.copy()
 
-    segment_starts = list(range(0, values.size - normalized_segment_length + 1, step))
-    if not segment_starts:
-        raise ValueError("Unable to build spectrogram segments from the selected data")
-
-    n_freqs = normalized_segment_length // 2 + 1
-    power = np.empty((len(segment_starts), n_freqs))
-    times = np.empty(len(segment_starts))
-    valid_count = 0
-    for start in segment_starts:
-        segment = working_values[start : start + normalized_segment_length]
-        if segment.size != normalized_segment_length:
-            continue
-        fft_values = np.fft.rfft(segment * window_values)
-        power_density = np.abs(fft_values) ** 2 / (window_power / resolved_sample_spacing)
-        if power_density.size > 2:
-            power_density[1:-1] *= 2.0
-        power[valid_count] = power_density
-        times[valid_count] = (start + normalized_segment_length // 2) * resolved_sample_spacing
-        valid_count += 1
-
-    frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
-    power = power[:valid_count]  # shape: (n_times, n_freqs)
-    times = times[:valid_count]
+    frequencies, times, power = spectrogram(
+        working_values,
+        fs=1.0 / resolved_sample_spacing,
+        window=window_values,
+        nperseg=normalized_segment_length,
+        noverlap=noverlap,
+        detrend=False,
+        return_onesided=True,
+        scaling="density",
+        mode="psd",
+    )
     fs = 1.0 / resolved_sample_spacing
 
     return SpectrogramResult(
@@ -441,9 +403,9 @@ def compute_spectrogram(
         segment_length=normalized_segment_length,
         overlap_fraction=normalized_overlap_fraction,
         window=window,
-        times=np.array(times),
+        times=np.asarray(times, dtype=float),
         frequencies=frequencies,
-        power=power,
+        power=np.asarray(power.T, dtype=float),
     )
 
 
@@ -469,15 +431,11 @@ def _estimate_sample_spacing(reference_values: pd.Series) -> tuple[float, float]
 
 def _build_window(window: str, size: int) -> np.ndarray:
     normalized_window = window.strip().lower()
-    if normalized_window == "hann":
-        return np.hanning(size)
-    if normalized_window == "hamming":
-        return np.hamming(size)
-    if normalized_window == "blackman":
-        return np.blackman(size)
-    if normalized_window == "rectangular":
-        return np.ones(size)
-    raise ValueError(f"Unsupported FFT window: {window}")
+    scipy_window = "boxcar" if normalized_window == "rectangular" else normalized_window
+    try:
+        return np.asarray(get_window(scipy_window, size, fftbins=True), dtype=float)
+    except ValueError as error:
+        raise ValueError(f"Unsupported FFT window: {window}") from error
 
 
 def _get_dominant_frequency_index(amplitudes: np.ndarray) -> int:
@@ -490,14 +448,34 @@ def _build_peak_frame(frequencies: np.ndarray, amplitudes: np.ndarray, peak_coun
     if amplitudes.size <= 1:
         return pd.DataFrame(columns=["rank", "frequency_hz", "amplitude"])
 
-    sorted_indices = np.argsort(amplitudes[1:])[::-1][: max(1, int(peak_count))] + 1
+    requested_count = max(1, int(peak_count))
+    candidate_amplitudes = np.asarray(amplitudes[1:], dtype=float)
+    peak_positions, _ = find_peaks(candidate_amplitudes)
+    ranked_indices: list[int] = []
+
+    if peak_positions.size > 0:
+        local_maxima_indices = peak_positions + 1
+        sorted_local_maxima = sorted(
+            local_maxima_indices.tolist(),
+            key=lambda index: (-float(amplitudes[index]), float(frequencies[index])),
+        )
+        ranked_indices.extend(sorted_local_maxima[:requested_count])
+
+    if len(ranked_indices) < requested_count:
+        fallback_indices = np.argsort(candidate_amplitudes)[::-1] + 1
+        for index in fallback_indices.tolist():
+            if index not in ranked_indices:
+                ranked_indices.append(int(index))
+            if len(ranked_indices) >= requested_count:
+                break
+
     peak_rows = [
         {
             "rank": rank,
             "frequency_hz": float(frequencies[index]),
             "amplitude": float(amplitudes[index]),
         }
-        for rank, index in enumerate(sorted_indices, start=1)
+        for rank, index in enumerate(ranked_indices, start=1)
     ]
     return pd.DataFrame(peak_rows)
 
@@ -554,34 +532,48 @@ def _prepare_dual_signal_spectra(
         raise ValueError("Welch segment length must be at least 4")
 
     step = max(1, int(round(normalized_segment_length * (1.0 - normalized_overlap_fraction))))
+    noverlap = normalized_segment_length - step
     window_values = _build_window(window, normalized_segment_length)
-    if not np.any(window_values):
-        raise ValueError("Invalid Welch window configuration")
 
     working_output = output_values - output_values.mean() if detrend else output_values.copy()
     working_input = input_values - input_values.mean() if detrend else input_values.copy()
 
-    n_freqs = normalized_segment_length // 2 + 1
-    cross_sum = np.zeros(n_freqs, dtype=complex)
-    auto_input_sum = np.zeros(n_freqs, dtype=float)
-    auto_output_sum = np.zeros(n_freqs, dtype=float)
-    segment_count = 0
-    for start in range(0, output_values.size - normalized_segment_length + 1, step):
-        output_segment = working_output[start : start + normalized_segment_length]
-        input_segment = working_input[start : start + normalized_segment_length]
-        if output_segment.size != normalized_segment_length or input_segment.size != normalized_segment_length:
-            continue
-        output_fft = np.fft.rfft(output_segment * window_values)
-        input_fft = np.fft.rfft(input_segment * window_values)
-        cross_sum += output_fft * np.conjugate(input_fft)
-        auto_input_sum += np.real(input_fft * np.conjugate(input_fft))
-        auto_output_sum += np.real(output_fft * np.conjugate(output_fft))
-        segment_count += 1
+    frequencies, cross_spectrum = csd(
+        working_input,
+        working_output,
+        fs=1.0 / resolved_sample_spacing,
+        window=window_values,
+        nperseg=normalized_segment_length,
+        noverlap=noverlap,
+        detrend=False,
+        return_onesided=True,
+        scaling="density",
+    )
+    _, auto_input = welch(
+        working_input,
+        fs=1.0 / resolved_sample_spacing,
+        window=window_values,
+        nperseg=normalized_segment_length,
+        noverlap=noverlap,
+        detrend=False,
+        return_onesided=True,
+        scaling="density",
+    )
+    _, auto_output = welch(
+        working_output,
+        fs=1.0 / resolved_sample_spacing,
+        window=window_values,
+        nperseg=normalized_segment_length,
+        noverlap=noverlap,
+        detrend=False,
+        return_onesided=True,
+        scaling="density",
+    )
+    segment_count = len(range(0, output_values.size - normalized_segment_length + 1, step))
 
     if segment_count == 0:
         raise ValueError("Unable to build Welch segments from the selected data")
 
-    frequencies = np.fft.rfftfreq(normalized_segment_length, d=resolved_sample_spacing)
     return {
         "sample_count": int(output_values.size),
         "sample_spacing": float(resolved_sample_spacing),
@@ -592,7 +584,7 @@ def _prepare_dual_signal_spectra(
         "overlap_fraction": float(normalized_overlap_fraction),
         "segment_count": int(segment_count),
         "frequencies": frequencies,
-        "cross_spectrum": cross_sum / segment_count,
-        "auto_input": auto_input_sum / segment_count,
-        "auto_output": auto_output_sum / segment_count,
+        "cross_spectrum": np.asarray(cross_spectrum, dtype=complex),
+        "auto_input": np.asarray(auto_input, dtype=float),
+        "auto_output": np.asarray(auto_output, dtype=float),
     }

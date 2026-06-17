@@ -982,13 +982,14 @@ class AnalysisWorkspace(BaseAppShell):
 
     @staticmethod
     def _build_frequency_summary(result: FrequencySpectrumResult) -> str:
+        display_labels = plotting_ops.get_frequency_display_labels(result)
         summary_parts = [
             f"n={result.sample_count}",
             f"dt={format_display_number(result.sample_spacing)} s",
             f"fs={format_display_number(result.sampling_frequency)} Hz",
             f"f_nyq={format_display_number(result.nyquist_frequency)} Hz",
             f"dominant={format_display_number(result.dominant_frequency)} Hz",
-            f"{result.value_column_label.lower()}={format_display_number(result.dominant_amplitude)}",
+            f"{display_labels.value_column_label.lower()}={format_display_number(result.dominant_amplitude)}",
             result.spacing_source_text,
         ]
         if result.comparison_column:
@@ -1012,6 +1013,7 @@ class AnalysisWorkspace(BaseAppShell):
 
     @staticmethod
     def _build_frequency_export_lines(result: FrequencySpectrumResult) -> list[str]:
+        display_labels = plotting_ops.get_frequency_display_labels(result)
         lines = [
             f"Analysis: {result.analysis_name}",
             f"Source signal: {result.source_column}",
@@ -1020,7 +1022,7 @@ class AnalysisWorkspace(BaseAppShell):
             f"Sample spacing [s]: {format_display_number(result.sample_spacing)}",
             f"Nyquist [Hz]: {format_display_number(result.nyquist_frequency)}",
             f"Dominant frequency [Hz]: {format_display_number(result.dominant_frequency)}",
-            f"Dominant value ({result.value_column_label}): {format_display_number(result.dominant_amplitude)}",
+            f"Dominant value ({display_labels.value_column_label}): {format_display_number(result.dominant_amplitude)}",
         ]
         if result.segment_length is not None:
             lines.append(f"Welch segment length: {result.segment_length}")
