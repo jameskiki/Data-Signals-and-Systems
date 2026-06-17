@@ -63,7 +63,7 @@ from Source.shared.column_roles import (
     summarize_column_roles,
     update_projected_column_roles,
 )
-from Source.shared.base_app_shell import BaseAppShell
+from Source.shared.presentation_shell import PresentationShellMixin
 from Source.shared.demo_catalog import describe_demo_frequency_expectations
 from Source.shared.table_adapter import (
     is_tksheet_available,
@@ -82,7 +82,7 @@ from Source.shared.ui_state import UiStateVars
 from . import plotting as plotting_ops
 
 
-class AnalysisWorkspace(BaseAppShell):
+class AnalysisWorkspace(PresentationShellMixin):
     """Tkinter window for filtering, deriving, plotting, and exporting one dataset."""
 
     def __init__(
@@ -500,25 +500,13 @@ class AnalysisWorkspace(BaseAppShell):
         return item_to_result_index
 
     def _get_selected_cycle_indices(self) -> list[int]:
-        if self._cycle_metrics_tree is None:
-            return []
-        selected_items = self._cycle_metrics_tree.selection()
-        if not selected_items:
-            return []
-        selected_indices = [self._cycle_tree_item_to_result_index[item_id] for item_id in selected_items if item_id in self._cycle_tree_item_to_result_index]
-        return sorted(set(selected_indices))
+        return self.get_selected_treeview_indices(self._cycle_metrics_tree, self._cycle_tree_item_to_result_index)
 
     def _build_cycle_tree_full_index_map(self, tree: ttk.Treeview) -> dict[str, int]:
         return {item_id: full_index for full_index, item_id in enumerate(tree.get_children())}
 
     def _get_selected_cycle_full_indices(self) -> list[int]:
-        if self._cycle_metrics_tree is None:
-            return []
-        selected_items = self._cycle_metrics_tree.selection()
-        if not selected_items:
-            return []
-        selected_full_indices = [self._cycle_tree_item_to_full_index[item_id] for item_id in selected_items if item_id in self._cycle_tree_item_to_full_index]
-        return sorted(set(selected_full_indices))
+        return self.get_selected_treeview_indices(self._cycle_metrics_tree, self._cycle_tree_item_to_full_index)
 
     def _handle_cycle_metrics_selection_changed(self, _event: tk.Event | None = None) -> None:
         if self._latest_cycle_result is not None:
@@ -529,17 +517,12 @@ class AnalysisWorkspace(BaseAppShell):
             self._render_cycle_plot(self._latest_cycle_result)
 
     def _select_all_cycles(self) -> None:
-        if self._cycle_metrics_tree is None:
-            return
-        item_ids = self._cycle_metrics_tree.get_children()
-        self._cycle_metrics_tree.selection_set(item_ids)
+        self.select_all_treeview_items(self._cycle_metrics_tree)
         if self._latest_cycle_result is not None:
             self._render_cycle_plot(self._latest_cycle_result)
 
     def _clear_selected_cycles(self) -> None:
-        if self._cycle_metrics_tree is None:
-            return
-        self._cycle_metrics_tree.selection_remove(self._cycle_metrics_tree.selection())
+        self.clear_treeview_selection(self._cycle_metrics_tree)
         if self._latest_cycle_result is not None:
             self._render_cycle_plot(self._latest_cycle_result)
 
@@ -862,49 +845,28 @@ class AnalysisWorkspace(BaseAppShell):
         if self.plot_y_selector_menu is None or self.plot_y_selector_button is None:
             return
 
-        visible_columns = numeric_columns[:PLOT_Y_SELECTOR_MAX_ITEMS]
-        self._plot_y_selector_hidden_count = max(0, len(numeric_columns) - len(visible_columns))
-        self.plot_y_selection_vars = {}
-        self.plot_y_selector_menu.delete(0, tk.END)
-        if not visible_columns:
+        if not numeric_columns:
             self._clear_plot_y_column_selector()
             return
 
-        self.plot_y_selector_menu.add_command(label="Select all", command=self._select_all_plot_y_columns)
-        self.plot_y_selector_menu.add_command(label="Clear selection", command=self._clear_selected_plot_y_columns)
-        if self._plot_y_selector_hidden_count:
-            self.plot_y_selector_menu.add_separator()
-            self.plot_y_selector_menu.add_command(
-                label=(
-                    f"Showing first {len(visible_columns)} of {len(numeric_columns)} channels"
-                ),
-                state=tk.DISABLED,
-            )
-        self.plot_y_selector_menu.add_separator()
-
         self._plot_y_selector_sync_in_progress = True
-        for column_name in visible_columns:
-            variable = tk.BooleanVar(value=column_name in selected_columns)
-            variable.trace_add("write", self._handle_plot_y_column_selector_changed)
-            self.plot_y_selection_vars[column_name] = variable
-            background, foreground = self._get_plot_y_selector_colors(column_name)
-            self.plot_y_selector_menu.add_checkbutton(
-                label=column_name,
-                variable=variable,
-                onvalue=True,
-                offvalue=False,
-                background=background,
-                foreground=foreground,
-                activebackground=background,
-                activeforeground=foreground,
-                selectcolor=background,
-            )
+        self.plot_y_selection_vars, self._plot_y_selector_hidden_count = self._build_checkbutton_selector_menu(
+            menu=self.plot_y_selector_menu,
+            button=self.plot_y_selector_button,
+            items=numeric_columns,
+            selected_items=selected_columns,
+            max_items=PLOT_Y_SELECTOR_MAX_ITEMS,
+            get_colors=self._get_plot_y_selector_colors,
+            on_changed=self._handle_plot_y_column_selector_changed,
+            on_select_all=self._select_all_plot_y_columns,
+            on_clear_selection=self._clear_selected_plot_y_columns,
+            hidden_label="channels",
+        )
         self._plot_y_selector_sync_in_progress = False
-        self.plot_y_selector_button.state(["!disabled"])
         if self._plot_y_selector_hidden_count and not self._plot_y_selector_warning_shown:
             self.notifications.warning(
                 "Channel selector limited for very wide datasets: showing first "
-                f"{len(visible_columns)} of {len(numeric_columns)} channels."
+                f"{len(self.plot_y_selection_vars)} of {len(numeric_columns)} channels."
             )
             self._plot_y_selector_warning_shown = True
         self._update_plot_y_column_summary()
@@ -924,44 +886,33 @@ class AnalysisWorkspace(BaseAppShell):
             self.session.selected_y_columns = self._get_selected_plot_y_columns()
 
     def _update_plot_y_column_summary(self) -> None:
-        selected_columns = self._get_selected_plot_y_columns()
-        limit_suffix = ""
-        if self._plot_y_selector_hidden_count:
-            shown_count = len(self.plot_y_selection_vars)
-            total_count = shown_count + self._plot_y_selector_hidden_count
-            limit_suffix = f" (showing {shown_count} of {total_count})"
-        if not self.plot_y_selection_vars:
-            self.plot_y_selection_summary_var.set("No numeric channels available")
-            return
-        if not selected_columns:
-            self.plot_y_selection_summary_var.set(f"Choose channels{limit_suffix}")
-            return
-        if len(selected_columns) <= 2:
-            self.plot_y_selection_summary_var.set(f"{', '.join(selected_columns)}{limit_suffix}")
-            return
-        shown_columns = ", ".join(selected_columns[:2])
+        selected_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
         self.plot_y_selection_summary_var.set(
-            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
+            self.format_selector_summary(
+                selected_columns,
+                visible_count=len(self.plot_y_selection_vars),
+                hidden_count=self._plot_y_selector_hidden_count,
+                empty_text="No numeric channels available",
+                choose_text="Choose channels",
+            )
         )
 
     def _select_all_plot_y_columns(self) -> None:
         self._plot_y_selector_sync_in_progress = True
-        for variable in self.plot_y_selection_vars.values():
-            variable.set(True)
+        self.set_selector_items_state(self.plot_y_selection_vars, True)
         self._plot_y_selector_sync_in_progress = False
-        self.session.selected_y_columns = self._get_selected_plot_y_columns()
+        self.session.selected_y_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
         self._update_plot_y_column_summary()
 
     def _clear_selected_plot_y_columns(self) -> None:
         self._plot_y_selector_sync_in_progress = True
-        for variable in self.plot_y_selection_vars.values():
-            variable.set(False)
+        self.set_selector_items_state(self.plot_y_selection_vars, False)
         self._plot_y_selector_sync_in_progress = False
-        self.session.selected_y_columns = self._get_selected_plot_y_columns()
+        self.session.selected_y_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
         self._update_plot_y_column_summary()
 
     def _get_selected_plot_y_columns(self) -> list[str]:
-        return [column for column, variable in self.plot_y_selection_vars.items() if variable.get()]
+        return self.get_selected_selector_items(self.plot_y_selection_vars)
 
     def _get_plot_y_selector_colors(self, column_name: str) -> tuple[str, str]:
         return get_column_role_cell_colors(self.column_roles.get(column_name, "metadata"))

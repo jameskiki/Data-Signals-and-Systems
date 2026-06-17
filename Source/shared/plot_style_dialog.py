@@ -6,6 +6,8 @@ from collections.abc import Callable
 import tkinter as tk
 from tkinter import ttk
 
+from Source.shared.presentation_shell import PresentationShellMixin
+
 
 def open_plot_style_dialog(owner, root_window: tk.Misc, on_apply: Callable[[], None]) -> None:
     """Open a non-modal plot-style dialog for an app-like owner object."""
@@ -29,8 +31,12 @@ def open_plot_style_dialog(owner, root_window: tk.Misc, on_apply: Callable[[], N
     style_vars = owner.style_vars
 
     dialog = tk.Toplevel(root_window)
-    dialog.title("Plot Style")
-    dialog.resizable(False, False)
+    PresentationShellMixin.configure_modal_dialog(
+        dialog,
+        parent=root_window,
+        title="Plot Style",
+        resizable=(False, False),
+    )
     owner._style_dialog = dialog
 
     def _on_close() -> None:
