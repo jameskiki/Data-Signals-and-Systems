@@ -5,13 +5,10 @@ import pandas as pd
 import pytest
 
 from Source.data_ops.frame_ops import (
-    drop_dataframe_columns,
-    drop_dataframe_index_range,
     keep_dataframe_index_ranges,
     normalize_index_range,
     resample_to_uniform,
     select_dataframe_columns,
-    slice_dataframe_by_index_range,
     split_dataframe_by_index_ranges,
 )
 
@@ -35,37 +32,6 @@ class TestSelectColumns:
     def test_empty_selection_raises(self, two_column_df):
         with pytest.raises(ValueError):
             select_dataframe_columns(two_column_df, [])
-
-
-class TestDropColumns:
-    def test_removes_column(self, two_column_df):
-        result = drop_dataframe_columns(two_column_df, ["sensor_b"])
-        assert "sensor_b" not in result.columns
-        assert "sensor_a" in result.columns
-
-    def test_dropping_all_raises(self, two_column_df):
-        with pytest.raises(ValueError, match="empty"):
-            drop_dataframe_columns(two_column_df, list(two_column_df.columns))
-
-
-# ── Row slicing ──────────────────────────────────────────────────────
-
-
-class TestSliceByIndexRange:
-    def test_correct_length(self, linear_ramp):
-        result = slice_dataframe_by_index_range(linear_ramp, 100, 200)
-        assert len(result) == 100
-
-    def test_reset_index(self, linear_ramp):
-        result = slice_dataframe_by_index_range(linear_ramp, 50, 150)
-        assert result.index[0] == 0
-
-
-class TestDropIndexRange:
-    def test_reduces_row_count(self, linear_ramp):
-        original_len = len(linear_ramp)
-        result = drop_dataframe_index_range(linear_ramp, 100, 200)
-        assert len(result) == original_len - 100
 
 
 class TestNormalizeIndexRange:

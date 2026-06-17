@@ -21,55 +21,6 @@ def select_dataframe_columns(
 
     return dataframe.loc[:, list(selected_columns)].copy()
 
-
-def drop_dataframe_columns(
-    dataframe: pd.DataFrame,
-    columns_to_drop: Sequence[str],
-) -> pd.DataFrame:
-    """Return a copy without the requested columns."""
-
-    if not columns_to_drop:
-        raise ValueError("Select at least one column")
-
-    missing_columns = [column for column in columns_to_drop if column not in dataframe.columns]
-    if missing_columns:
-        raise KeyError(f"Unknown columns: {missing_columns}")
-
-    remaining_columns = [column for column in dataframe.columns if column not in set(columns_to_drop)]
-    if not remaining_columns:
-        raise ValueError("Dropping these columns would leave an empty dataframe")
-
-    return dataframe.loc[:, remaining_columns].copy()
-
-
-def slice_dataframe_by_index_range(
-    dataframe: pd.DataFrame,
-    start_index: int,
-    end_index: int,
-) -> pd.DataFrame:
-    """Return a row slice using a half-open interval [start, end)."""
-
-    normalized_start, normalized_end = normalize_index_range(len(dataframe), start_index, end_index)
-    return dataframe.iloc[normalized_start:normalized_end].reset_index(drop=True)
-
-
-def drop_dataframe_index_range(
-    dataframe: pd.DataFrame,
-    start_index: int,
-    end_index: int,
-) -> pd.DataFrame:
-    """Return a copy with one half-open row interval [start, end) removed."""
-
-    normalized_start, normalized_end = normalize_index_range(len(dataframe), start_index, end_index)
-    kept_frame = pd.concat(
-        [dataframe.iloc[:normalized_start], dataframe.iloc[normalized_end:]],
-        ignore_index=True,
-    )
-    if kept_frame.empty:
-        raise ValueError("Dropping this row range would leave an empty dataframe")
-    return kept_frame
-
-
 def split_dataframe_by_index_ranges(
     dataframe: pd.DataFrame,
     ranges: Sequence[tuple[int, int]],

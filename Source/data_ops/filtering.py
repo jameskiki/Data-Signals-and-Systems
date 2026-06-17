@@ -36,23 +36,6 @@ def apply_simple_filter(
     return working_frame
 
 
-def subset_dataframe_rows(
-    dataframe: pd.DataFrame,
-    source_column: str,
-    minimum_value: str = "",
-    maximum_value: str = "",
-    keep_missing: bool = False,
-) -> pd.DataFrame:
-    """Return a row subset based on one column range condition."""
-
-    if source_column not in dataframe.columns:
-        raise KeyError(f"Unknown source column: {source_column}")
-
-    series = dataframe[source_column]
-    mask = _build_filter_mask(series, minimum_value, maximum_value, keep_missing)
-    return dataframe.loc[mask].reset_index(drop=True)
-
-
 def _build_range_mask(series: pd.Series, minimum_value: str, maximum_value: str) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(series):
         return _build_datetime_range_mask(series, minimum_value, maximum_value)

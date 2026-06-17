@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from tkinter import font as tkfont, ttk
 
 import pandas as pd
-from Source.shared.column_roles import get_column_role, get_column_role_cell_colors, get_column_role_colors, get_column_role_label
+from Source.shared.column_roles import get_column_role, get_column_role_colors
 from Source.shared.dataframe_preview import render_dataframe_preview as render_shared_dataframe_preview
 from Source.shared.display_format import format_display_value
 

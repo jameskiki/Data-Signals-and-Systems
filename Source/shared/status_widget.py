@@ -1,7 +1,6 @@
 """UI widgets for displaying notifications and status."""
 
 import tkinter as tk
-from tkinter import ttk
 
 from Source.shared.notifications import Notification, NotificationManager, NotificationSeverity
 

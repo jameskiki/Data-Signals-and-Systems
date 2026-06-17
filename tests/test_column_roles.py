@@ -1,8 +1,6 @@
 """Tests for shared.column_roles — role inference and column utilities."""
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from Source.shared.column_roles import (
     get_available_column_roles,

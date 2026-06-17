@@ -1,6 +1,6 @@
 """Shared notification state and helpers for non-blocking UI feedback."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
 

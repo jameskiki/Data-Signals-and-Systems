@@ -9,15 +9,12 @@ from .cycles import (
     rebuild_cycle_analysis_result,
     detect_zero_crossing_cycle_ranges,
 )
-from .filtering import apply_simple_filter, resolve_filtered_column_name, subset_dataframe_rows
+from .filtering import apply_simple_filter, resolve_filtered_column_name
 from .frame_ops import (
-    drop_dataframe_columns,
-    drop_dataframe_index_range,
     keep_dataframe_index_ranges,
     normalize_index_range,
     resample_to_uniform,
     select_dataframe_columns,
-    slice_dataframe_by_index_range,
     split_dataframe_by_index_ranges,
 )
 from .io_ops import analyze_selected_dataframes, export_clean_dataframes, merge_selected_dataframes

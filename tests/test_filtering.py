@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from Source.data_ops.filtering import apply_simple_filter, resolve_filtered_column_name, subset_dataframe_rows
+from Source.data_ops.filtering import apply_simple_filter, resolve_filtered_column_name
 
 
 # ── resolve_filtered_column_name ─────────────────────────────────────
@@ -121,28 +121,3 @@ class TestSimpleFilterDatetime:
         result = apply_simple_filter(datetime_df, "ts", "filtered", maximum_value="2024-06-15")
         kept = result["filtered"].dropna()
         assert len(kept) == 2
-
-
-# ── subset_dataframe_rows ────────────────────────────────────────────
-
-
-class TestSubsetDataframeRows:
-    def test_reduces_row_count(self, numeric_df):
-        result = subset_dataframe_rows(numeric_df, "val", minimum_value="10")
-        assert len(result) < len(numeric_df)
-
-    def test_keeps_all_columns(self, numeric_df):
-        result = subset_dataframe_rows(numeric_df, "val", minimum_value="10")
-        assert list(result.columns) == list(numeric_df.columns)
-
-    def test_resets_index(self, numeric_df):
-        result = subset_dataframe_rows(numeric_df, "val", minimum_value="10")
-        assert result.index[0] == 0
-
-    def test_unknown_column_raises(self, numeric_df):
-        with pytest.raises(KeyError):
-            subset_dataframe_rows(numeric_df, "nonexistent", minimum_value="0")
-
-    def test_no_bounds_raises(self, numeric_df):
-        with pytest.raises(ValueError, match="minimum or maximum"):
-            subset_dataframe_rows(numeric_df, "val")

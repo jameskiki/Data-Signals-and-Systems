@@ -5,10 +5,10 @@ import threading
 from tkinter import filedialog, messagebox
 from .demo import DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 from .data_parser import DataParser
-from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, summarize_column_roles, collect_source_paths, build_virtual_dataset_path
+from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog, show_figure_in_window
-from .preview import refresh_preview_table, clear_preview_plot, clear_preview_table, refresh_preview_plot, refresh_preview_plot_signal_controls
+from .preview import refresh_preview_table
 from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
 from Source.shared.plot_utils import create_plot_figure
 

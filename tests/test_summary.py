@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from Source.shared.display_format import format_data_summary_overview
 from Source.data_ops.summary import build_correlation_frame, build_statistics_frame, summarize_dataframe

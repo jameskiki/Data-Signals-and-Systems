@@ -72,8 +72,7 @@ from Source.shared.table_adapter import (
     TKSHEET_TABLE_BACKEND,
 )
 
-from Source.data_ops.filtering import resolve_filtered_column_name
-from Source.data_ops.frame_ops import keep_dataframe_index_ranges, resample_to_uniform
+from Source.data_ops.frame_ops import keep_dataframe_index_ranges
 from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from Source.data_ops.summary import summarize_dataframe
