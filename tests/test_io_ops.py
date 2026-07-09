@@ -1,7 +1,5 @@
 """Tests for data_ops.io_ops – merge, analyze, and export dataframes."""
 
-import os
-
 import numpy as np
 import pandas as pd
 import pytest

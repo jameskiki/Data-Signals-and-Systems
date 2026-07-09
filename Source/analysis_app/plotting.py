@@ -6,6 +6,8 @@ reusing shared plotting contracts from Source.shared.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -22,6 +24,47 @@ from Source.shared.plot_utils import apply_axis_contract, create_plot_figure
 
 from .state import PlotStyleVars
 from .views import render_cycle_metrics_tree, render_fft_peaks_tree
+
+
+@dataclass(frozen=True)
+class FrequencyDisplayLabels:
+    plot_title: str
+    y_axis_label: str
+    value_column_label: str
+
+
+def get_frequency_display_labels(result: FrequencySpectrumResult) -> FrequencyDisplayLabels:
+    if result.analysis_name == "FFT Amplitude":
+        return FrequencyDisplayLabels(
+            plot_title=f"FFT of {result.source_column}",
+            y_axis_label="Amplitude",
+            value_column_label="Amp",
+        )
+    if result.analysis_name == "Welch PSD":
+        return FrequencyDisplayLabels(
+            plot_title=f"Welch PSD of {result.source_column}",
+            y_axis_label="PSD",
+            value_column_label="PSD",
+        )
+    if result.analysis_name == "Transfer Estimate":
+        comparison_column = result.comparison_column or "-"
+        return FrequencyDisplayLabels(
+            plot_title=f"Transfer Estimate: {comparison_column} -> {result.source_column}",
+            y_axis_label="|H(f)| [dB]",
+            value_column_label="|H| [dB]",
+        )
+    if result.analysis_name == "Coherence":
+        comparison_column = result.comparison_column or "-"
+        return FrequencyDisplayLabels(
+            plot_title=f"Coherence: {comparison_column} -> {result.source_column}",
+            y_axis_label="Coherence",
+            value_column_label="Coh",
+        )
+    return FrequencyDisplayLabels(
+        plot_title=result.analysis_name,
+        y_axis_label="Value",
+        value_column_label="Value",
+    )
 
 
 def refresh_live_plot(workspace) -> None:
@@ -139,6 +182,7 @@ def clear_plot_container(workspace) -> None:
 
 
 def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
+    display_labels = get_frequency_display_labels(result)
     for widget in workspace.fft_peaks_container.winfo_children():
         widget.destroy()
     workspace._fft_peaks_tree = None
@@ -153,7 +197,7 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
     workspace._fft_peaks_tree = render_fft_peaks_tree(
         workspace.fft_peaks_container,
         result.peaks_frame,
-        value_column_label=result.value_column_label,
+        value_column_label=display_labels.value_column_label,
     )
 
     style = get_default_plot_style(workspace.style_vars)
@@ -185,7 +229,13 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
     else:
         figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
     axis.plot(frequencies, amplitudes, linewidth=1.2)
-    apply_axis_contract(axis, title=result.plot_title, x_label="Frequency [Hz]", y_label=result.y_axis_label, style=style)
+    apply_axis_contract(
+        axis,
+        title=display_labels.plot_title,
+        x_label="Frequency [Hz]",
+        y_label=display_labels.y_axis_label,
+        style=style,
+    )
     axis.margins(x=0.02)
 
     if result.analysis_name == "Coherence":

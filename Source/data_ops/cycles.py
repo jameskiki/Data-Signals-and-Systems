@@ -71,6 +71,14 @@ def compute_cycle_analysis_from_ranges(
     total_used_rows = sum(cycle_lengths)
     dropped_rows = len(dataframe) - total_used_rows
     support_count = cycles_frame.notna().sum(axis=0).astype(int)
+    support_count_values = support_count.to_numpy()
+    representative_means = np.nanmean(cycle_matrix, axis=0)
+    representative_stds = np.full(representative_length, np.nan, dtype=float)
+    valid_std_columns = support_count_values > 1
+    if np.any(valid_std_columns):
+        representative_stds[valid_std_columns] = np.nanstd(cycle_matrix[:, valid_std_columns], axis=0, ddof=1)
+    representative_mins = np.nanmin(cycle_matrix, axis=0)
+    representative_maxs = np.nanmax(cycle_matrix, axis=0)
 
     cycle_lengths_arr = np.array(cycle_lengths)
     col_means = np.nanmean(cycle_matrix, axis=1)
@@ -98,11 +106,11 @@ def compute_cycle_analysis_from_ranges(
     representative_frame = pd.DataFrame(
         {
             "step": np.arange(representative_length),
-            "mean": cycles_frame.mean(axis=0),
-            "std": cycles_frame.std(axis=0),
-            "min": cycles_frame.min(axis=0),
-            "max": cycles_frame.max(axis=0),
-            "support_count": support_count.to_numpy(),
+            "mean": representative_means,
+            "std": representative_stds,
+            "min": representative_mins,
+            "max": representative_maxs,
+            "support_count": support_count_values,
         }
     )
 

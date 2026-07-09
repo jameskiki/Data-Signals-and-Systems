@@ -331,7 +331,7 @@ def build_signal_filter_tab(workspace, parent: ttk.Frame) -> None:
         "moving_average: low-pass smoothing\n"
         "median: spike-resistant smoothing\n"
         "exponential_smoothing: recursive low-pass filter\n"
-        "high_pass: original signal minus low-pass trend\n"
+        "high_pass: original signal minus moving-average trend (residual, not Butterworth HP)\n"
         "butterworth_lowpass: zero-phase Butterworth LP\n"
         "butterworth_highpass: zero-phase Butterworth HP\n"
         "butterworth_bandpass: zero-phase Butterworth BP (set low and high cutoffs)\n"

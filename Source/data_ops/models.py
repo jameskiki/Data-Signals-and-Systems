@@ -17,13 +17,12 @@ SIGNAL_FILTER_OPERATIONS = [
 class DataSummary:
     """Computed overview, statistics, and correlations for one dataframe."""
 
-    overview_text: str
     row_count: int
     column_count: int
     numeric_column_count: int
     datetime_column_count: int
     total_missing_count: int
-    time_range_text: str
-    missing_columns_text: str
+    time_ranges: tuple[tuple[str, object | None, object | None], ...]
+    missing_by_column: tuple[tuple[str, int], ...]
     statistics_frame: pd.DataFrame
     correlation_frame: pd.DataFrame

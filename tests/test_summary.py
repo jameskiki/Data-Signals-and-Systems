@@ -2,8 +2,8 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
+from Source.shared.display_format import format_data_summary_overview
 from Source.data_ops.summary import build_correlation_frame, build_statistics_frame, summarize_dataframe
 
 
@@ -13,7 +13,7 @@ from Source.data_ops.summary import build_correlation_frame, build_statistics_fr
 class TestSummarizeDataframe:
     def test_overview_contains_shape(self, two_column_df):
         result = summarize_dataframe(two_column_df)
-        assert f"{len(two_column_df)} rows" in result.overview_text
+        assert f"{len(two_column_df)} rows" in format_data_summary_overview(result)
 
     def test_row_and_column_counts(self, two_column_df):
         result = summarize_dataframe(two_column_df)
@@ -48,7 +48,7 @@ class TestSummarizeDataframe:
         })
         result = summarize_dataframe(df)
         assert result.datetime_column_count == 1
-        assert result.time_range_text != ""
+        assert len(result.time_ranges) == 1
 
 
 class TestBuildStatisticsFrame:

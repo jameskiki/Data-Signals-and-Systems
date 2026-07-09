@@ -2,7 +2,6 @@
 
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.widgets import SpanSelector
 import pandas as pd
 import tkinter as tk
@@ -10,6 +9,7 @@ from tkinter import ttk
 
 from Source.shared.plot_options import PlotOptions, PlotStyle
 from Source.shared.plot_utils import create_plot_figure
+from Source.shared.presentation_shell import PresentationShellMixin
 
 from .datasets import get_column_role, sort_columns_by_role
 
@@ -30,17 +30,19 @@ class PlotOptionsDialog:
 
         default_xcol = self._detect_default_xcol(cols)
         dialog = tk.Toplevel(self.parent)
-        dialog.title(self.window_title + " Options")
-        dialog.grab_set()
-        dialog.resizable(True, True)
+        PresentationShellMixin.configure_modal_dialog(
+            dialog,
+            parent=self.parent,
+            title=self.window_title + " Options",
+            resizable=(True, True),
+        )
 
         row = 0
         tk.Label(dialog, text="Select columns to plot:").grid(row=row, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 0))
         row += 1
 
         cols_listbox = tk.Listbox(dialog, selectmode=tk.MULTIPLE, exportselection=0, height=min(8, len(cols)))
-        for col in cols:
-            cols_listbox.insert(tk.END, col)
+        PresentationShellMixin.populate_listbox(cols_listbox, cols)
         cols_listbox.grid(row=row, column=0, columnspan=2, sticky="nsew", padx=5, pady=(0, 2))
         row += 1
 
@@ -65,8 +67,8 @@ class PlotOptionsDialog:
         row += 1
 
         def on_ok() -> None:
-            selected_indices = cols_listbox.curselection()
-            ycols = cols.copy() if not selected_indices else [cols[index] for index in selected_indices]
+            selected_items = PresentationShellMixin.get_selected_listbox_items(cols_listbox, cols)
+            ycols = cols.copy() if not selected_items else selected_items
             xcol = xcol_var.get() if xcol_var.get() in cols or xcol_var.get() == "Index" else default_xcol
             if xcol != "Index":
                 ycols = [col for col in ycols if col != xcol]
@@ -104,46 +106,7 @@ class PlotOptionsDialog:
 
 def show_figure_in_window(root: tk.Tk, figure: plt.Figure, window_title: str, window_geometry: str) -> None:
     """Show a matplotlib figure in a separate Tk window."""
-
-    window = tk.Toplevel(root)
-    window.title(window_title)
-    window.geometry(window_geometry)
-    container = ttk.Frame(window)
-    container.pack(fill=tk.BOTH, expand=True)
-    canvas = FigureCanvasTkAgg(figure, master=container)
-    canvas.draw()
-    toolbar = NavigationToolbar2Tk(canvas, container)
-    toolbar.update()
-    toolbar.pack(side=tk.TOP, fill=tk.X)
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
-
-    resize_job: str | None = None
-
-    def _sync_canvas_size() -> None:
-        widget = canvas.get_tk_widget()
-        widget.update_idletasks()
-        width = max(widget.winfo_width(), 1)
-        height = max(widget.winfo_height(), 1)
-        dpi = float(figure.get_dpi() or 100.0)
-        figure.set_size_inches(width / dpi, height / dpi, forward=True)
-        canvas.draw_idle()
-
-    def _on_configure(event: tk.Event) -> None:
-        nonlocal resize_job
-        if event.widget is not container:
-            return
-        if resize_job is not None:
-            window.after_cancel(resize_job)
-        resize_job = window.after(150, _sync_canvas_size)
-
-    container.bind("<Configure>", _on_configure)
-    window.after_idle(_sync_canvas_size)
-
-    def _on_close() -> None:
-        plt.close(figure)
-        window.destroy()
-
-    window.protocol("WM_DELETE_WINDOW", _on_close)
+    PresentationShellMixin.show_figure_in_window(root, figure, window_title, window_geometry)
 
 
 def refresh_preview_plot(

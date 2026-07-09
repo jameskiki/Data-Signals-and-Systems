@@ -8,6 +8,7 @@ import pandas as pd
 
 from .models import DataFrameMap
 from .summary import summarize_dataframe
+from Source.shared.display_format import format_data_summary_overview
 
 
 def merge_selected_dataframes(
@@ -29,7 +30,7 @@ def analyze_selected_dataframes(
     merged = merge_selected_dataframes(selected_paths, data_frames)
     summary = summarize_dataframe(merged, include_details=False)
     file_summary = ", ".join(f"{os.path.basename(path)}:{len(data_frames[path])}" for path in selected_paths)
-    return "\n".join([f"Files {len(selected_paths)} | {file_summary}", summary.overview_text])
+    return "\n".join([f"Files {len(selected_paths)} | {file_summary}", format_data_summary_overview(summary)])
 
 
 def export_clean_dataframes(

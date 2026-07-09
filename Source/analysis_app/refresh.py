@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .actions import resolve_default_output_names
+from Source.shared.display_format import format_data_summary_overview
 from Source.shared.column_roles import (
     apply_role_combobox_style,
     get_column_role,
@@ -34,7 +35,7 @@ def refresh_sidebar(workspace) -> None:
 def refresh_overview(workspace) -> None:
     """Refresh the overview text block."""
 
-    overview_text = workspace.session.last_summary.overview_text if workspace.session.last_summary else ""
+    overview_text = format_data_summary_overview(workspace.session.last_summary) if workspace.session.last_summary else ""
 
     workspace.sidebar_overview_text.config(state="normal")
     workspace.sidebar_overview_text.delete("1.0", "end")

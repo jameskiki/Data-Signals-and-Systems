@@ -124,7 +124,8 @@ All contributors are encouraged to add or update tests when modifying or extendi
 ## Allowed Technologies
 - Python 3.x
 - Standard scientific Python stack (NumPy, SciPy, pandas, matplotlib)
-- PyInstaller for packaging
+- py2exe for executable bundling
+- Inno Setup for installer packaging
 - VS Code for development
 
 ## Change Management

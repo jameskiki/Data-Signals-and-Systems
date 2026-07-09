@@ -132,7 +132,7 @@ def compute_butterworth_response(
 
     fs = 1.0 / sample_spacing
     nyquist = 0.5 * fs
-    clamped_order = max(1, min(int(filter_order), 10))
+    normalized_order = _validate_butterworth_order(filter_order)
 
     btype_map = {
         "butterworth_lowpass": "low",
@@ -156,7 +156,7 @@ def compute_butterworth_response(
                 f"Cutoff frequency {cutoff_hz} Hz is outside valid range (0, {nyquist}) Hz for fs={fs} Hz"
             )
 
-    sos = butter(clamped_order, wn, btype=btype, output="sos")
+    sos = butter(normalized_order, wn, btype=btype, output="sos")
     frequencies, response = sosfreqz(sos, worN=max(64, int(n_points)), fs=fs)
     magnitude_db = 20.0 * np.log10(np.maximum(np.abs(response), 1e-12))
     phase_deg = np.degrees(np.angle(response))
@@ -195,7 +195,7 @@ def evaluate_butterworth_settings(
     if order_value < 1:
         errors.append("Filter order must be >= 1.")
     elif order_value > 10:
-        warnings.append("Filter order above 10 will be clamped to 10.")
+        errors.append("Filter order must be <= 10.")
     elif order_value >= 8:
         warnings.append("High filter order may increase ringing near sharp transients.")
 
@@ -258,7 +258,7 @@ def _apply_butterworth(
 
     fs = 1.0 / sample_spacing
     nyquist = 0.5 * fs
-    clamped_order = max(1, min(int(order), 10))
+    normalized_order = _validate_butterworth_order(order)
 
     btype_map = {
         "butterworth_lowpass": "low",
@@ -280,13 +280,13 @@ def _apply_butterworth(
                 f"Cutoff frequency {cutoff_hz} Hz is outside valid range (0, {nyquist}) Hz for fs={fs} Hz"
             )
 
-    sos = butter(clamped_order, wn, btype=btype, output="sos")
+    sos = butter(normalized_order, wn, btype=btype, output="sos")
 
     valid_mask = series.notna()
     values = series.loc[valid_mask].to_numpy(dtype=float)
-    if values.size < 3 * clamped_order + 1:
+    if values.size < 3 * normalized_order + 1:
         raise ValueError(
-            f"Need at least {3 * clamped_order + 1} valid samples for a Butterworth filter of order {clamped_order}"
+            f"Need at least {3 * normalized_order + 1} valid samples for a Butterworth filter of order {normalized_order}"
         )
 
     filtered_values = sosfiltfilt(sos, values)
@@ -307,3 +307,16 @@ def _get_reference_series(dataframe: pd.DataFrame, reference_column: str | None)
         timestamps = pd.to_datetime(reference, errors="coerce")
         return pd.Series(timestamps.astype("int64") / 1_000_000_000, index=dataframe.index)
     return pd.to_numeric(reference, errors="coerce")
+
+
+def _validate_butterworth_order(order: int | str) -> int:
+    try:
+        normalized_order = int(order)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Filter order must be an integer (got {order!r}).") from error
+
+    if normalized_order < 1:
+        raise ValueError("Filter order must be >= 1.")
+    if normalized_order > 10:
+        raise ValueError("Filter order must be <= 10.")
+    return normalized_order

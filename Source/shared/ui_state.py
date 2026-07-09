@@ -7,6 +7,7 @@ import pathlib
 import tkinter as tk
 
 from Source.shared.plot_options import PlotStyle
+from Source.shared.runtime_paths import get_legacy_state_dir, get_state_dir
 
 
 DEFAULT_TABLE_BACKEND = "treeview"
@@ -15,7 +16,7 @@ DEFAULT_TABLE_BACKEND = "treeview"
 def _ui_state_config_path() -> pathlib.Path:
     """Return the path to the global persisted UI state JSON file."""
 
-    path = pathlib.Path.home() / ".evaldata" / "ui_state.json"
+    path = get_state_dir() / "ui_state.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -23,7 +24,7 @@ def _ui_state_config_path() -> pathlib.Path:
 def _legacy_plot_style_config_path() -> pathlib.Path:
     """Return the legacy plot-style config path for backward compatibility."""
 
-    return pathlib.Path.home() / ".evaldata" / "plot_style.json"
+    return get_legacy_state_dir() / "plot_style.json"
 
 
 def _resolve_ui_state_path(path: pathlib.Path | None = None) -> pathlib.Path:

@@ -1,7 +1,7 @@
 matplotlib==3.10.8
 numpy==2.4.3
 pandas==3.0.1
-pyinstaller==6.19.0
+py2exe>=0.13.0.2; platform_system == "Windows"
 scipy>=1.14
 
 # Optional: Per-cell table styling (feature-gated via EVALDATA_TABLE_BACKEND=tksheet)

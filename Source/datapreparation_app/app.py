@@ -52,7 +52,7 @@ from .preview import (
 )
 from Source.shared.column_roles import summarize_column_roles
 from Source.shared.documentation_links import open_documentation_path
-from Source.shared.base_app_shell import BaseAppShell
+from Source.shared.presentation_shell import PresentationShellMixin
 from Source.shared.notifications import NotificationManager
 from Source.shared.plot_utils import normalize_x_values
 from Source.shared.table_adapter import (
@@ -77,7 +77,7 @@ from .state import (
 )
 
 
-class DataPreparationApp(BaseAppShell):
+class DataPreparationApp(PresentationShellMixin):
     """Tkinter application for data parsing and structural preparation."""
 
     def __init__(self, root: tk.Tk) -> None:
@@ -286,11 +286,13 @@ class DataPreparationApp(BaseAppShell):
 
     def _prompt_split_subframes_options(self) -> dict[str, str] | None:
         dialog = tk.Toplevel(self.root)
-        dialog.title("Split Into Subframes")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        dialog.resizable(True, True)
-        dialog.geometry("560x360")
+        self.configure_modal_dialog(
+            dialog,
+            parent=self.root,
+            title="Split Into Subframes",
+            geometry="560x360",
+            resizable=(True, True),
+        )
 
         container = ttk.Frame(dialog, padding=10)
         container.pack(fill=tk.BOTH, expand=True)
@@ -379,11 +381,7 @@ class DataPreparationApp(BaseAppShell):
         initial_detail_status: str = "Waiting for first step...",
     ) -> tuple[tk.Toplevel, tk.StringVar, tk.DoubleVar, tk.StringVar, tk.DoubleVar]:
         dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        dialog.transient(self.root)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-        dialog.geometry("480x230")
+        self.configure_modal_dialog(dialog, parent=self.root, title=title, geometry="480x230")
 
         container = ttk.Frame(dialog, padding=12)
         container.pack(fill=tk.BOTH, expand=True)
@@ -699,49 +697,26 @@ class DataPreparationApp(BaseAppShell):
         if self._column_selector_menu is None or self._column_selector_button is None:
             return
 
-        visible_columns = columns[:COLUMN_SELECTOR_MAX_ITEMS]
-        self._column_selector_hidden_count = max(0, len(columns) - len(visible_columns))
-        self._column_selection_vars = {}
-        self._column_selector_menu.delete(0, tk.END)
-
-        if not visible_columns:
+        if not columns:
             self._clear_column_selector()
             return
 
-        self._column_selector_menu.add_command(label="Select all", command=self._select_all_columns)
-        self._column_selector_menu.add_command(label="Clear selection", command=self._clear_selected_columns)
-        if self._column_selector_hidden_count:
-            self._column_selector_menu.add_separator()
-            self._column_selector_menu.add_command(
-                label=(
-                    f"Showing first {len(visible_columns)} of {len(columns)} columns"
-                ),
-                state=tk.DISABLED,
-            )
-        self._column_selector_menu.add_separator()
-
-        for column_name in visible_columns:
-            variable = tk.BooleanVar(value=False)
-            variable.trace_add("write", self._handle_column_selector_changed)
-            self._column_selection_vars[column_name] = variable
-            background, foreground = self._get_column_selector_colors(column_name, column_roles)
-            self._column_selector_menu.add_checkbutton(
-                label=column_name,
-                variable=variable,
-                onvalue=True,
-                offvalue=False,
-                background=background,
-                foreground=foreground,
-                activebackground=background,
-                activeforeground=foreground,
-                selectcolor=background,
-            )
-
-        self._column_selector_button.state(["!disabled"])
+        self._column_selection_vars, self._column_selector_hidden_count = self._build_checkbutton_selector_menu(
+            menu=self._column_selector_menu,
+            button=self._column_selector_button,
+            items=columns,
+            selected_items=[],
+            max_items=COLUMN_SELECTOR_MAX_ITEMS,
+            get_colors=lambda column_name: self._get_column_selector_colors(column_name, column_roles),
+            on_changed=self._handle_column_selector_changed,
+            on_select_all=self._select_all_columns,
+            on_clear_selection=self._clear_selected_columns,
+            hidden_label="columns",
+        )
         if self._column_selector_hidden_count and not self._column_selector_warning_shown:
             self.notifications.warning(
                 "Column selector limited for very wide datasets: showing first "
-                f"{len(visible_columns)} of {len(columns)} columns."
+                f"{len(self._column_selection_vars)} of {len(columns)} columns."
             )
             self._column_selector_warning_shown = True
         self._update_column_selection_summary()
@@ -837,45 +812,34 @@ class DataPreparationApp(BaseAppShell):
             self._handle_preview_plot_control_changed()
 
     def _update_preview_plot_signal_summary(self) -> None:
-        selected_columns = self._get_selected_preview_plot_columns_from_selector()
+        selected_columns = self.get_selected_selector_items(self._preview_plot_signal_vars)
         self._set_selected_preview_plot_columns(selected_columns)
-        limit_suffix = ""
-        if self._preview_plot_signal_hidden_count:
-            shown_count = len(self._preview_plot_signal_vars)
-            total_count = shown_count + self._preview_plot_signal_hidden_count
-            limit_suffix = f" (showing {shown_count} of {total_count})"
-        if not self._preview_plot_signal_vars:
-            self._set_preview_plot_signal_summary("No channels available")
-            return
-        if not selected_columns:
-            self._set_preview_plot_signal_summary(f"Choose channels{limit_suffix}")
-            return
-        if len(selected_columns) <= 2:
-            self._set_preview_plot_signal_summary(f"{', '.join(selected_columns)}{limit_suffix}")
-            return
-        shown_columns = ", ".join(selected_columns[:2])
         self._set_preview_plot_signal_summary(
-            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
+            self.format_selector_summary(
+                selected_columns,
+                visible_count=len(self._preview_plot_signal_vars),
+                hidden_count=self._preview_plot_signal_hidden_count,
+                empty_text="No channels available",
+                choose_text="Choose channels",
+            )
         )
 
     def _select_all_preview_plot_signals(self) -> None:
         self._preview_plot_signal_selector_sync_in_progress = True
-        for variable in self._preview_plot_signal_vars.values():
-            variable.set(True)
+        self.set_selector_items_state(self._preview_plot_signal_vars, True)
         self._preview_plot_signal_selector_sync_in_progress = False
         self._update_preview_plot_signal_summary()
         self._handle_preview_plot_control_changed()
 
     def _clear_selected_preview_plot_signals(self) -> None:
         self._preview_plot_signal_selector_sync_in_progress = True
-        for variable in self._preview_plot_signal_vars.values():
-            variable.set(False)
+        self.set_selector_items_state(self._preview_plot_signal_vars, False)
         self._preview_plot_signal_selector_sync_in_progress = False
         self._update_preview_plot_signal_summary()
         self._handle_preview_plot_control_changed()
 
     def _get_selected_preview_plot_columns_from_selector(self) -> list[str]:
-        return [column for column, variable in self._preview_plot_signal_vars.items() if variable.get()]
+        return self.get_selected_selector_items(self._preview_plot_signal_vars)
 
     def _handle_column_selector_changed(self, *_args: object) -> None:
         self._update_column_selection_summary()
@@ -883,33 +847,22 @@ class DataPreparationApp(BaseAppShell):
     def _update_column_selection_summary(self) -> None:
         selected_columns = self._get_selected_column_names()
         self._set_selected_columns(selected_columns)
-        limit_suffix = ""
-        if self._column_selector_hidden_count:
-            shown_count = len(self._column_selection_vars)
-            total_count = shown_count + self._column_selector_hidden_count
-            limit_suffix = f" (showing {shown_count} of {total_count})"
-        if not self._column_selection_vars:
-            self._set_column_selection_summary("No columns available")
-            return
-        if not selected_columns:
-            self._set_column_selection_summary(f"Choose columns{limit_suffix}")
-            return
-        if len(selected_columns) <= 2:
-            self._set_column_selection_summary(f"{', '.join(selected_columns)}{limit_suffix}")
-            return
-        shown_columns = ", ".join(selected_columns[:2])
         self._set_column_selection_summary(
-            f"{len(selected_columns)} selected: {shown_columns}, +{len(selected_columns) - 2}{limit_suffix}"
+            self.format_selector_summary(
+                selected_columns,
+                visible_count=len(self._column_selection_vars),
+                hidden_count=self._column_selector_hidden_count,
+                empty_text="No columns available",
+                choose_text="Choose columns",
+            )
         )
 
     def _select_all_columns(self) -> None:
-        for variable in self._column_selection_vars.values():
-            variable.set(True)
+        self.set_selector_items_state(self._column_selection_vars, True)
         self._update_column_selection_summary()
 
     def _clear_selected_columns(self) -> None:
-        for variable in self._column_selection_vars.values():
-            variable.set(False)
+        self.set_selector_items_state(self._column_selection_vars, False)
         self._update_column_selection_summary()
 
     def _get_column_selector_colors(self, column_name: str, column_roles: dict[str, str]) -> tuple[str, str]:
@@ -1025,11 +978,7 @@ class DataPreparationApp(BaseAppShell):
     def _prompt_multi_dataset_selection(self, title: str) -> list[str]:
         """Show a dialog with checkboxes for all loaded datasets. Return selected paths."""
         dialog = tk.Toplevel(self.root)
-        dialog.title(title)
-        dialog.transient(self.root)
-        dialog.grab_set()
-        dialog.resizable(True, True)
-        dialog.geometry("500x350")
+        self.configure_modal_dialog(dialog, parent=self.root, title=title, geometry="500x350", resizable=(True, True))
 
         container = ttk.Frame(dialog, padding=10)
         container.pack(fill=tk.BOTH, expand=True)
@@ -1052,14 +1001,13 @@ class DataPreparationApp(BaseAppShell):
         listbox.configure(yscrollcommand=scrollbar.set)
 
         paths = list(self.data_frames.keys())
-        for path in paths:
-            listbox.insert(tk.END, os.path.basename(path))
+        self.populate_listbox(listbox, [os.path.basename(path) for path in paths])
 
         result: list[str] = []
 
         def _confirm() -> None:
             nonlocal result
-            result = [paths[i] for i in listbox.curselection()]
+            result = self.get_selected_listbox_items(listbox, paths)
             dialog.destroy()
 
         def _cancel() -> None:
@@ -1084,7 +1032,7 @@ class DataPreparationApp(BaseAppShell):
         refresh_dataset_table(self)
 
     def _get_selected_column_names(self) -> list[str]:
-        return [column for column, variable in self._column_selection_vars.items() if variable.get()]
+        return self.get_selected_selector_items(self._column_selection_vars)
 
     def _select_file_in_listbox(self, file_path: str) -> None:
         select_dataset_in_table(self, file_path)

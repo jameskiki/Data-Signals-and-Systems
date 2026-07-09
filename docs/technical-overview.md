@@ -121,8 +121,9 @@ CI order in `.github/workflows/tests.yml`:
 
 ## Packaging and Build
 
-- `deploy.py` handles local build bootstrap and PyInstaller invocation.
-- `EvalData.spec` defines the PyInstaller package configuration.
+- `deploy.py` handles local build bootstrap, py2exe bundle generation, and optional installer compilation.
+- `setup.py` defines the py2exe package configuration.
+- `installer.iss` defines the Inno Setup installer configuration.
 - Build outputs are written to `Build/` and `Dist/`.
 
 ## Documentation Maintenance Note

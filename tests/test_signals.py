@@ -252,6 +252,15 @@ class TestButterworthResponse:
                 filter_order=4,
             )
 
+    def test_response_rejects_order_above_supported_range(self):
+        with pytest.raises(ValueError, match="<= 10"):
+            compute_butterworth_response(
+                operation="butterworth_lowpass",
+                cutoff_hz=20.0,
+                sample_spacing=0.005,
+                filter_order=11,
+            )
+
 
 class TestButterworthValidation:
     def test_lowpass_validation_flags_nyquist_violation(self):
@@ -273,6 +282,16 @@ class TestButterworthValidation:
         )
         assert errors == []
         assert any("ringing" in message for message in warnings)
+
+    def test_validation_rejects_order_above_supported_range(self):
+        errors, warnings = evaluate_butterworth_settings(
+            operation="butterworth_highpass",
+            cutoff_hz=10.0,
+            sample_spacing=0.01,
+            filter_order=11,
+        )
+        assert any("<= 10" in message for message in errors)
+        assert warnings == []
 
     def test_bandpass_validation_requires_low_below_high(self):
         errors, _warnings = evaluate_butterworth_settings(

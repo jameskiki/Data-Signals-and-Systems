@@ -3,13 +3,11 @@
 import numpy as np
 import pandas as pd
 
-from Source.shared.display_format import format_display_value
-
 from .models import DataSummary
 
 
 def summarize_dataframe(dataframe: pd.DataFrame, include_details: bool = True) -> DataSummary:
-    """Return overview text, engineering statistics, and correlations for one dataframe."""
+    """Return structured summary data, engineering statistics, and correlations for one dataframe."""
 
     row_count, col_count = dataframe.shape
     missing_by_col = dataframe.isna().sum()
@@ -19,40 +17,32 @@ def summarize_dataframe(dataframe: pd.DataFrame, include_details: bool = True) -
         column for column in dataframe.columns if pd.api.types.is_datetime64_any_dtype(dataframe[column])
     ]
 
-    info_lines = [f"{row_count} rows | {col_count} cols | {len(numeric_columns)} num | {len(datetime_columns)} dt | {total_missing} missing"]
-
-    time_range_text = ""
+    time_ranges: list[tuple[str, object | None, object | None]] = []
     if datetime_columns:
-        time_ranges: list[str] = []
         for column in datetime_columns:
             valid_values = dataframe[column].dropna()
             if valid_values.empty:
-                time_ranges.append(f"{column}:n/a")
+                time_ranges.append((str(column), None, None))
             else:
-                time_ranges.append(
-                    f"{column}:{format_display_value(valid_values.min())}->{format_display_value(valid_values.max())}"
-                )
-        time_range_text = " | ".join(time_ranges)
-        info_lines.append("Time " + time_range_text)
+                time_ranges.append((str(column), valid_values.min(), valid_values.max()))
 
-    missing_columns = [f"{column}:{int(missing_by_col[column])}" for column in dataframe.columns if missing_by_col[column] > 0]
-    missing_columns_text = ""
-    if missing_columns:
-        missing_columns_text = ", ".join(missing_columns)
-        info_lines.append("Missing " + missing_columns_text)
+    missing_columns = tuple(
+        (str(column), int(missing_by_col[column]))
+        for column in dataframe.columns
+        if missing_by_col[column] > 0
+    )
 
     statistics_frame = build_statistics_frame(dataframe) if include_details else pd.DataFrame()
     correlation_frame = build_correlation_frame(dataframe) if include_details else pd.DataFrame()
 
     return DataSummary(
-        overview_text="\n".join(info_lines),
         row_count=row_count,
         column_count=col_count,
         numeric_column_count=len(numeric_columns),
         datetime_column_count=len(datetime_columns),
         total_missing_count=total_missing,
-        time_range_text=time_range_text,
-        missing_columns_text=missing_columns_text,
+        time_ranges=tuple(time_ranges),
+        missing_by_column=missing_columns,
         statistics_frame=statistics_frame,
         correlation_frame=correlation_frame,
     )

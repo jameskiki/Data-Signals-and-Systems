@@ -8,6 +8,7 @@ from scipy.signal import welch as scipy_welch
 from Source.data_ops.spectral import (
     FrequencySpectrumResult,
     SpectrogramResult,
+    _build_peak_frame,
     compute_coherence_spectrum,
     compute_fft_spectrum,
     compute_spectrogram,
@@ -22,6 +23,15 @@ from Source.data_ops.spectral import (
 class TestFFTSpectrum:
     def test_dominant_frequency_matches_input(self, sine_5hz_100fs):
         result = compute_fft_spectrum(sine_5hz_100fs, "signal", reference_column="time_s")
+        assert abs(result.dominant_frequency - 5.0) < 0.5
+
+    def test_rectangular_window_alias_is_supported(self, sine_5hz_100fs):
+        result = compute_fft_spectrum(
+            sine_5hz_100fs,
+            "signal",
+            reference_column="time_s",
+            window="rectangular",
+        )
         assert abs(result.dominant_frequency - 5.0) < 0.5
 
     def test_sample_metadata(self, sine_5hz_100fs):
@@ -42,10 +52,42 @@ class TestFFTSpectrum:
         with pytest.raises(KeyError, match="Unknown source column"):
             compute_fft_spectrum(sine_5hz_100fs, "nonexistent")
 
+    def test_unsupported_window_raises(self, sine_5hz_100fs):
+        with pytest.raises(ValueError, match="Unsupported FFT window"):
+            compute_fft_spectrum(
+                sine_5hz_100fs,
+                "signal",
+                reference_column="time_s",
+                window="definitely_not_a_window",
+            )
+
     def test_peaks_frame_has_rows(self, sine_5hz_100fs):
         result = compute_fft_spectrum(sine_5hz_100fs, "signal", reference_column="time_s", peak_count=5)
         assert len(result.peaks_frame) <= 5
         assert "frequency_hz" in result.peaks_frame.columns
+
+    def test_peak_table_prefers_separated_local_maxima(self):
+        fs = 100.0
+        t = np.arange(0, 10, 1.0 / fs)
+        signal = 4.0 * np.sin(2 * np.pi * 5.35 * t) + 1.5 * np.sin(2 * np.pi * 17.8 * t)
+        df = pd.DataFrame({"time_s": t, "signal": signal})
+
+        result = compute_fft_spectrum(df, "signal", reference_column="time_s", peak_count=2)
+
+        peak_frequencies = result.peaks_frame["frequency_hz"].to_numpy(dtype=float)
+        assert peak_frequencies[0] == pytest.approx(5.35, abs=0.3)
+        assert peak_frequencies[1] == pytest.approx(17.8, abs=0.5)
+
+
+class TestPeakFrameBuilder:
+    def test_falls_back_to_top_bins_when_no_local_maxima_exist(self):
+        frequencies = np.array([0.0, 1.0, 2.0, 3.0])
+        amplitudes = np.array([0.0, 5.0, 4.0, 3.0])
+
+        peaks = _build_peak_frame(frequencies, amplitudes, peak_count=2)
+
+        assert peaks["frequency_hz"].tolist() == [1.0, 2.0]
+        assert peaks["rank"].tolist() == [1, 2]
 
 
 # ── Welch PSD ────────────────────────────────────────────────────────
@@ -133,6 +175,26 @@ class TestTransferEstimate:
         assert result.segment_count is not None and result.segment_count > 0
         assert result.segment_length is not None and result.segment_length >= 4
 
+    def test_gain_and_phase_match_simple_scaled_signal(self):
+        fs = 200.0
+        t = np.arange(0, 5, 1 / fs)
+        input_signal = np.sin(2 * np.pi * 5.0 * t)
+        output_signal = 2.0 * input_signal
+        df = pd.DataFrame({"time_s": t, "input": input_signal, "output": output_signal})
+
+        result = compute_transfer_estimate(
+            df,
+            "output",
+            comparison_column="input",
+            reference_column="time_s",
+            segment_length=256,
+            overlap_fraction=0.5,
+        )
+
+        idx = np.argmin(np.abs(result.frequencies - 5.0))
+        assert result.amplitudes[idx] == pytest.approx(20.0 * np.log10(2.0), abs=0.5)
+        assert np.degrees(result.phase[idx]) == pytest.approx(0.0, abs=5.0)
+
 
 # ── Coherence ────────────────────────────────────────────────────────
 
@@ -162,6 +224,25 @@ class TestCoherence:
         )
         assert result.segment_count is not None and result.segment_count > 0
         assert result.segment_length is not None and result.segment_length >= 4
+
+    def test_coherence_is_near_one_for_scaled_copy(self):
+        fs = 200.0
+        t = np.arange(0, 5, 1 / fs)
+        input_signal = np.sin(2 * np.pi * 5.0 * t)
+        output_signal = 2.0 * input_signal
+        df = pd.DataFrame({"time_s": t, "input": input_signal, "output": output_signal})
+
+        result = compute_coherence_spectrum(
+            df,
+            "output",
+            comparison_column="input",
+            reference_column="time_s",
+            segment_length=256,
+            overlap_fraction=0.5,
+        )
+
+        idx = np.argmin(np.abs(result.frequencies - 5.0))
+        assert result.amplitudes[idx] == pytest.approx(1.0, abs=0.02)
 
 
 # ── Spectrogram ──────────────────────────────────────────────────────

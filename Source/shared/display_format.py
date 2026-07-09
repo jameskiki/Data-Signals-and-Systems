@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import math
 from numbers import Real
+from typing import TYPE_CHECKING
 
 from matplotlib.ticker import FuncFormatter
 import numpy as np
 import pandas as pd
 import matplotlib.dates as mdates
+
+if TYPE_CHECKING:
+    from Source.data_ops.models import DataSummary
 
 DISPLAY_DECIMALS = 3
 
@@ -40,6 +44,35 @@ def format_display_value(value: object, decimals: int = DISPLAY_DECIMALS) -> str
     if isinstance(value, (np.floating, float)) and not isinstance(value, (bool, np.bool_)):
         return format_display_number(float(value), decimals)
     return str(value)
+
+
+def format_data_summary_overview(summary: DataSummary) -> str:
+    """Format a human-readable overview block from structured summary data."""
+
+    info_lines = [
+        (
+            f"{summary.row_count} rows | {summary.column_count} cols | "
+            f"{summary.numeric_column_count} num | {summary.datetime_column_count} dt | "
+            f"{summary.total_missing_count} missing"
+        )
+    ]
+
+    if summary.time_ranges:
+        time_parts: list[str] = []
+        for column_name, min_value, max_value in summary.time_ranges:
+            if min_value is None or max_value is None:
+                time_parts.append(f"{column_name}:n/a")
+            else:
+                time_parts.append(
+                    f"{column_name}:{format_display_value(min_value)}->{format_display_value(max_value)}"
+                )
+        info_lines.append("Time " + " | ".join(time_parts))
+
+    if summary.missing_by_column:
+        missing_parts = [f"{column_name}:{count}" for column_name, count in summary.missing_by_column]
+        info_lines.append("Missing " + ", ".join(missing_parts))
+
+    return "\n".join(info_lines)
 
 
 def apply_numeric_axis_format(axis, *, format_x: bool = False, format_y: bool = True) -> None:

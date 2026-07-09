@@ -1,10 +1,7 @@
 """Tests for shared.display_format — numeric and display formatting helpers."""
 
-import math
-
 import numpy as np
 import pandas as pd
-import pytest
 
 from Source.shared.display_format import (
     format_display_number,
