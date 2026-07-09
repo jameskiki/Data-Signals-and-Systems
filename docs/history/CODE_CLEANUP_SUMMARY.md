@@ -1,3 +1,5 @@
+> **Historical artifact** — this is a one-shot audit report from June 2026. It describes the state of the codebase at that point in time. It is not a current tracking document and may be partially outdated.
+
 # Code Cleanup Summary - EvalData Application
 **Date: June 17, 2026**  
 **Status: ✅ COMPLETE**
