@@ -99,6 +99,12 @@ Expected result: the new filtered column keeps only the larger ringing excursion
 
 All Butterworth variants use `scipy.signal.sosfiltfilt` for zero-phase filtering, which avoids the phase distortion of a single-pass IIR filter at the cost of doubling the effective filter order.
 
+Three non-mutating preview actions are available for Butterworth filters before you commit an operation:
+
+- `Generate Bode Plot`: renders the frequency response (magnitude and phase) of the configured filter so you can inspect its behaviour without touching the working dataframe.
+- `Preview Filter Result`: overlays the original and filtered signal in a plot so you can check the effect before applying.
+- `Preview Residual Analysis`: plots the residual (original minus filtered) so you can verify what the filter removes.
+
 These operations keep the full dataframe and add or replace one derived signal column.
 
 Reproducible demo examples:

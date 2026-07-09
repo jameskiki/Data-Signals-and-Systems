@@ -155,13 +155,6 @@ def build_dataset_selector(app, parent: ttk.Frame) -> None:
     ttk.Label(info_frame, textvariable=app.dataset_note_var, wraplength=800).pack(anchor="w", padx=5, pady=(1, 2))
 
 
-def build_info_tab(app, parent: ttk.Frame) -> None:
-    """Build the preparation controls area (left column)."""
-
-    manipulations_frame = ttk.LabelFrame(parent, text="Preparation")
-    manipulations_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=0)
-    build_manipulations_frame(app, manipulations_frame)
-
 def build_preview_content(app, preview_frame: ttk.Frame, preview_row_limit: int) -> None:
     """Build the right-side notebook content for plot and table previews."""
 
@@ -178,14 +171,6 @@ def build_preview_content(app, preview_frame: ttk.Frame, preview_row_limit: int)
 
     build_preview_plot_tab(app, plot_tab)
     build_preview_table_tab(app, table_tab, preview_row_limit)
-
-
-def build_preview_views_notebook(app, parent: ttk.Frame, preview_row_limit: int) -> None:
-    """Build the right-side notebook for plot and table previews."""
-
-    preview_frame = ttk.LabelFrame(parent, text="Preview")
-    preview_frame.grid(row=1, column=1, sticky="nsew", padx=(5, 0))
-    build_preview_content(app, preview_frame, preview_row_limit)
 
 
 def build_preview_plot_tab(app, parent: ttk.Frame) -> None:

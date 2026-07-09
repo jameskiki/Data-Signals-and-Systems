@@ -272,9 +272,6 @@ class DataPreparationApp(PresentationShellMixin):
     def plot_selected_data(self) -> None:
         return plot_selected_data(self)
 
-    def render_figure_in_window(self, figure) -> None:
-        show_figure_in_window(self.root, figure, PLOT_WINDOW_TITLE, PLOT_WINDOW_GEOMETRY)
-
     def merge_selected_files(self) -> None:
         return merge_selected_files(self)
 
