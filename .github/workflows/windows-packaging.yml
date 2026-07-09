@@ -1,0 +1,53 @@
+name: Windows Packaging
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  package_windows:
+    name: Build py2exe bundle and Inno installer (3.12)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Build Windows distributables
+        shell: pwsh
+        run: |
+          python deploy.py
+
+      - name: Verify build artifacts
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "Dist/EvalData/EvalData.exe")) {
+            throw "Expected executable not found: Dist/EvalData/EvalData.exe"
+          }
+          if (-not (Get-ChildItem "Dist/Installer/*.exe" -ErrorAction SilentlyContinue)) {
+            throw "Expected installer not found in Dist/Installer"
+          }
+
+      - name: Upload packaging artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaldata-windows-packaging
+          path: |
+            Dist/EvalData/**
+            Dist/Installer/*.exe

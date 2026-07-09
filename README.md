@@ -114,18 +114,19 @@ That keeps debugger behavior aligned with the intended local setup and with the 
 
 ## Build And Release
 
-For a local executable build, use the helper script:
+For a local Windows distributable build (py2exe bundle + Inno Setup installer), use the helper script:
 
 ```powershell
 python deploy.py
 ```
 
-That script creates or reuses `.venv`, installs runtime dependencies plus PyInstaller, and builds the application.
+That script creates or reuses `.venv`, installs runtime dependencies, builds `Dist/EvalData/EvalData.exe` with py2exe, and then builds an installer in `Dist/Installer/` when Inno Setup is available.
 
 You can also build directly from an activated environment:
 
 ```powershell
-pyinstaller EvalData.py
+python setup.py
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=(Get-Content VERSION).Trim() installer.iss
 ```
 
 Generated build artifacts are written to `Build/` and `Dist/` and are intentionally ignored by Git.
@@ -148,7 +149,7 @@ Generated build artifacts are written to `Build/` and `Dist/` and are intentiona
 - `Source/analysis_app/`: detailed per-dataset analysis window and its supporting UI/state modules
 - `Source/data_ops/`: pure dataframe and signal-processing helpers
 - `Source/shared/`: shared UI contracts, plotting helpers, notifications, and documentation links
-- `deploy.py`: environment/bootstrap build helper
+- `deploy.py`: py2exe + Inno Setup build helper
 
 The repository root is now intentionally kept thin: the launcher stays at the top level, while the main UI and analysis UI live in dedicated packages.
 
