@@ -58,7 +58,7 @@ def load_files(app) -> None:
 			return
 
 		report_text = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
-		select_dataset_in_table(app, loaded_file_paths[-1])
+		app._select_dataset_in_table_without_event_refresh(loaded_file_paths[-1])
 		app._refresh_dataset_preparation_views()
 
 		summary_lines = [" | ".join(parse_info), report_text]

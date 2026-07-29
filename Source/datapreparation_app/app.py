@@ -155,6 +155,7 @@ class DataPreparationApp(PresentationShellMixin):
         self._preview_plot_signal_hidden_count = 0
         self._preview_plot_signal_warning_shown = False
         self._row_range_reset_button: ttk.Button | None = None
+        self._suppress_dataset_selection_refresh = False
 
         build_main_ui(self, PREVIEW_ROW_LIMIT)
         self.column_output_name_var.trace_add("write", self._handle_output_dataset_name_changed)
@@ -1022,6 +1023,8 @@ class DataPreparationApp(PresentationShellMixin):
         return result
 
     def _handle_dataset_combo_changed(self, _event: tk.Event | None = None) -> None:
+        if self._suppress_dataset_selection_refresh:
+            return
         self._reset_row_range()
         self._refresh_dataset_preparation_views()
 
@@ -1033,6 +1036,16 @@ class DataPreparationApp(PresentationShellMixin):
 
     def _select_file_in_listbox(self, file_path: str) -> None:
         select_dataset_in_table(self, file_path)
+
+    def _select_dataset_in_table_without_event_refresh(self, file_path: str) -> None:
+        """Select a dataset without running selection-change refresh handlers."""
+
+        self._suppress_dataset_selection_refresh = True
+        select_dataset_in_table(self, file_path)
+        self.root.after_idle(self._clear_dataset_selection_suppression)
+
+    def _clear_dataset_selection_suppression(self) -> None:
+        self._suppress_dataset_selection_refresh = False
 
     def _refresh_selected_dataset_preview_plot(self) -> None:
         refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)

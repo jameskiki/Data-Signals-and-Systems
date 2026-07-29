@@ -5,6 +5,7 @@ Utility class for robust log file parsing and datetime handling.
 """
 
 import re
+import importlib.util
 import warnings
 from collections.abc import Callable
 
@@ -136,6 +137,30 @@ class DataParser:
             if progress_callback is not None:
                 progress_callback(current, total, label)
 
+        def _read_csv_with_pandas(file_path: str, sep: str, skiprows: int, decimal_marker: str, dt_format_map: dict[str, str]) -> pd.DataFrame:
+            return pd.read_csv(
+                file_path,
+                sep=sep,
+                skiprows=skiprows,
+                skipinitialspace=True,
+                header=0,
+                decimal=decimal_marker,
+                engine="c",
+                low_memory=False,
+                parse_dates=list(dt_format_map) if dt_format_map else False,
+                date_format=dt_format_map if dt_format_map else None,
+            )
+
+        def _read_csv_with_pyarrow(file_path: str, sep: str, skiprows: int, decimal_marker: str) -> pd.DataFrame:
+            return pd.read_csv(
+                file_path,
+                sep=sep,
+                skiprows=skiprows,
+                header=0,
+                decimal=decimal_marker,
+                engine="pyarrow",
+            )
+
         _report(0.0, 100.0, "Reading file header")
         sep = ";"
         skiprows = 0
@@ -205,18 +230,13 @@ class DataParser:
         _report(20.0, 100.0, "Detecting decimal marker")
         decimal_marker = "," if comma_score > dot_score else "."
         _report(40.0, 100.0, "Reading tabular data")
-        df = pd.read_csv(
-            file_path,
-            sep=sep,
-            skiprows=skiprows,
-            skipinitialspace=True,
-            header=0,
-            decimal=decimal_marker,
-            engine="c",
-            low_memory=False,
-            parse_dates=list(dt_format_map) if dt_format_map else False,
-            date_format=dt_format_map if dt_format_map else None,
-        )
+        try:
+            if importlib.util.find_spec("pyarrow") is not None:
+                df = _read_csv_with_pyarrow(file_path, sep, skiprows, decimal_marker)
+            else:
+                df = _read_csv_with_pandas(file_path, sep, skiprows, decimal_marker, dt_format_map)
+        except Exception:
+            df = _read_csv_with_pandas(file_path, sep, skiprows, decimal_marker, dt_format_map)
         _report(70.0, 100.0, "Cleaning columns")
         if df.columns.size > 0:
             last_col = df.columns[-1]
