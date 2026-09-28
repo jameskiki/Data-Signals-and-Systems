@@ -50,6 +50,8 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
   - shared x-axis selection across datasets
   - overlay plotting for common numeric channels
   - simple side-by-side summary/statistics comparison
+  - refresh of the currently compared session datasets
+  - open-one-back-into-analysis from the comparison summary
 - demo datasets for reproducible walkthroughs and exploratory checks
 
 ## Workflow Overview
@@ -201,6 +203,21 @@ To enforce strict merge gates via branch protection:
 ## Current Preparation Behavior
 
 Prepared dataset creation supports both channel selection and optional row-range selection. You can type range bounds manually or drag-select a range directly in the preview plot to populate the row-range fields. If no range is provided, the full dataset is used. Use `Preparation -> Split Into Subframes` when you need multiple explicit row windows created in one operation.
+
+## Session Data Flow
+
+Session data currently flows in these directions:
+
+- file or demo load -> main session dataset registry
+- source dataset -> prepared dataset -> main session dataset registry
+- source dataset -> split subframe datasets -> main session dataset registry
+- selected session dataset -> analysis workspace
+- analysis working dataframe -> published dataset -> main session dataset registry
+- selected session datasets -> comparison window
+- selected dataset in comparison -> analysis workspace
+- selected or published dataset -> export to disk
+
+The important distinction is that the analysis workspace works on a local working copy, while publish creates a new session dataset entry instead of mutating an existing one in place.
 
 ## Documentation Approach
 

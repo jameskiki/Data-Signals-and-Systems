@@ -4,6 +4,7 @@ import pandas as pd
 
 from Source.datapreparation_app.comparison import (
     build_comparison_summary_frame,
+    build_dataset_detail_text,
     build_display_dataset_labels,
     get_common_columns,
     resolve_default_x_column,
@@ -47,6 +48,13 @@ def test_build_comparison_summary_frame_includes_selected_column_statistics() ->
     assert summary_frame.loc["b", "max"] == 6.0
 
 
+def test_build_comparison_summary_frame_handles_empty_selection() -> None:
+    summary_frame = build_comparison_summary_frame([], {}, stats_column=None)
+
+    assert list(summary_frame.columns) == ["rows", "cols", "missing", "mean", "std", "min", "max"]
+    assert summary_frame.empty
+
+
 def test_build_display_dataset_labels_deduplicates_matching_basenames() -> None:
     labels = build_display_dataset_labels(
         [
@@ -59,3 +67,23 @@ def test_build_display_dataset_labels_deduplicates_matching_basenames() -> None:
     assert labels["/tmp/run_a/shared.csv"] == "shared.csv (1)"
     assert labels["/tmp/run_b/shared.csv"] == "shared.csv (2)"
     assert labels["/tmp/run_c/unique.csv"] == "unique.csv"
+
+
+def test_build_dataset_detail_text_includes_lineage_and_notes() -> None:
+    data_frames = {
+        "/tmp/run_a/shared.csv": pd.DataFrame({"time_s": [0.0, 1.0], "sensor": [1.0, 2.0]}),
+    }
+    dataset_contexts = {
+        "/tmp/run_a/shared.csv": DatasetContext(
+            source_paths=["/tmp/raw/input.csv"],
+            description="Published from analysis workspace",
+            column_roles={"time_s": "time", "sensor": "signal"},
+        )
+    }
+
+    detail_text = build_dataset_detail_text("/tmp/run_a/shared.csv", data_frames, dataset_contexts)
+
+    assert "Dataset: shared.csv" in detail_text
+    assert "Rows: 2" in detail_text
+    assert "Lineage: input.csv" in detail_text
+    assert "Notes: Published from analysis workspace" in detail_text

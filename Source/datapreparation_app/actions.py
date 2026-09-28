@@ -371,6 +371,13 @@ def open_analysis_workspace(app) -> None:
 	if selected_path is None:
 		return
 
+	open_analysis_workspace_for_path(app, selected_path)
+
+def open_analysis_workspace_for_path(app, selected_path: str) -> object | None:
+	if selected_path not in app.data_frames:
+		app.notifications.warning("The selected dataset is not available in the current session")
+		return None
+
 	from Source.analysis_app.app import AnalysisWorkspace
 
 	workspace = AnalysisWorkspace(
@@ -383,6 +390,7 @@ def open_analysis_workspace(app) -> None:
 		on_publish_current_view=lambda workspace: publish_analysis_workspace_view(app, workspace),
 	)
 	app._analysis_workspaces.append(workspace)
+	return workspace
 
 def publish_analysis_workspace_view(app, workspace) -> str | None:
 	source_path = workspace.session.source_path
@@ -422,6 +430,7 @@ def open_comparison_window(app) -> None:
 		app.dataset_contexts,
 		default_style=app.style_vars.to_plot_style(),
 		on_close=app._on_comparison_window_closed,
+		on_open_dataset=lambda dataset_path: open_analysis_workspace_for_path(app, dataset_path),
 	)
 	app._comparison_windows.append(window)
 

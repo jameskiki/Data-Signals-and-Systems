@@ -79,6 +79,9 @@ def build_comparison_summary_frame(
 ) -> pd.DataFrame:
     """Build a compact per-dataset summary frame for the comparison window."""
 
+    if not dataset_paths:
+        return pd.DataFrame(columns=["rows", "cols", "missing", "mean", "std", "min", "max"])
+
     display_labels = build_display_dataset_labels(dataset_paths)
     rows: list[dict[str, object]] = []
     for dataset_path in dataset_paths:
@@ -143,6 +146,7 @@ class ComparisonWindow(PresentationShellMixin):
         *,
         default_style: PlotStyle | None = None,
         on_close=None,
+        on_open_dataset=None,
     ) -> None:
         self.parent = parent
         self.dataset_paths = list(dataset_paths)
@@ -151,6 +155,7 @@ class ComparisonWindow(PresentationShellMixin):
         self.notifications = NotificationManager()
         self.default_style = default_style or PlotStyle()
         self.on_close = on_close
+        self.on_open_dataset = on_open_dataset
 
         self.window = tk.Toplevel(parent)
         self.window.title("Dataset Comparison")
@@ -162,10 +167,13 @@ class ComparisonWindow(PresentationShellMixin):
         default_summary_column = common_numeric_columns[0] if common_numeric_columns else ""
         self.summary_column_var = tk.StringVar(value=default_summary_column)
         self.plot_column_summary_var = tk.StringVar(value="No common numeric channels")
+        self.comparison_status_var = tk.StringVar(value="")
+        self.selected_dataset_detail_var = tk.StringVar(value="Select a dataset row for details.")
         self._plot_column_selector_button: ttk.Menubutton | None = None
         self._plot_column_selector_menu: tk.Menu | None = None
         self._plot_column_selector_vars: dict[str, tk.BooleanVar] = {}
         self._plot_column_hidden_count = 0
+        self._summary_item_to_dataset_path: dict[str, str] = {}
 
         self._plot_figure: plt.Figure | None = None
         self._plot_canvas = None
@@ -189,6 +197,12 @@ class ComparisonWindow(PresentationShellMixin):
             controls,
             text=f"Comparing {len(self.dataset_paths)} datasets from the current session registry.",
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 8))
+        ttk.Label(
+            controls,
+            textvariable=self.comparison_status_var,
+            wraplength=920,
+            justify=tk.LEFT,
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
 
         ttk.Label(controls, text="Shared X-axis").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.x_column_combo = ttk.Combobox(controls, textvariable=self.x_column_var, state="readonly")
@@ -219,6 +233,8 @@ class ComparisonWindow(PresentationShellMixin):
         actions.grid(row=0, column=1, sticky="e", padx=(8, 0))
         ttk.Button(actions, text="All", width=6, command=self._select_all_plot_columns).pack(side=tk.LEFT)
         ttk.Button(actions, text="None", width=6, command=self._clear_plot_columns).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(actions, text="Refresh", command=self._refresh_from_session).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(actions, text="Open In Analysis", command=self._open_selected_dataset_in_analysis).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(actions, text="Update", command=self._update_comparison_view).pack(side=tk.LEFT, padx=(6, 0))
 
         content_pane = ttk.Panedwindow(container, orient=tk.HORIZONTAL)
@@ -235,6 +251,12 @@ class ComparisonWindow(PresentationShellMixin):
         ttk.Label(
             summary_frame,
             text="Rows/cols/missing always reflect the full dataset. Mean/std/min/max use the selected summary column.",
+            wraplength=320,
+            justify=tk.LEFT,
+        ).pack(anchor="w", padx=5, pady=(0, 6))
+        ttk.Label(
+            summary_frame,
+            textvariable=self.selected_dataset_detail_var,
             wraplength=320,
             justify=tk.LEFT,
         ).pack(anchor="w", padx=5, pady=(0, 6))
@@ -305,11 +327,19 @@ class ComparisonWindow(PresentationShellMixin):
         self._update_plot_column_summary()
 
     def _update_comparison_view(self) -> None:
+        self._sync_dataset_paths_from_session()
+        if not self.dataset_paths:
+            self._clear_plot()
+            self._render_summary_tree()
+            self.selected_dataset_detail_var.set("No compared datasets are still available in the session.")
+            self._update_status_text()
+            return
         selected_columns = self._get_selected_plot_columns()
         if not selected_columns:
             self.notifications.warning("Select at least one shared numeric signal")
             self._clear_plot()
             self._render_summary_tree()
+            self._update_status_text()
             return
 
         figure = create_plot_figure(
@@ -336,6 +366,7 @@ class ComparisonWindow(PresentationShellMixin):
             clear_container_before_create=True,
         )
         self._render_summary_tree()
+        self._update_status_text()
 
     def _clear_plot(self) -> None:
         if self._plot_figure is not None:
@@ -350,17 +381,19 @@ class ComparisonWindow(PresentationShellMixin):
         for widget in self.summary_container.winfo_children():
             widget.destroy()
 
+        self._summary_item_to_dataset_path = {}
         summary_frame = build_comparison_summary_frame(
             self.dataset_paths,
             self.data_frames,
             stats_column=self.summary_column_var.get().strip() or None,
         )
         columns = ["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]
-        tree = ttk.Treeview(self.summary_container, columns=columns, show="headings", selectmode="none")
+        tree = ttk.Treeview(self.summary_container, columns=columns, show="headings", selectmode="browse")
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar = ttk.Scrollbar(self.summary_container, orient=tk.VERTICAL, command=tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         tree.configure(yscrollcommand=scrollbar.set)
+        tree.bind("<<TreeviewSelect>>", self._handle_summary_tree_selection_changed)
 
         headings = {
             "dataset": "Dataset",
@@ -387,8 +420,8 @@ class ComparisonWindow(PresentationShellMixin):
             tree.heading(column_name, text=headings[column_name])
             tree.column(column_name, width=widths[column_name], minwidth=widths[column_name], anchor=anchor, stretch=column_name == "dataset")
 
-        for dataset_name, row in summary_frame.iterrows():
-            tree.insert(
+        for dataset_path, (dataset_name, row) in zip(self.dataset_paths, summary_frame.iterrows(), strict=False):
+            item_id = tree.insert(
                 "",
                 tk.END,
                 values=[
@@ -402,9 +435,91 @@ class ComparisonWindow(PresentationShellMixin):
                     format_display_value(row["max"]),
                 ],
             )
+            self._summary_item_to_dataset_path[item_id] = dataset_path
         self._summary_tree = tree
+        if self._summary_item_to_dataset_path:
+            first_item = next(iter(self._summary_item_to_dataset_path))
+            tree.selection_set(first_item)
+            self._update_selected_dataset_detail(self._summary_item_to_dataset_path[first_item])
+
+    def _refresh_from_session(self) -> None:
+        self._sync_dataset_paths_from_session()
+        self._refresh_column_controls()
+        self._update_comparison_view()
+
+    def _sync_dataset_paths_from_session(self) -> None:
+        existing_paths = [path for path in self.dataset_paths if path in self.data_frames]
+        removed_paths = [path for path in self.dataset_paths if path not in self.data_frames]
+        if removed_paths:
+            self.notifications.warning(
+                "Some comparison datasets are no longer present in the session",
+                details="\n".join(removed_paths),
+            )
+        self.dataset_paths = existing_paths
+
+    def _update_status_text(self) -> None:
+        self.comparison_status_var.set(
+            f"Comparing {len(self.dataset_paths)} session datasets. "
+            f"Session flow: selected datasets -> comparison view. "
+            f"Use Refresh to re-read the current session data for these dataset paths. "
+            f"Publish creates a new dataset entry in the main window; reopen comparison to include newly published datasets."
+        )
+
+    def _handle_summary_tree_selection_changed(self, _event: tk.Event | None = None) -> None:
+        selected_path = self._get_selected_summary_dataset_path()
+        if selected_path is None:
+            self.selected_dataset_detail_var.set("Select a dataset row for details.")
+            return
+        self._update_selected_dataset_detail(selected_path)
+
+    def _get_selected_summary_dataset_path(self) -> str | None:
+        if self._summary_tree is None:
+            return None
+        selection = self._summary_tree.selection()
+        if not selection:
+            return None
+        return self._summary_item_to_dataset_path.get(selection[0])
+
+    def _update_selected_dataset_detail(self, dataset_path: str) -> None:
+        self.selected_dataset_detail_var.set(build_dataset_detail_text(dataset_path, self.data_frames, self.dataset_contexts))
+
+    def _open_selected_dataset_in_analysis(self) -> None:
+        selected_path = self._get_selected_summary_dataset_path()
+        if selected_path is None:
+            self.notifications.warning("Select a dataset row first")
+            return
+        if self.on_open_dataset is None:
+            self.notifications.warning("Opening the selected dataset in analysis is unavailable here")
+            return
+        self.on_open_dataset(selected_path)
 
 
 def _get_frame_columns(dataframe: pd.DataFrame, *, numeric_only: bool) -> list[str]:
     columns = dataframe.select_dtypes(include="number").columns if numeric_only else dataframe.columns
     return [str(column_name) for column_name in columns]
+
+
+def build_dataset_detail_text(
+    dataset_path: str,
+    data_frames: dict[str, pd.DataFrame],
+    dataset_contexts: dict[str, object],
+) -> str:
+    """Build a compact dataset detail block for the comparison sidebar."""
+
+    dataframe = data_frames.get(dataset_path)
+    context = dataset_contexts.get(dataset_path)
+    source_paths = getattr(context, "source_paths", [dataset_path]) if context is not None else [dataset_path]
+    description = getattr(context, "description", "") if context is not None else ""
+    row_text = f"Rows: {len(dataframe)}" if dataframe is not None else "Rows: n/a"
+    column_text = f"Cols: {len(dataframe.columns)}" if dataframe is not None else "Cols: n/a"
+    source_text = ", ".join(os.path.basename(path) for path in source_paths)
+    parts = [
+        f"Dataset: {os.path.basename(dataset_path)}",
+        row_text,
+        column_text,
+        f"Session path: {dataset_path}",
+        f"Lineage: {source_text}",
+    ]
+    if description:
+        parts.append(f"Notes: {description}")
+    return "\n".join(parts)

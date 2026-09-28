@@ -219,6 +219,15 @@ def test_open_analysis_workspace_appends_workspace(monkeypatch):
     assert callable(created[0]["on_publish_current_view"])
 
 
+def test_open_analysis_workspace_for_path_warns_when_dataset_missing(monkeypatch):
+    app = DummyApp()
+
+    result = actions.open_analysis_workspace_for_path(app, "C:/tmp/missing.csv")
+
+    assert result is None
+    assert app.notifications.warning_messages == [("The selected dataset is not available in the current session", None)]
+
+
 def test_publish_analysis_workspace_view_registers_dataset(monkeypatch):
     app = DummyApp()
     app.data_frames = {"C:/tmp/source.csv": pd.DataFrame({"time_s": [0.0, 1.0], "sensor": [1.0, 2.0]})}
@@ -285,3 +294,4 @@ def test_open_comparison_window_launches_window(monkeypatch):
     assert len(created) == 1
     assert created[0][0][1] == ["C:/tmp/a.csv", "C:/tmp/b.csv"]
     assert len(app._comparison_windows) == 1
+    assert callable(created[0][1]["on_open_dataset"])

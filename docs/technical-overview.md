@@ -106,6 +106,32 @@ The repository now enforces architecture boundaries via `tests/test_import_bound
 5. Analysis workspace performs operations through `Source/data_ops/*`, can publish its current working dataframe back into the shared session registry, and renders results through shared plotting infrastructure plus analysis-specific orchestration.
 6. The comparison window reuses the shared session registry, plotting contracts, and summary helpers to overlay and summarize two or more datasets already present in the session.
 
+## Session Data Flow Directions
+
+The current minimal session-data model intentionally keeps the flow explicit:
+
+- loaded file/demo -> session registry
+- source dataset -> prepared dataset -> session registry
+- source dataset -> split subframes -> session registry
+- session dataset -> analysis workspace
+- analysis working dataframe -> published dataset -> session registry
+- selected session datasets -> comparison window
+- selected compared dataset -> analysis workspace
+- session dataset or analysis view -> export to disk
+
+The important rule is that the analysis workspace does not mutate the shared session dataframe in place. It owns a local original/working copy pair, and publishing creates a new dataset entry back in the session registry.
+
+## View Sync Rules
+
+- `register_dataset(...)` updates the shared session dataset registry and dataset context registry together.
+- After register/merge/split/publish/unload actions, the main dataset table is rebuilt and the relevant dataset is reselected.
+- The main preparation preview, plot, and metadata panels always render from the currently selected session dataset.
+- Open analysis workspaces keep their own dataframe copies after launch, so filter/derive/resample operations stay local to that workspace.
+- Role edits in the main window propagate to already-open analysis workspaces only when their `session.source_path` matches the edited dataset path.
+- Publishing from analysis creates a new dataset path in the main session registry; it does not replace the original analysis source dataset.
+- The comparison window stores the dataset paths chosen at launch. Its `Refresh` button re-reads those same paths from the current session registry and updates common-column controls, plots, and summaries.
+- Newly published datasets are new session entries, so they do not appear automatically inside already-open comparison windows; open a new comparison run when you want to include them.
+
 ## Testing and CI
 
 - `tests/test_plot_utils.py`: shared plotting contract coverage

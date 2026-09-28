@@ -252,8 +252,33 @@ The first comparison workflow is intentionally narrow:
 - choose one or more common numeric channels
 - inspect the overlay plot
 - review the simple side-by-side summary/statistics table
+- refresh the same comparison against the latest session state for those dataset paths
+- open one selected compared dataset back in the analysis workspace
 
 Comparison-specific labels such as baseline, candidate, or reference stay local to that task. Only the `time` role remains globally important.
+
+## Session Data Flow And View Sync
+
+Current session data flow directions:
+
+1. load file or demo -> session dataset list
+2. selected source dataset -> prepared dataset -> session dataset list
+3. selected source dataset -> split subframe datasets -> session dataset list
+4. selected session dataset -> analysis workspace
+5. analysis working dataframe -> published dataset -> session dataset list
+6. selected session datasets -> comparison window
+7. selected compared dataset -> analysis workspace
+8. any selected dataset or analysis view -> export to disk
+
+How views stay in sync:
+
+- the main window is the owner of the session dataset registry and dataset contexts
+- when a dataset is registered, merged, split, prepared, unloaded, or published, the main dataset table is rebuilt and the relevant dataset is selected
+- the main preview/info area refreshes from the currently selected session dataset
+- an analysis workspace keeps its own original dataframe and working dataframe after launch
+- analysis edits do not rewrite the source session dataset in place; publishing creates a new session dataset entry instead
+- role changes made in the main window propagate to open analysis workspaces that were launched from that exact dataset path
+- the comparison window works from the dataset paths chosen when it was opened; `Refresh` re-reads those same paths from the current session registry, but newly published datasets are separate new paths and therefore need to be added by opening a new comparison run
 
 ## Recommended Beginner Workflow
 
