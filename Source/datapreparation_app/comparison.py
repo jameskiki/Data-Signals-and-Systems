@@ -80,7 +80,7 @@ def build_comparison_summary_frame(
     """Build a compact per-dataset summary frame for the comparison window."""
 
     if not dataset_paths:
-        return pd.DataFrame(columns=["rows", "cols", "missing", "mean", "std", "min", "max"])
+        return pd.DataFrame(columns=["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"])
 
     display_labels = build_display_dataset_labels(dataset_paths)
     rows: list[dict[str, object]] = []
@@ -88,6 +88,7 @@ def build_comparison_summary_frame(
         dataframe = data_frames[dataset_path]
         summary = summarize_dataframe(dataframe, include_details=False)
         row: dict[str, object] = {
+            "dataset_path": dataset_path,
             "dataset": display_labels[dataset_path],
             "rows": summary.row_count,
             "cols": summary.column_count,
@@ -107,11 +108,11 @@ def build_comparison_summary_frame(
                 )
         rows.append(row)
 
-    summary_frame = pd.DataFrame(rows).set_index("dataset")
+    summary_frame = pd.DataFrame(rows).set_index("dataset_path")
     for column_name in ("mean", "std", "min", "max"):
         if column_name not in summary_frame.columns:
             summary_frame[column_name] = pd.NA
-    return summary_frame[["rows", "cols", "missing", "mean", "std", "min", "max"]]
+    return summary_frame[["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]]
 
 
 def build_display_dataset_labels(dataset_paths: list[str]) -> dict[str, str]:
@@ -327,18 +328,19 @@ class ComparisonWindow(PresentationShellMixin):
         self._update_plot_column_summary()
 
     def _update_comparison_view(self) -> None:
-        self._sync_dataset_paths_from_session()
-        if not self.dataset_paths:
+        self._filter_existing_dataset_paths()
+        if len(self.dataset_paths) < 2:
             self._clear_plot()
             self._render_summary_tree()
-            self.selected_dataset_detail_var.set("No compared datasets are still available in the session.")
+            self.selected_dataset_detail_var.set("At least two compared datasets must remain available in the session.")
             self._update_status_text()
             return
         selected_columns = self._get_selected_plot_columns()
         if not selected_columns:
-            self.notifications.warning("Select at least one shared numeric signal")
             self._clear_plot()
             self._render_summary_tree()
+            if get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True):
+                self.notifications.warning("Select at least one shared numeric signal")
             self._update_status_text()
             return
 
@@ -420,12 +422,12 @@ class ComparisonWindow(PresentationShellMixin):
             tree.heading(column_name, text=headings[column_name])
             tree.column(column_name, width=widths[column_name], minwidth=widths[column_name], anchor=anchor, stretch=column_name == "dataset")
 
-        for dataset_path, (dataset_name, row) in zip(self.dataset_paths, summary_frame.iterrows(), strict=False):
+        for dataset_path, row in summary_frame.iterrows():
             item_id = tree.insert(
                 "",
                 tk.END,
                 values=[
-                    dataset_name,
+                    row["dataset"],
                     format_display_value(row["rows"]),
                     format_display_value(row["cols"]),
                     format_display_value(row["missing"]),
@@ -443,14 +445,14 @@ class ComparisonWindow(PresentationShellMixin):
             self._update_selected_dataset_detail(self._summary_item_to_dataset_path[first_item])
 
     def _refresh_from_session(self) -> None:
-        self._sync_dataset_paths_from_session()
+        self._filter_existing_dataset_paths(notify_missing=True)
         self._refresh_column_controls()
         self._update_comparison_view()
 
-    def _sync_dataset_paths_from_session(self) -> None:
+    def _filter_existing_dataset_paths(self, *, notify_missing: bool = False) -> None:
         existing_paths = [path for path in self.dataset_paths if path in self.data_frames]
         removed_paths = [path for path in self.dataset_paths if path not in self.data_frames]
-        if removed_paths:
+        if notify_missing and removed_paths:
             self.notifications.warning(
                 "Some comparison datasets are no longer present in the session",
                 details="\n".join(removed_paths),

@@ -42,7 +42,7 @@ def test_build_comparison_summary_frame_includes_selected_column_statistics() ->
 
     summary_frame = build_comparison_summary_frame(["a", "b"], data_frames, stats_column="sensor")
 
-    assert list(summary_frame.columns) == ["rows", "cols", "missing", "mean", "std", "min", "max"]
+    assert list(summary_frame.columns) == ["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]
     assert summary_frame.loc["a", "rows"] == 2
     assert summary_frame.loc["a", "mean"] == 2.0
     assert summary_frame.loc["b", "max"] == 6.0
@@ -51,7 +51,7 @@ def test_build_comparison_summary_frame_includes_selected_column_statistics() ->
 def test_build_comparison_summary_frame_handles_empty_selection() -> None:
     summary_frame = build_comparison_summary_frame([], {}, stats_column=None)
 
-    assert list(summary_frame.columns) == ["rows", "cols", "missing", "mean", "std", "min", "max"]
+    assert list(summary_frame.columns) == ["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]
     assert summary_frame.empty
 
 
