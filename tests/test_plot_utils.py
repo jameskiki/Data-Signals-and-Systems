@@ -108,3 +108,24 @@ def test_overlay_cycles_palette_when_role_mapping_is_missing_columns() -> None:
     colors = [line.get_color() for line in figure.get_axes()[0].lines]
 
     assert colors == ["#654321", "#fedcba"]
+
+
+def test_overlay_uses_dataset_specific_role_mapping_when_provided() -> None:
+    df_a = pd.DataFrame({"time_s": [0.0, 1.0], "signal": [1.0, 2.0]})
+    df_b = pd.DataFrame({"time_s": [0.0, 1.0], "signal": [2.0, 3.0]})
+    options = PlotOptions(
+        cols_to_plot=["signal"],
+        xcol="time_s",
+        use_subplots=False,
+        style=PlotStyle(color_palette=["#654321", "#fedcba"]),
+    )
+
+    figure = create_plot_figure(
+        options,
+        ["a", "b"],
+        {"a": df_a, "b": df_b},
+        column_roles={"a": {"signal": "signal"}, "b": {"signal": "output"}},
+    )
+    colors = [line.get_color() for line in figure.get_axes()[0].lines]
+
+    assert colors == ["#7b1fa2", "#1b5e20"]

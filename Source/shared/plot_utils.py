@@ -125,6 +125,7 @@ def create_overlay_figure(
                     column_roles=column_roles,
                     style=resolved_style,
                     series_index=series_index,
+                    dataset_path=path,
                 ),
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
@@ -233,6 +234,7 @@ def plot_columns_on_axes(
                     column_roles=column_roles,
                     style=resolved_style,
                     series_index=series_index,
+                    dataset_path=path,
                 ),
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
@@ -310,14 +312,22 @@ def _apply_axis_contract(
 def _resolve_plot_color(
     column_name: str,
     *,
-    column_roles: dict[str, str] | None,
+    column_roles: dict[str, object] | None,
     style: PlotStyle,
     series_index: int,
+    dataset_path: str,
 ) -> str:
     """Resolve a line color from roles when available, otherwise cycle the palette."""
 
-    if column_roles and column_name in column_roles:
-        return get_column_role_plot_color(get_column_role(column_roles, column_name))
+    role_mapping: dict[str, str] | None = None
+    if column_roles:
+        dataset_mapping = column_roles.get(dataset_path)
+        if isinstance(dataset_mapping, dict) and column_name in dataset_mapping:
+            role_mapping = dataset_mapping
+        elif column_name in column_roles and isinstance(column_roles.get(column_name), str):
+            role_mapping = column_roles  # type: ignore[assignment]
+    if role_mapping is not None:
+        return get_column_role_plot_color(get_column_role(role_mapping, column_name))
     palette = style.color_palette or PlotStyle().color_palette
     return palette[series_index % len(palette)]
 
