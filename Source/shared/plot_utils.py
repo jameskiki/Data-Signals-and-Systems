@@ -322,6 +322,8 @@ def _resolve_plot_color(
     if role_mapping is not None and column_name in role_mapping:
         return get_column_role_plot_color(get_column_role(role_mapping, column_name))
     palette = style.color_palette or PlotStyle().color_palette
+    if not palette:
+        return "#1f77b4"
     return palette[series_index % len(palette)]
 
 

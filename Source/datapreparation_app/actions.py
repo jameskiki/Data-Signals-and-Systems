@@ -404,7 +404,7 @@ def publish_analysis_workspace_view(app, workspace) -> str | None:
 	register_dataset(
 		app,
 		published_path,
-		workspace.session.working_frame,
+		workspace.session.working_frame.copy(),
 		source_paths=collect_source_paths(app, [source_path]),
 		description=f"Published from analysis workspace ({os.path.basename(source_path)})",
 		column_roles=workspace.column_roles,

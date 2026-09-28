@@ -178,6 +178,7 @@ class ComparisonWindow(PresentationShellMixin):
         self._plot_column_selector_menu: tk.Menu | None = None
         self._plot_column_selector_vars: dict[str, tk.BooleanVar] = {}
         self._plot_column_hidden_count = 0
+        self._plot_columns_initialized = False
         self._summary_item_to_dataset_path: dict[str, str] = {}
 
         self._plot_figure: plt.Figure | None = None
@@ -289,7 +290,7 @@ class ComparisonWindow(PresentationShellMixin):
             self.summary_column_var.set(common_numeric_columns[0] if common_numeric_columns else "")
 
         default_selected = self._get_selected_plot_columns()
-        if not default_selected and common_numeric_columns:
+        if not self._plot_columns_initialized and not default_selected and common_numeric_columns:
             default_selected = common_numeric_columns[:1]
         self._plot_column_selector_vars, self._plot_column_hidden_count = self._build_checkbutton_selector_menu(
             menu=self._plot_column_selector_menu,
@@ -303,6 +304,7 @@ class ComparisonWindow(PresentationShellMixin):
             on_clear_selection=self._clear_plot_columns,
             hidden_label="signals",
         )
+        self._plot_columns_initialized = True
         self._update_plot_column_summary()
 
     def _handle_plot_column_selection_changed(self, *_args: object) -> None:

@@ -129,3 +129,18 @@ def test_overlay_uses_dataset_specific_role_mapping_when_provided() -> None:
     colors = [line.get_color() for line in figure.get_axes()[0].lines]
 
     assert colors == ["#7b1fa2", "#1b5e20"]
+
+
+def test_overlay_uses_fixed_color_when_palette_is_empty() -> None:
+    df = pd.DataFrame({"time_s": [0.0, 1.0], "signal": [1.0, 2.0]})
+    options = PlotOptions(
+        cols_to_plot=["signal"],
+        xcol="time_s",
+        use_subplots=False,
+        style=PlotStyle(color_palette=[]),
+    )
+
+    figure = create_plot_figure(options, ["a"], {"a": df}, column_roles=None)
+    colors = [line.get_color() for line in figure.get_axes()[0].lines]
+
+    assert colors == ["#1f77b4"]
