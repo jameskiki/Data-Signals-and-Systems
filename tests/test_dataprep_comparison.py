@@ -4,6 +4,7 @@ import pandas as pd
 
 from Source.datapreparation_app.comparison import (
     build_comparison_summary_frame,
+    build_display_dataset_labels,
     get_common_columns,
     resolve_default_x_column,
 )
@@ -44,3 +45,17 @@ def test_build_comparison_summary_frame_includes_selected_column_statistics() ->
     assert summary_frame.loc["a", "rows"] == 2
     assert summary_frame.loc["a", "mean"] == 2.0
     assert summary_frame.loc["b", "max"] == 6.0
+
+
+def test_build_display_dataset_labels_deduplicates_matching_basenames() -> None:
+    labels = build_display_dataset_labels(
+        [
+            "/tmp/run_a/shared.csv",
+            "/tmp/run_b/shared.csv",
+            "/tmp/run_c/unique.csv",
+        ]
+    )
+
+    assert labels["/tmp/run_a/shared.csv"] == "shared.csv (1)"
+    assert labels["/tmp/run_b/shared.csv"] == "shared.csv (2)"
+    assert labels["/tmp/run_c/unique.csv"] == "unique.csv"

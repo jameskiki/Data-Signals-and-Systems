@@ -79,12 +79,13 @@ def build_comparison_summary_frame(
 ) -> pd.DataFrame:
     """Build a compact per-dataset summary frame for the comparison window."""
 
+    display_labels = build_display_dataset_labels(dataset_paths)
     rows: list[dict[str, object]] = []
     for dataset_path in dataset_paths:
         dataframe = data_frames[dataset_path]
         summary = summarize_dataframe(dataframe, include_details=False)
         row: dict[str, object] = {
-            "dataset": os.path.basename(dataset_path),
+            "dataset": display_labels[dataset_path],
             "rows": summary.row_count,
             "cols": summary.column_count,
             "missing": summary.total_missing_count,
@@ -108,6 +109,26 @@ def build_comparison_summary_frame(
         if column_name not in summary_frame.columns:
             summary_frame[column_name] = pd.NA
     return summary_frame[["rows", "cols", "missing", "mean", "std", "min", "max"]]
+
+
+def build_display_dataset_labels(dataset_paths: list[str]) -> dict[str, str]:
+    """Return unique display labels while keeping short basenames when possible."""
+
+    basename_counts: dict[str, int] = {}
+    for dataset_path in dataset_paths:
+        basename = os.path.basename(dataset_path)
+        basename_counts[basename] = basename_counts.get(basename, 0) + 1
+
+    duplicate_counters: dict[str, int] = {}
+    labels: dict[str, str] = {}
+    for dataset_path in dataset_paths:
+        basename = os.path.basename(dataset_path)
+        if basename_counts[basename] == 1:
+            labels[dataset_path] = basename
+            continue
+        duplicate_counters[basename] = duplicate_counters.get(basename, 0) + 1
+        labels[dataset_path] = f"{basename} ({duplicate_counters[basename]})"
+    return labels
 
 
 class ComparisonWindow(PresentationShellMixin):
