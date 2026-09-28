@@ -17,7 +17,7 @@ import numpy as np
 import os
 import pandas as pd
 
-from .column_roles import get_column_role, get_column_role_plot_color
+from .column_roles import get_available_column_roles, get_column_role, get_column_role_plot_color
 from .display_format import apply_numeric_axis_format
 
 
@@ -335,9 +335,23 @@ def _resolve_role_mapping_for_dataset(column_roles: PlotColumnRoles, dataset_pat
     dataset_mapping = column_roles.get(dataset_path) if isinstance(column_roles, Mapping) else None
     if isinstance(dataset_mapping, dict):
         return dataset_mapping
-    if all(isinstance(role_name, str) for role_name in column_roles.values()):
+    if _looks_like_global_role_mapping(column_roles):
         return dict(column_roles)
     return None
+
+
+def _looks_like_global_role_mapping(column_roles: PlotColumnRoles) -> bool:
+    """Return True when *column_roles* matches the expected column->role mapping shape."""
+
+    if not isinstance(column_roles, Mapping):
+        return False
+    valid_roles = set(get_available_column_roles())
+    return all(
+        isinstance(column_name, str)
+        and isinstance(role_name, str)
+        and role_name in valid_roles
+        for column_name, role_name in column_roles.items()
+    )
 
 
 def normalize_x_values(series: pd.Series) -> pd.Series:
