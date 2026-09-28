@@ -103,6 +103,7 @@ def create_overlay_figure(
     fig, ax = plt_module.subplots(figsize=(10, 6))
     x_values_by_axis: XValueList = []
     x_label = "Index" if xcol == "Index" else xcol
+    series_index = 0
 
     for col_name in cols_to_plot:
         for path in selected_file_paths:
@@ -119,11 +120,17 @@ def create_overlay_figure(
                 x_vals,
                 df[col_name],
                 label=_build_overlay_label(path, col_name, selected_file_paths, cols_to_plot),
-                color=get_column_role_plot_color(get_column_role(column_roles or {}, col_name)),
+                color=_resolve_plot_color(
+                    col_name,
+                    column_roles=column_roles,
+                    style=resolved_style,
+                    series_index=series_index,
+                ),
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
                 linewidth=resolved_style.line_width,
             )
+            series_index += 1
 
     _apply_axis_contract(
         ax,
@@ -203,6 +210,7 @@ def plot_columns_on_axes(
     x_values_by_axis: XValueList = []
     resolved_style = style or PlotStyle()
     ncols = axes.shape[1]
+    series_index = 0
     for idx, col_name in enumerate(cols_to_plot):
         row = idx // ncols
         col = idx % ncols
@@ -220,11 +228,17 @@ def plot_columns_on_axes(
                 x_vals,
                 df[col_name],
                 label=os.path.basename(path),
-                color=get_column_role_plot_color(get_column_role(column_roles or {}, col_name)),
+                color=_resolve_plot_color(
+                    col_name,
+                    column_roles=column_roles,
+                    style=resolved_style,
+                    series_index=series_index,
+                ),
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
                 linewidth=resolved_style.line_width,
             )
+            series_index += 1
         _apply_axis_contract(
             ax,
             title=col_name,
@@ -291,6 +305,21 @@ def _apply_axis_contract(
     """Compatibility wrapper around apply_axis_contract for local call sites."""
 
     apply_axis_contract(axis, title=title, x_label=x_label, y_label=y_label, style=style)
+
+
+def _resolve_plot_color(
+    column_name: str,
+    *,
+    column_roles: dict[str, str] | None,
+    style: PlotStyle,
+    series_index: int,
+) -> str:
+    """Resolve a line color from roles when available, otherwise cycle the palette."""
+
+    if column_roles is not None:
+        return get_column_role_plot_color(get_column_role(column_roles, column_name))
+    palette = style.color_palette or PlotStyle().color_palette
+    return palette[series_index % len(palette)]
 
 
 def normalize_x_values(series: pd.Series) -> pd.Series:

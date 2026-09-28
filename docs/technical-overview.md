@@ -15,7 +15,7 @@ The project is organized around:
 ## Current Package Map
 
 - `EvalData.py`: thin application entry point
-- `Source/datapreparation_app/`: load/prepare datasets, preview, split, ad-hoc plotting dialogs, launch analysis workspace
+- `Source/datapreparation_app/`: load/prepare datasets, preview, split, ad-hoc plotting dialogs, launch analysis workspace, and host the lightweight comparison window over session datasets
 - `Source/analysis_app/`: filtering, derived signals, frequency analysis, cycle analysis, stats, export
 - `Source/data_ops/`: pure operation modules (`signals`, `spectral`, `cycles`, `frame_ops`, `summary`, `filtering`, `io_ops`, `models`)
 - `Source/shared/`: shared plot contracts/builders, embedded figure lifecycle, role/display helpers, notifications, docs links
@@ -100,10 +100,11 @@ The repository now enforces architecture boundaries via `tests/test_import_bound
 ## Runtime Flow
 
 1. `EvalData.py` starts `Source.datapreparation_app.app.main()`.
-2. Datapreparation app loads datasets and maintains dataset contexts.
+2. Datapreparation app loads datasets and maintains the shared in-memory session dataset registry plus dataset contexts.
 3. Preview and ad-hoc plotting use shared plot contracts/builders.
 4. Prepared datasets can be opened in analysis workspace.
-5. Analysis workspace performs operations through `Source/data_ops/*` and renders results through shared plotting infrastructure plus analysis-specific orchestration.
+5. Analysis workspace performs operations through `Source/data_ops/*`, can publish its current working dataframe back into the shared session registry, and renders results through shared plotting infrastructure plus analysis-specific orchestration.
+6. The comparison window reuses the shared session registry, plotting contracts, and summary helpers to overlay and summarize two or more datasets already present in the session.
 
 ## Testing and CI
 

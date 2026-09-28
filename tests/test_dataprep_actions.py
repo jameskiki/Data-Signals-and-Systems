@@ -6,6 +6,7 @@ import pandas as pd
 
 from Source.datapreparation_app import actions
 from Source.datapreparation_app.datasets import DatasetContext
+from Source.shared.plot_options import PlotStyle
 
 
 class DummyNotifications:
@@ -30,6 +31,7 @@ class DummyApp:
         self.data_frames = {}
         self.dataset_contexts = {}
         self.session = SimpleNamespace(role_editor_column="", role_editor_value="")
+        self.style_vars = SimpleNamespace(to_plot_style=lambda: PlotStyle())
 
         self.prep_views_refresh_count = 0
         self.set_role_column_calls = []
@@ -210,3 +212,71 @@ def test_open_analysis_workspace_appends_workspace(monkeypatch):
     assert len(app._analysis_workspaces) == 1
     assert created[0]["column_roles"] == {"x": "signal"}
     assert created[0]["dataset_description"] == "demo dataset"
+    assert callable(created[0]["on_publish_current_view"])
+
+
+def test_publish_analysis_workspace_view_registers_dataset(monkeypatch):
+    app = DummyApp()
+    app.data_frames = {"C:/tmp/source.csv": pd.DataFrame({"time_s": [0.0, 1.0], "sensor": [1.0, 2.0]})}
+    app.dataset_contexts = {
+        "C:/tmp/source.csv": DatasetContext(
+            source_paths=["C:/tmp/source.csv"],
+            description="source dataset",
+            column_roles={"time_s": "time", "sensor": "signal"},
+        )
+    }
+    refresh_calls = []
+    select_calls = []
+    monkeypatch.setattr(actions, "refresh_dataset_table", lambda _app: refresh_calls.append(True))
+    monkeypatch.setattr(actions, "select_dataset_in_table", lambda _app, path: select_calls.append(path))
+
+    workspace = SimpleNamespace(
+        session=SimpleNamespace(
+            source_path="C:/tmp/source.csv",
+            working_frame=pd.DataFrame({"time_s": [0.0, 1.0], "sensor_filt": [0.5, 1.5]}),
+        ),
+        active_column_var=SimpleNamespace(get=lambda: "sensor_filt"),
+        column_roles={"time_s": "time", "sensor_filt": "signal"},
+    )
+
+    published_path = actions.publish_analysis_workspace_view(app, workspace)
+
+    assert published_path is not None
+    assert published_path.endswith("source__sensor_filt_analysis.csv")
+    assert published_path in app.data_frames
+    assert app.dataset_contexts[published_path].source_paths == ["C:/tmp/source.csv"]
+    assert app.dataset_contexts[published_path].column_roles == {"time_s": "time", "sensor_filt": "signal"}
+    assert refresh_calls == [True]
+    assert select_calls == [published_path]
+    assert app.prep_views_refresh_count == 1
+    assert app.notifications.success_messages == [f"Published dataset: {published_path.split('/')[-1]}"]
+
+
+def test_open_comparison_window_warns_when_fewer_than_two_datasets_selected(monkeypatch):
+    app = DummyApp()
+    app.multiple_selected_paths = ["C:/tmp/a.csv"]
+
+    actions.open_comparison_window(app)
+
+    assert app.notifications.warning_messages == [("Select at least two datasets to compare", None)]
+
+
+def test_open_comparison_window_launches_window(monkeypatch):
+    app = DummyApp()
+    app.multiple_selected_paths = ["C:/tmp/a.csv", "C:/tmp/b.csv"]
+    app.data_frames = {
+        "C:/tmp/a.csv": pd.DataFrame({"time_s": [0.0], "sensor": [1.0]}),
+        "C:/tmp/b.csv": pd.DataFrame({"time_s": [0.0], "sensor": [2.0]}),
+    }
+    created = []
+
+    class FakeComparisonWindow:
+        def __init__(self, *args, **kwargs):
+            created.append((args, kwargs))
+
+    monkeypatch.setattr(actions, "ComparisonWindow", FakeComparisonWindow)
+
+    actions.open_comparison_window(app)
+
+    assert len(created) == 1
+    assert created[0][0][1] == ["C:/tmp/a.csv", "C:/tmp/b.csv"]

@@ -69,3 +69,20 @@ def test_style_contract_controls_legend_and_grid() -> None:
     assert axis.get_legend() is None
     assert not any(line.get_visible() for line in axis.xaxis.get_gridlines())
     assert not any(line.get_visible() for line in axis.yaxis.get_gridlines())
+
+
+def test_overlay_cycles_palette_when_roles_unavailable() -> None:
+    df_a = pd.DataFrame({"time_s": [0.0, 1.0], "signal": [1.0, 2.0]})
+    df_b = pd.DataFrame({"time_s": [0.0, 1.0], "signal": [2.0, 3.0]})
+    style = PlotStyle(color_palette=["#123456", "#abcdef"])
+    options = PlotOptions(
+        cols_to_plot=["signal"],
+        xcol="time_s",
+        use_subplots=False,
+        style=style,
+    )
+
+    figure = create_plot_figure(options, ["a", "b"], {"a": df_a, "b": df_b})
+    colors = [line.get_color() for line in figure.get_axes()[0].lines]
+
+    assert colors == ["#123456", "#abcdef"]

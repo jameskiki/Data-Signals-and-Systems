@@ -11,7 +11,8 @@ EvalData is a Python desktop application for loading, preparing, previewing, and
 The application has two working areas:
 
 - the main window for loading data, checking it, assigning roles, and creating prepared datasets
-- the analysis workspace for filtering, FFT/Welch, cycles, statistics, and exports on one selected dataset
+- the analysis workspace for filtering, FFT/Welch, cycles, statistics, exports, and publishing a current working view back into the session dataset list
+- a lightweight comparison window for overlaying and summarizing two or more session datasets
 
 ## Start Here
 
@@ -35,6 +36,7 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
 - dataset import and summary views
 - preparation workflows for column-role assignment, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
+- session-level dataset reuse across preparation, analysis publishing, and comparison
 - a dedicated analysis workspace with:
   - simple filtering (min/max masking)
   - signal processing (moving average, median, exponential smoothing, high-pass, Butterworth lowpass/highpass/bandpass)
@@ -44,6 +46,10 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
   - resampling to a uniform time grid
   - engineering statistics and correlation matrices
   - interactive plotting with subplots and exports
+- a lightweight comparison workspace with:
+  - shared x-axis selection across datasets
+  - overlay plotting for common numeric channels
+  - simple side-by-side summary/statistics comparison
 - demo datasets for reproducible walkthroughs and exploratory checks
 
 ## Workflow Overview
@@ -56,6 +62,8 @@ flowchart TB
 	D --> E[Create prepared dataset]
 	E --> F[Open analysis workspace]
 	F --> G[Filter signals, inspect spectra, analyze cycles]
+	G --> H[Optionally publish current view back to session]
+	H --> I[Compare two or more session datasets]
 
 	classDef source fill:#dbeafe,stroke:#1d4ed8,color:#0f172a,stroke-width:1.5px;
 	classDef inspect fill:#fef3c7,stroke:#b45309,color:#0f172a,stroke-width:1.5px;

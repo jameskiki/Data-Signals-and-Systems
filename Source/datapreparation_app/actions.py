@@ -9,6 +9,7 @@ from .datasets import DatasetContext, register_dataset, select_dataset_in_table,
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog, show_figure_in_window
 from .preview import refresh_preview_table
+from .comparison import ComparisonWindow
 from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
 from Source.shared.plot_utils import create_plot_figure
 
@@ -379,8 +380,48 @@ def open_analysis_workspace(app) -> None:
 		column_roles=app.dataset_contexts.get(selected_path, DatasetContext()).column_roles,
 		dataset_description=app.dataset_contexts.get(selected_path, DatasetContext()).description,
 		on_close=app._on_analysis_workspace_closed,
+		on_publish_current_view=lambda workspace: publish_analysis_workspace_view(app, workspace),
 	)
 	app._analysis_workspaces.append(workspace)
+
+def publish_analysis_workspace_view(app, workspace) -> str | None:
+	source_path = workspace.session.source_path
+	if source_path not in app.data_frames and source_path not in app.dataset_contexts:
+		app.notifications.warning("The source dataset is no longer available in the session")
+		return None
+
+	active_column = workspace.active_column_var.get().strip() if getattr(workspace, "active_column_var", None) is not None else ""
+	suffix = f"{active_column}_analysis" if active_column else "analysis_view"
+	published_path = build_virtual_dataset_path(app.data_frames, source_path, suffix)
+	register_dataset(
+		app,
+		published_path,
+		workspace.session.working_frame,
+		source_paths=collect_source_paths(app, [source_path]),
+		description=f"Published from analysis workspace ({os.path.basename(source_path)})",
+		column_roles=workspace.column_roles,
+	)
+	refresh_dataset_table(app)
+	select_dataset_in_table(app, published_path)
+	app._refresh_dataset_preparation_views()
+	app.notifications.success(f"Published dataset: {os.path.basename(published_path)}")
+	return published_path
+
+def open_comparison_window(app) -> None:
+	selected_file_paths = app._get_multiple_selected_file_paths("Select datasets to compare")
+	if not selected_file_paths:
+		return
+	if len(selected_file_paths) < 2:
+		app.notifications.warning("Select at least two datasets to compare")
+		return
+
+	ComparisonWindow(
+		app.root,
+		selected_file_paths,
+		app.data_frames,
+		app.dataset_contexts,
+		default_style=app.style_vars.to_plot_style(),
+	)
 
 def unload_selected_files(app) -> None:
 	selected_file_paths = app._get_multiple_selected_file_paths("Select files to unload")

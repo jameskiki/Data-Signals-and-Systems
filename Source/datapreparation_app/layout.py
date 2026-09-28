@@ -49,6 +49,7 @@ def build_main_ui(app, preview_row_limit: int) -> None:
 
     analysis_menu = tk.Menu(menu_bar, tearoff=0)
     analysis_menu.add_command(label="Open Analysis Workspace", command=app.open_analysis_workspace)
+    analysis_menu.add_command(label="Open Comparison Window", command=app.open_comparison_window)
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)

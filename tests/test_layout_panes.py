@@ -181,6 +181,7 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
         split_selected_dataset=lambda: None,
         plot_selected_data=lambda: None,
         open_analysis_workspace=lambda: None,
+        open_comparison_window=lambda: None,
         _apply_table_backend_selection=lambda: None,
         open_documentation=lambda _path: None,
     )

@@ -90,6 +90,7 @@ def build_context_panel(workspace, parent: ttk.Frame) -> None:
     action_frame = ttk.LabelFrame(parent, text="Actions")
     action_frame.pack(fill=tk.X, padx=5, pady=5)
     ttk.Button(action_frame, text="Reset Working Data", command=workspace._reset_working_data).pack(fill=tk.X, padx=5, pady=(5, 2))
+    ttk.Button(action_frame, text="Publish Current View to Session", command=workspace._publish_current_view).pack(fill=tk.X, padx=5, pady=2)
     ttk.Button(action_frame, text="Export Current View", command=workspace._export_current_view).pack(fill=tk.X, padx=5, pady=2)
     ttk.Button(action_frame, text="Refresh Statistics", command=workspace._refresh_summary_views).pack(fill=tk.X, padx=5, pady=(2, 5))
 

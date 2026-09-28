@@ -92,9 +92,11 @@ class AnalysisWorkspace(PresentationShellMixin):
         column_roles: dict[str, str] | None = None,
         dataset_description: str = "",
         on_close: Callable[["AnalysisWorkspace"], None] | None = None,
+        on_publish_current_view: Callable[["AnalysisWorkspace"], str | None] | None = None,
     ) -> None:
         self.parent = parent
         self.on_close = on_close
+        self.on_publish_current_view = on_publish_current_view
         self.column_roles = dict(column_roles or {})
         self.dataset_description = dataset_description
         self.notifications = NotificationManager()
@@ -270,6 +272,15 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.window.destroy()
         if self.on_close is not None:
             self.on_close(self)
+
+    def _publish_current_view(self) -> None:
+        if self.on_publish_current_view is None:
+            self.notifications.warning("Publishing back to the session is unavailable in this workspace")
+            return
+
+        published_path = self.on_publish_current_view(self)
+        if published_path is not None:
+            self.notifications.success(f"Published current view to session: {os.path.basename(published_path)}")
 
     def _refresh_cycle_method_controls(self) -> None:
         apply_cycle_method_rule(self)

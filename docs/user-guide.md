@@ -15,7 +15,8 @@ flowchart TB
     C --> D[Optionally choose channels to keep]
     D --> E[Create prepared dataset]
     E --> F[Open analysis workspace]
-    F --> G[Analyze, plot, and export current view]
+    F --> G[Analyze, plot, export, or publish current view]
+    G --> H[Compare session datasets when needed]
 
     classDef source fill:#dbeafe,stroke:#1d4ed8,color:#0f172a,stroke-width:1.5px;
     classDef inspect fill:#fef3c7,stroke:#b45309,color:#0f172a,stroke-width:1.5px;
@@ -185,7 +186,7 @@ Select exactly one dataset, then use:
 
 The analysis workspace is for detailed work on one dataset at a time.
 
-The `Preview` tab shows the current working dataframe. `Filter` changes that working copy through three sub-tabs: Simple Filtering (min/max masking), Signal Processing (smoothing, high-pass, and Butterworth filters), and Resample (interpolation to a uniform time grid). `Derived Signals` creates new columns such as delta, derivative, detrend, integrate, rms_envelope, and hilbert_envelope. `Frequency` runs FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, or Spectrogram. `Cycles` detects repeated segments via fixed_length, rising_edge, zero_crossing, or peak detection. `Statistics` summarizes the current state with statistics and correlation views.
+The `Preview` tab shows the current working dataframe. `Filter` changes that working copy through three sub-tabs: Simple Filtering (min/max masking), Signal Processing (smoothing, high-pass, and Butterworth filters), and Resample (interpolation to a uniform time grid). `Derived Signals` creates new columns such as delta, derivative, detrend, integrate, rms_envelope, and hilbert_envelope. `Frequency` runs FFT Amplitude, Welch PSD, Transfer Estimate, Coherence, or Spectrogram. `Cycles` detects repeated segments via fixed_length, rising_edge, zero_crossing, or peak detection. `Statistics` summarizes the current state with statistics and correlation views. `Publish Current View to Session` turns the current working dataframe into a normal session dataset that can be revisited from the main window or used in comparison.
 
 If you want a focused read on cycle-analysis interpretation (what to read, where to find it, and how to judge quality), see [cycle-analysis-guide.md](cycle-analysis-guide.md).
 
@@ -239,6 +240,20 @@ There are several export paths:
 When the latest frequency result is `Transfer Estimate` or `Coherence`, `Export Current View` also writes a sidecar report file named `<csv>.analysis_report.txt` with confidence and dominant-band diagnostics.
 
 Export behavior is described in more detail in `data-formats.md`.
+
+## Step 10: Compare Session Datasets
+
+When you want a quick cross-check between prepared data and published analysis results, open `Analysis -> Open Comparison Window` from the main window.
+
+The first comparison workflow is intentionally narrow:
+
+- pick two or more datasets from the current session
+- choose one shared X-axis
+- choose one or more common numeric channels
+- inspect the overlay plot
+- review the simple side-by-side summary/statistics table
+
+Comparison-specific labels such as baseline, candidate, or reference stay local to that task. Only the `time` role remains globally important.
 
 ## Recommended Beginner Workflow
 

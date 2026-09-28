@@ -11,6 +11,7 @@ from .actions import (
     create_prepared_dataset,
     split_selected_dataset,
     open_analysis_workspace,
+    open_comparison_window,
     unload_selected_files,
     export_clean_data,
     apply_selected_column_role,
@@ -355,6 +356,9 @@ class DataPreparationApp(PresentationShellMixin):
 
     def open_analysis_workspace(self) -> None:
         return open_analysis_workspace(self)
+
+    def open_comparison_window(self) -> None:
+        return open_comparison_window(self)
 
     def unload_selected_files(self) -> None:
         return unload_selected_files(self)
