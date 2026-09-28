@@ -42,6 +42,7 @@ class DummyApp:
         self.single_selected_path = None
         self.multiple_selected_paths = []
         self._analysis_workspaces = []
+        self._comparison_windows = []
         self.root = object()
 
     def _refresh_dataset_preparation_views(self):
@@ -63,6 +64,9 @@ class DummyApp:
         return self.multiple_selected_paths
 
     def _on_analysis_workspace_closed(self, _workspace):
+        return None
+
+    def _on_comparison_window_closed(self, _window):
         return None
 
 
@@ -280,3 +284,4 @@ def test_open_comparison_window_launches_window(monkeypatch):
 
     assert len(created) == 1
     assert created[0][0][1] == ["C:/tmp/a.csv", "C:/tmp/b.csv"]
+    assert len(app._comparison_windows) == 1

@@ -278,9 +278,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             self.notifications.warning("Publishing back to the session is unavailable in this workspace")
             return
 
-        published_path = self.on_publish_current_view(self)
-        if published_path is not None:
-            self.notifications.success(f"Published current view to session: {os.path.basename(published_path)}")
+        self.on_publish_current_view(self)
 
     def _refresh_cycle_method_controls(self) -> None:
         apply_cycle_method_rule(self)

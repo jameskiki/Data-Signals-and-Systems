@@ -415,13 +415,15 @@ def open_comparison_window(app) -> None:
 		app.notifications.warning("Select at least two datasets to compare")
 		return
 
-	ComparisonWindow(
+	window = ComparisonWindow(
 		app.root,
 		selected_file_paths,
 		app.data_frames,
 		app.dataset_contexts,
 		default_style=app.style_vars.to_plot_style(),
+		on_close=app._on_comparison_window_closed,
 	)
+	app._comparison_windows.append(window)
 
 def unload_selected_files(app) -> None:
 	selected_file_paths = app._get_multiple_selected_file_paths("Select files to unload")

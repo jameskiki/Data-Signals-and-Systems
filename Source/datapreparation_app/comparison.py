@@ -121,6 +121,7 @@ class ComparisonWindow(PresentationShellMixin):
         dataset_contexts: dict[str, object],
         *,
         default_style: PlotStyle | None = None,
+        on_close=None,
     ) -> None:
         self.parent = parent
         self.dataset_paths = list(dataset_paths)
@@ -128,6 +129,7 @@ class ComparisonWindow(PresentationShellMixin):
         self.dataset_contexts = dataset_contexts
         self.notifications = NotificationManager()
         self.default_style = default_style or PlotStyle()
+        self.on_close = on_close
 
         self.window = tk.Toplevel(parent)
         self.window.title("Dataset Comparison")
@@ -221,6 +223,8 @@ class ComparisonWindow(PresentationShellMixin):
             plt.close(self._plot_figure)
             self._plot_figure = None
         self.window.destroy()
+        if self.on_close is not None:
+            self.on_close(self)
 
     def _refresh_column_controls(self) -> None:
         common_columns = get_common_columns(self.dataset_paths, self.data_frames)

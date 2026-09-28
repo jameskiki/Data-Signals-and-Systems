@@ -101,6 +101,7 @@ class DataPreparationApp(PresentationShellMixin):
         self.data_frames: dict[str, pd.DataFrame] = {}
         self.dataset_contexts: dict[str, DatasetContext] = {}
         self._analysis_workspaces: list[object] = []
+        self._comparison_windows: list[object] = []
         self._preview_plot_figure: plt.Figure | None = None
         self._preview_plot_canvas: FigureCanvasTkAgg | None = None
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
@@ -1063,6 +1064,10 @@ class DataPreparationApp(PresentationShellMixin):
     def _on_analysis_workspace_closed(self, workspace: object) -> None:
         if workspace in self._analysis_workspaces:
             self._analysis_workspaces.remove(workspace)
+
+    def _on_comparison_window_closed(self, window: object) -> None:
+        if window in self._comparison_windows:
+            self._comparison_windows.remove(window)
 
 def main() -> None:
     root = tk.Tk()
