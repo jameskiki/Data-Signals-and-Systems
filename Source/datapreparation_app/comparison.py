@@ -337,7 +337,7 @@ class ComparisonWindow(PresentationShellMixin):
         self._filter_existing_dataset_paths()
         if len(self.dataset_paths) < 2:
             self._clear_plot()
-            self._render_summary_tree()
+            self._clear_summary_tree()
             self.selected_dataset_detail_var.set("At least two compared datasets must remain available in the session.")
             self._update_status_text()
             return
@@ -449,6 +449,12 @@ class ComparisonWindow(PresentationShellMixin):
             first_item = next(iter(self._summary_item_to_dataset_path))
             tree.selection_set(first_item)
             self._update_selected_dataset_detail(self._summary_item_to_dataset_path[first_item])
+
+    def _clear_summary_tree(self) -> None:
+        for widget in self.summary_container.winfo_children():
+            widget.destroy()
+        self._summary_tree = None
+        self._summary_item_to_dataset_path = {}
 
     def _refresh_from_session(self) -> None:
         self._filter_existing_dataset_paths(notify_missing=True)
