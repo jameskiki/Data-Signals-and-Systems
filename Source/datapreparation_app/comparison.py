@@ -94,7 +94,11 @@ def build_comparison_summary_frame(
             "cols": summary.column_count,
             "missing": summary.total_missing_count,
         }
-        if stats_column and stats_column in dataframe.columns:
+        if (
+            stats_column
+            and stats_column in dataframe.columns
+            and pd.api.types.is_numeric_dtype(dataframe[stats_column])
+        ):
             stats_frame = build_statistics_frame(dataframe[[stats_column]])
             if stats_column in stats_frame.index:
                 stats_row = stats_frame.loc[stats_column]
@@ -150,7 +154,7 @@ class ComparisonWindow(PresentationShellMixin):
         on_open_dataset=None,
     ) -> None:
         self.parent = parent
-        self.dataset_paths = list(dataset_paths)
+        self.dataset_paths = [dataset_path for dataset_path in dataset_paths if dataset_path in data_frames]
         self.data_frames = data_frames
         self.dataset_contexts = dataset_contexts
         self.notifications = NotificationManager()
@@ -163,8 +167,8 @@ class ComparisonWindow(PresentationShellMixin):
         self.window.geometry(COMPARISON_WINDOW_GEOMETRY)
         self.window.protocol("WM_DELETE_WINDOW", self.close)
 
-        self.x_column_var = tk.StringVar(value=resolve_default_x_column(dataset_paths, data_frames, dataset_contexts))
-        common_numeric_columns = get_common_columns(dataset_paths, data_frames, numeric_only=True)
+        self.x_column_var = tk.StringVar(value=resolve_default_x_column(self.dataset_paths, data_frames, dataset_contexts))
+        common_numeric_columns = get_common_columns(self.dataset_paths, data_frames, numeric_only=True)
         default_summary_column = common_numeric_columns[0] if common_numeric_columns else ""
         self.summary_column_var = tk.StringVar(value=default_summary_column)
         self.plot_column_summary_var = tk.StringVar(value="No common numeric channels")
