@@ -172,10 +172,12 @@ class ComparisonWindow(PresentationShellMixin):
         ttk.Label(controls, text="Shared X-axis").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.x_column_combo = ttk.Combobox(controls, textvariable=self.x_column_var, state="readonly")
         self.x_column_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+        self.x_column_combo.bind("<<ComboboxSelected>>", lambda *_args: self._update_comparison_view())
 
         ttk.Label(controls, text="Summary column").grid(row=1, column=2, sticky="w", padx=5, pady=5)
         self.summary_column_combo = ttk.Combobox(controls, textvariable=self.summary_column_var, state="readonly")
         self.summary_column_combo.grid(row=1, column=3, sticky="ew", padx=5, pady=5)
+        self.summary_column_combo.bind("<<ComboboxSelected>>", lambda *_args: self._update_comparison_view())
 
         ttk.Label(controls, text="Signals").grid(row=2, column=0, sticky="nw", padx=5, pady=5)
         selector_row = ttk.Frame(controls)

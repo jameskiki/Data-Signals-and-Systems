@@ -316,7 +316,7 @@ def _resolve_plot_color(
 ) -> str:
     """Resolve a line color from roles when available, otherwise cycle the palette."""
 
-    if column_roles is not None:
+    if column_roles:
         return get_column_role_plot_color(get_column_role(column_roles, column_name))
     palette = style.color_palette or PlotStyle().color_palette
     return palette[series_index % len(palette)]
