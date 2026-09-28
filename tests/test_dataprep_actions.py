@@ -267,6 +267,31 @@ def test_publish_analysis_workspace_view_registers_dataset(monkeypatch):
     assert app.data_frames[published_path].loc[0, "sensor_filt"] == 0.5
 
 
+def test_publish_analysis_workspace_view_still_works_when_source_unloaded(monkeypatch):
+    app = DummyApp()
+    refresh_calls = []
+    select_calls = []
+    monkeypatch.setattr(actions, "refresh_dataset_table", lambda _app: refresh_calls.append(True))
+    monkeypatch.setattr(actions, "select_dataset_in_table", lambda _app, path: select_calls.append(path))
+
+    workspace = SimpleNamespace(
+        session=SimpleNamespace(
+            source_path="C:/tmp/source.csv",
+            working_frame=pd.DataFrame({"sensor": [1.0, 2.0]}),
+        ),
+        active_column_var=SimpleNamespace(get=lambda: ""),
+        column_roles={"sensor": "signal"},
+    )
+
+    published_path = actions.publish_analysis_workspace_view(app, workspace)
+
+    assert published_path is not None
+    assert published_path.endswith("source__analysis_view.csv")
+    assert app.dataset_contexts[published_path].source_paths == ["C:/tmp/source.csv"]
+    assert refresh_calls == [True]
+    assert select_calls == [published_path]
+
+
 def test_open_comparison_window_warns_when_fewer_than_two_datasets_selected(monkeypatch):
     app = DummyApp()
     app.multiple_selected_paths = ["C:/tmp/a.csv"]

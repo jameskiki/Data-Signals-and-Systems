@@ -394,10 +394,6 @@ def open_analysis_workspace_for_path(app, selected_path: str) -> object | None:
 
 def publish_analysis_workspace_view(app, workspace) -> str | None:
 	source_path = workspace.session.source_path
-	if source_path not in app.data_frames and source_path not in app.dataset_contexts:
-		app.notifications.warning("The source dataset is no longer available in the session")
-		return None
-
 	active_column = workspace.active_column_var.get().strip() if getattr(workspace, "active_column_var", None) is not None else ""
 	suffix = f"{active_column}_analysis" if active_column else "analysis_view"
 	published_path = build_virtual_dataset_path(app.data_frames, source_path, suffix)

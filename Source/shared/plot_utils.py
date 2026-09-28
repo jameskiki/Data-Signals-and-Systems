@@ -333,8 +333,10 @@ def _resolve_role_mapping_for_dataset(column_roles: PlotColumnRoles, dataset_pat
     if not column_roles:
         return None
     dataset_mapping = column_roles.get(dataset_path) if isinstance(column_roles, Mapping) else None
-    if isinstance(dataset_mapping, dict):
-        return dataset_mapping
+    if isinstance(dataset_mapping, Mapping):
+        normalized_dataset_mapping = dict(dataset_mapping)
+        if _looks_like_global_role_mapping(normalized_dataset_mapping):
+            return normalized_dataset_mapping
     if _looks_like_global_role_mapping(column_roles):
         return dict(column_roles)
     return None
