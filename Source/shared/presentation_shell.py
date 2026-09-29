@@ -30,8 +30,7 @@ class PresentationShellMixin(BaseAppShell):
         if geometry is not None:
             dialog.geometry(geometry)
 
-    @staticmethod
-    def show_figure_in_window(root: tk.Misc, figure, window_title: str, window_geometry: str) -> None:
+    def show_figure_in_window(self, root: tk.Misc, figure, window_title: str, window_geometry: str) -> None:
         """Show a matplotlib figure in a dedicated Tk window."""
 
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -49,26 +48,11 @@ class PresentationShellMixin(BaseAppShell):
         toolbar.pack(side=tk.TOP, fill=tk.X)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, side=tk.BOTTOM)
 
-        resize_job: str | None = None
-
         def _sync_canvas_size() -> None:
-            widget = canvas.get_tk_widget()
-            widget.update_idletasks()
-            width = max(widget.winfo_width(), 1)
-            height = max(widget.winfo_height(), 1)
-            dpi = float(figure.get_dpi() or 100.0)
-            figure.set_size_inches(width / dpi, height / dpi, forward=True)
-            canvas.draw_idle()
+            if self._sync_canvas_size(canvas, figure):
+                canvas.draw_idle()
 
-        def _on_configure(event: tk.Event) -> None:
-            nonlocal resize_job
-            if event.widget is not container:
-                return
-            if resize_job is not None:
-                window.after_cancel(resize_job)
-            resize_job = window.after(150, _sync_canvas_size)
-
-        container.bind("<Configure>", _on_configure)
+        self._bind_canvas_resize(container, canvas, window)
         window.after_idle(_sync_canvas_size)
 
         def _on_close() -> None:

@@ -106,15 +106,9 @@ class PlotOptionsDialog:
         return "Index"
 
 
-def show_figure_in_window(root: tk.Tk, figure: plt.Figure, window_title: str, window_geometry: str) -> None:
-    """Show a matplotlib figure in a separate Tk window."""
-    PresentationShellMixin.show_figure_in_window(root, figure, window_title, window_geometry)
-
-
 def refresh_preview_plot(
     app,
     dataframe: pd.DataFrame,
-    figure_size: tuple[float, float],
     max_columns: int,
     column_roles: dict[str, str] | None = None,
 ) -> None:
@@ -209,7 +203,7 @@ def refresh_preview_plot_signal_controls(
     )
 
 
-def refresh_selected_dataset_preview_plot(app, figure_size: tuple[float, float], max_columns: int) -> None:
+def refresh_selected_dataset_preview_plot(app, max_columns: int) -> None:
     """Refresh the preview plot for the single selected dataset when available."""
 
     selected_path = app._get_single_selected_file_path()
@@ -221,16 +215,15 @@ def refresh_selected_dataset_preview_plot(app, figure_size: tuple[float, float],
     refresh_preview_plot(
         app,
         dataframe,
-        figure_size,
         max_columns,
         roles,
     )
 
 
-def handle_preview_plot_control_changed(app, figure_size: tuple[float, float], max_columns: int) -> None:
+def handle_preview_plot_control_changed(app, max_columns: int) -> None:
     """Handle selection changes for preview plot controls."""
 
-    refresh_selected_dataset_preview_plot(app, figure_size, max_columns)
+    refresh_selected_dataset_preview_plot(app, max_columns)
 
 
 def get_selected_preview_plot_columns(

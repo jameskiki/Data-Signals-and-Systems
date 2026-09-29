@@ -40,7 +40,6 @@ from .datasets import (
     select_dataset_in_table,
 )
 from .layout import build_main_ui
-from .plotting import show_figure_in_window
 from .preview import (
     clear_preview_plot,
     clear_preview_table,
@@ -74,7 +73,6 @@ from .state import (
     PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS,
     PREVIEW_ROW_LIMIT,
     PREVIEW_PLOT_MAX_COLUMNS,
-    PREVIEW_PLOT_FIGURE_SIZE,
 )
 
 
@@ -96,7 +94,6 @@ class DataPreparationApp(PresentationShellMixin):
         self.LOG_FILE_TYPES = LOG_FILE_TYPES
         self.PREVIEW_ROW_LIMIT = PREVIEW_ROW_LIMIT
         self.PREVIEW_PLOT_MAX_COLUMNS = PREVIEW_PLOT_MAX_COLUMNS
-        self.PREVIEW_PLOT_FIGURE_SIZE = PREVIEW_PLOT_FIGURE_SIZE
 
         self.data_frames: dict[str, pd.DataFrame] = {}
         self.dataset_contexts: dict[str, DatasetContext] = {}
@@ -621,7 +618,6 @@ class DataPreparationApp(PresentationShellMixin):
         refresh_preview_plot(
             self,
             dataframe,
-            PREVIEW_PLOT_FIGURE_SIZE,
             PREVIEW_PLOT_MAX_COLUMNS,
             column_roles,
         )
@@ -1053,10 +1049,10 @@ class DataPreparationApp(PresentationShellMixin):
         self._suppress_dataset_selection_refresh = False
 
     def _refresh_selected_dataset_preview_plot(self) -> None:
-        refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
+        refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _handle_preview_plot_control_changed(self, _event: tk.Event | None = None) -> None:
-        handle_preview_plot_control_changed(self, PREVIEW_PLOT_FIGURE_SIZE, PREVIEW_PLOT_MAX_COLUMNS)
+        handle_preview_plot_control_changed(self, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _get_selected_preview_plot_columns(self, dataframe: pd.DataFrame) -> list[str]:
         return get_selected_preview_plot_columns(self, dataframe, PREVIEW_PLOT_MAX_COLUMNS)

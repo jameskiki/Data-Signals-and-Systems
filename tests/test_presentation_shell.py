@@ -141,8 +141,8 @@ class DummyFrame:
     def pack(self, **kwargs):
         self.pack_calls.append(kwargs)
 
-    def bind(self, event, callback):
-        self.bind_calls.append((event, callback))
+    def bind(self, event, callback, add=None):
+        self.bind_calls.append((event, callback, add))
 
 
 class DummyFigure:
@@ -165,6 +165,9 @@ class DummyCanvasWidget:
 
     def update_idletasks(self):
         return None
+
+    def winfo_exists(self):
+        return True
 
     def winfo_width(self):
         return 400

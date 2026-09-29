@@ -7,7 +7,7 @@ from .demo import DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO
 from .data_parser import DataParser
 from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
-from .plotting import PlotOptionsDialog, show_figure_in_window
+from .plotting import PlotOptionsDialog
 from .preview import refresh_preview_table
 from .comparison import ComparisonWindow
 from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
@@ -201,7 +201,7 @@ def plot_selected_data(app) -> None:
 			else None
 		),
 	)
-	show_figure_in_window(app.root, figure, app.PLOT_WINDOW_TITLE, app.PLOT_WINDOW_GEOMETRY)
+	app.show_figure_in_window(app.root, figure, app.PLOT_WINDOW_TITLE, app.PLOT_WINDOW_GEOMETRY)
 
 def merge_selected_files(app) -> None:
 	selected_file_paths = app._get_multiple_selected_file_paths("Select files to merge")

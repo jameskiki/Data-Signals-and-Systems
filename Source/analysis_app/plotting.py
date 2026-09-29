@@ -201,7 +201,6 @@ def render_fft_result(workspace, result: FrequencySpectrumResult) -> None:
     )
 
     style = get_default_plot_style(workspace.style_vars)
-    figure, axis = plt.subplots(figsize=(6.2, 3.2), dpi=100)
     frequencies = result.frequencies[1:] if result.frequencies.size > 1 else result.frequencies
     amplitudes = result.amplitudes[1:] if result.amplitudes.size > 1 else result.amplitudes
     has_phase = result.phase is not None and result.phase.size > 0
