@@ -22,7 +22,7 @@ class DataPreparationSession:
 	selected_columns: list[str] = field(default_factory=list)
 	column_selection_summary: str = "No dataset selected"
 	role_editor_column: str = ""
-	role_editor_value: str = "metadata"
+	role_editor_value: str = "time"
 	split_prefix: str = "cycle"
 	selected_preview_plot_columns: list[str] = field(default_factory=list)
 	preview_plot_signal_summary: str = "No dataset selected"

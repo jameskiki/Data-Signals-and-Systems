@@ -34,7 +34,7 @@ Canonical plotting is intentionally limited to four core types:
 The main window also provides an ad-hoc `Plot Data` popup for quick inspection, but it is not a separate core plot family.
 
 - dataset import and summary views
-- preparation workflows for column-role assignment, optional channel selection, and dataset splitting
+- preparation workflows for assigning compact time/reference, process-value, and ambient-value categories, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
 - session-level dataset reuse across preparation, analysis publishing, and comparison
 - a dedicated analysis workspace with:
@@ -48,8 +48,10 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
   - interactive plotting with subplots and exports
 - a lightweight comparison workspace with:
   - shared x-axis selection across datasets
-  - overlay plotting for common numeric channels
-  - simple side-by-side summary/statistics comparison
+  - overlay or candidate-minus-baseline difference plotting for common numeric channels
+  - baseline selection, amplitude normalization, zero-start transforms, overlap trimming, and per-dataset visibility
+  - richer side-by-side summary/statistics comparison including count, RMS, peak-to-peak, and deviation RMS
+  - clear diagnostics when shared columns or session datasets are unavailable
   - refresh of the currently compared session datasets
   - open-one-back-into-analysis from the comparison summary
 - demo datasets for reproducible walkthroughs and exploratory checks

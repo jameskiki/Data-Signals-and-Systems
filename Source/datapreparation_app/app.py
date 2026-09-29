@@ -32,7 +32,7 @@ from .datasets import (
     apply_literal_role_combobox_style,
     apply_role_combobox_style,
     format_source_paths,
-    get_available_column_roles,
+    get_available_dataset_roles,
     get_column_role_cell_colors,
     get_preferred_role_column,
     infer_column_roles,
@@ -127,7 +127,7 @@ class DataPreparationApp(PresentationShellMixin):
         self.column_output_name_var = tk.StringVar(value=self.session.output_dataset_name)
         self.column_selection_summary_var = tk.StringVar(value=self.session.column_selection_summary)
         self.role_editor_column_var = tk.StringVar(value=self.session.role_editor_column)
-        self.role_editor_value_var = tk.StringVar(value=self.session.role_editor_value)
+        self.role_editor_value_var = tk.StringVar(value="time")
         self.split_prefix_var = tk.StringVar(value=self.session.split_prefix)
         self.preview_plot_signal_summary_var = tk.StringVar(value=self.session.preview_plot_signal_summary)
         self.row_range_start_var = tk.StringVar(value=self.session.row_range_start)
@@ -186,7 +186,7 @@ class DataPreparationApp(PresentationShellMixin):
             self.role_editor_column_var.set(self.session.role_editor_column)
 
     def _set_role_editor_value(self, role_name: str, *, update_var: bool = True) -> None:
-        self.session.role_editor_value = role_name.strip() or "metadata"
+        self.session.role_editor_value = role_name.strip() or "time"
         if update_var and self.role_editor_value_var.get() != self.session.role_editor_value:
             self.role_editor_value_var.set(self.session.role_editor_value)
 
@@ -880,14 +880,14 @@ class DataPreparationApp(PresentationShellMixin):
 
         columns = [str(column) for column in dataframe.columns]
         self.role_editor_column_combo.configure(values=columns)
-        self.role_editor_value_combo.configure(values=get_available_column_roles())
+        self.role_editor_value_combo.configure(values=get_available_dataset_roles())
 
         selected_column = self.role_editor_column_var.get().strip()
         if selected_column not in columns:
             selected_column = columns[0] if columns else ""
             self._set_role_editor_column(selected_column)
 
-        selected_role = column_roles.get(selected_column, "metadata") if selected_column else "metadata"
+        selected_role = "time" if selected_column and column_roles.get(selected_column) == "time" else "time"
         if self.role_editor_value_var.get().strip() != selected_role:
             self._set_role_editor_value(selected_role)
 
@@ -897,14 +897,14 @@ class DataPreparationApp(PresentationShellMixin):
         if self.role_editor_column_combo is not None:
             self.role_editor_column_combo.configure(values=[])
         if self.role_editor_value_combo is not None:
-            self.role_editor_value_combo.configure(values=get_available_column_roles())
+            self.role_editor_value_combo.configure(values=get_available_dataset_roles())
         self._set_role_editor_column("")
-        self._set_role_editor_value("metadata")
+        self._set_role_editor_value("time")
         self._refresh_role_editor_styles({})
 
     def _refresh_role_editor_styles(self, column_roles: dict[str, str]) -> None:
         apply_role_combobox_style(self.role_editor_column_combo, column_roles, self.role_editor_column_var.get().strip())
-        apply_literal_role_combobox_style(self.role_editor_value_combo, self.role_editor_value_var.get().strip() or "metadata")
+        apply_literal_role_combobox_style(self.role_editor_value_combo, self.role_editor_value_var.get().strip() or "time")
 
     def _handle_role_editor_column_changed(self, *_args: object) -> None:
         self._set_role_editor_column(self.role_editor_column_var.get(), update_var=False)
@@ -915,7 +915,7 @@ class DataPreparationApp(PresentationShellMixin):
         context = self.dataset_contexts.get(selected_path, DatasetContext())
         column_name = self.role_editor_column_var.get().strip()
         if column_name:
-            self._set_role_editor_value(context.column_roles.get(column_name, "metadata"))
+            self._set_role_editor_value("time")
         self._refresh_role_editor_styles(context.column_roles)
 
     def _handle_role_editor_value_changed(self, *_args: object) -> None:

@@ -27,7 +27,7 @@ Automatic role inference is only a starting point.
 
 Fix:
 
-- open the `Roles` tab
+- open the `Column Categories` section
 - assign the correct column to `time`
 - reopen or refresh analysis views if needed
 

@@ -1,5 +1,6 @@
 """Focused tests for datapreparation_app.actions orchestration helpers."""
 
+import os
 from types import SimpleNamespace
 
 import pandas as pd
@@ -262,7 +263,7 @@ def test_publish_analysis_workspace_view_registers_dataset(monkeypatch):
     assert refresh_calls == [True]
     assert select_calls == [published_path]
     assert app.prep_views_refresh_count == 1
-    assert app.notifications.success_messages == [f"Published dataset: {published_path.split('/')[-1]}"]
+    assert app.notifications.success_messages == [f"Published dataset: {os.path.basename(published_path)}"]
     workspace.session.working_frame.loc[0, "sensor_filt"] = 99.0
     assert app.data_frames[published_path].loc[0, "sensor_filt"] == 0.5
 

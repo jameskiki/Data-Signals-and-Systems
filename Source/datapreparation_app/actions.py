@@ -462,7 +462,7 @@ def apply_selected_column_role(app) -> None:
 
 	column_name = app.session.role_editor_column.strip()
 	role_name = app.session.role_editor_value.strip()
-	if not column_name or not role_name:
+	if not column_name or role_name not in {"time", "process", "ambient", "input", "output", "signal", "metadata"}:
 		app.notifications.warning("Select a column and a role first")
 		return
 
@@ -470,6 +470,10 @@ def apply_selected_column_role(app) -> None:
 	if context is None:
 		return
 
+	if role_name == "time":
+		for existing_column, existing_role in list(context.column_roles.items()):
+			if existing_role == "time" and existing_column != column_name:
+				context.column_roles[existing_column] = "process"
 	context.column_roles[column_name] = role_name
 
 	app._set_role_editor_column("", update_var=True)

@@ -10,12 +10,12 @@ import tkinter as tk
 from Source.shared.column_roles import (
     apply_literal_role_combobox_style,
     apply_role_combobox_style,
-    get_available_column_roles,
     get_column_role,
     get_column_role_cell_colors,
     get_column_role_colors,
     get_column_role_label,
     get_column_role_plot_color,
+    get_available_dataset_roles,
     get_preferred_role_column,
     get_role_label,
     infer_column_roles,

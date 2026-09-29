@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from Source.data_ops.summary import build_statistics_frame, summarize_dataframe
@@ -76,11 +77,16 @@ def build_comparison_summary_frame(
     dataset_paths: list[str],
     data_frames: dict[str, pd.DataFrame],
     stats_column: str | None = None,
+    *,
+    baseline_path: str | None = None,
+    include_richer_metrics: bool = False,
 ) -> pd.DataFrame:
     """Build a compact per-dataset summary frame for the comparison window."""
 
+    base_columns = ["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]
+    richer_columns = ["count", "rms", "peak_to_peak", "deviation_rms", "baseline"]
     if not dataset_paths:
-        return pd.DataFrame(columns=["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"])
+        return pd.DataFrame(columns=base_columns + (richer_columns if include_richer_metrics else []))
 
     display_labels = build_display_dataset_labels(dataset_paths)
     rows: list[dict[str, object]] = []
@@ -108,15 +114,141 @@ def build_comparison_summary_frame(
                         "std": stats_row["std"],
                         "min": stats_row["min"],
                         "max": stats_row["max"],
+                        "count": stats_row["count"],
+                        "rms": stats_row["rms"],
+                        "peak_to_peak": stats_row["peak_to_peak"],
                     }
                 )
+        if include_richer_metrics:
+            row.setdefault("count", pd.NA)
+            row.setdefault("rms", pd.NA)
+            row.setdefault("peak_to_peak", pd.NA)
+            row["baseline"] = dataset_path == baseline_path
         rows.append(row)
 
     summary_frame = pd.DataFrame(rows).set_index("dataset_path")
     for column_name in ("mean", "std", "min", "max"):
         if column_name not in summary_frame.columns:
             summary_frame[column_name] = pd.NA
-    return summary_frame[["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]]
+    if not include_richer_metrics:
+        return summary_frame[base_columns]
+
+    for column_name in ("count", "rms", "peak_to_peak"):
+        if column_name not in summary_frame.columns:
+            summary_frame[column_name] = pd.NA
+    summary_frame["deviation_rms"] = pd.NA
+    if baseline_path in data_frames and stats_column and stats_column in data_frames[baseline_path]:
+        baseline_values = _prepare_numeric_series(data_frames[baseline_path], stats_column)
+        for dataset_path in dataset_paths:
+            if dataset_path == baseline_path:
+                continue
+            candidate_values = _prepare_numeric_series(data_frames[dataset_path], stats_column)
+            deviation = calculate_difference_series(
+                baseline_values,
+                candidate_values,
+                normalize=False,
+                zero_start=False,
+            )
+            if deviation is not None:
+                summary_frame.loc[dataset_path, "deviation_rms"] = float(np.sqrt(np.mean(deviation**2)))
+    return summary_frame[base_columns + richer_columns]
+
+
+def _prepare_numeric_series(dataframe: pd.DataFrame, column: str) -> pd.Series:
+    return pd.to_numeric(dataframe[column], errors="coerce").dropna()
+
+
+def calculate_difference_series(
+    baseline: pd.Series,
+    candidate: pd.Series,
+    *,
+    normalize: bool = False,
+    zero_start: bool = False,
+) -> np.ndarray | None:
+    """Return candidate minus baseline on the shared positional sample range."""
+
+    baseline_values = baseline.to_numpy(dtype=float)
+    candidate_values = candidate.to_numpy(dtype=float)
+    sample_count = min(len(baseline_values), len(candidate_values))
+    if sample_count == 0:
+        return None
+    baseline_values = baseline_values[:sample_count]
+    candidate_values = candidate_values[:sample_count]
+    if normalize:
+        baseline_scale = np.nanmax(np.abs(baseline_values))
+        candidate_scale = np.nanmax(np.abs(candidate_values))
+        if baseline_scale > 0:
+            baseline_values = baseline_values / baseline_scale
+        if candidate_scale > 0:
+            candidate_values = candidate_values / candidate_scale
+    if zero_start:
+        baseline_values = baseline_values - baseline_values[0]
+        candidate_values = candidate_values - candidate_values[0]
+    return candidate_values - baseline_values
+
+
+def build_difference_figure(
+    dataset_paths: list[str],
+    data_frames: dict[str, pd.DataFrame],
+    baseline_path: str,
+    columns: list[str],
+    *,
+    x_column: str = "Index",
+    normalize: bool = False,
+    zero_start: bool = False,
+    trim_overlap: bool = False,
+    style: PlotStyle | None = None,
+) -> plt.Figure:
+    """Build candidate-minus-baseline curves for the selected common signals."""
+
+    if baseline_path not in data_frames:
+        raise ValueError("The selected baseline dataset is no longer available.")
+    figure, axes = plt.subplots(len(columns), 1, squeeze=False, figsize=(10, max(4, 3.5 * len(columns))))
+    baseline_frame = data_frames[baseline_path]
+    for index, column in enumerate(columns):
+        axis = axes[index][0]
+        baseline_x, _ = _comparison_x_values(baseline_frame, x_column)
+        baseline_y = pd.to_numeric(baseline_frame[column], errors="coerce").to_numpy(dtype=float)
+        for path in dataset_paths:
+            if path == baseline_path or column not in data_frames[path].columns:
+                continue
+            candidate_frame = data_frames[path]
+            candidate_x, _ = _comparison_x_values(candidate_frame, x_column)
+            candidate_y = pd.to_numeric(candidate_frame[column], errors="coerce").to_numpy(dtype=float)
+            count = min(len(baseline_x), len(baseline_y), len(candidate_x), len(candidate_y))
+            if count == 0:
+                continue
+            x_values = np.asarray(candidate_x[:count], dtype=float)
+            baseline_values = baseline_y[:count]
+            candidate_values = candidate_y[:count]
+            if trim_overlap:
+                lower = max(float(np.nanmin(baseline_x)), float(np.nanmin(candidate_x)))
+                upper = min(float(np.nanmax(baseline_x)), float(np.nanmax(candidate_x)))
+                mask = (x_values >= lower) & (x_values <= upper)
+                x_values, baseline_values, candidate_values = x_values[mask], baseline_values[mask], candidate_values[mask]
+            difference = calculate_difference_series(
+                pd.Series(baseline_values),
+                pd.Series(candidate_values),
+                normalize=normalize,
+                zero_start=zero_start,
+            )
+            if difference is not None:
+                axis.plot(x_values[:len(difference)], difference, label=os.path.basename(path))
+        axis.set_title(column)
+        axis.set_ylabel("Candidate - baseline")
+        axis.grid(True, alpha=0.3)
+        axis.axhline(0.0, color="black", linewidth=0.8)
+        axis.legend()
+    axes[-1][0].set_xlabel("Index" if x_column == "Index" else x_column)
+    figure.suptitle("Difference Comparison")
+    figure.tight_layout()
+    return figure
+
+
+def _comparison_x_values(dataframe: pd.DataFrame, x_column: str) -> tuple[np.ndarray, str]:
+    if x_column == "Index" or x_column not in dataframe.columns:
+        return np.arange(len(dataframe), dtype=float), "Index"
+    return pd.to_numeric(dataframe[x_column], errors="coerce").to_numpy(dtype=float), x_column
 
 
 def build_display_dataset_labels(dataset_paths: list[str]) -> dict[str, str]:
@@ -171,13 +303,20 @@ class ComparisonWindow(PresentationShellMixin):
         common_numeric_columns = get_common_columns(self.dataset_paths, data_frames, numeric_only=True)
         default_summary_column = common_numeric_columns[0] if common_numeric_columns else ""
         self.summary_column_var = tk.StringVar(value=default_summary_column)
+        self.baseline_path_var = tk.StringVar(value=self.dataset_paths[0] if self.dataset_paths else "")
+        self.plot_mode_var = tk.StringVar(value="Overlay")
+        self.normalize_var = tk.BooleanVar(value=False)
+        self.zero_start_var = tk.BooleanVar(value=False)
+        self.trim_overlap_var = tk.BooleanVar(value=False)
         self.plot_column_summary_var = tk.StringVar(value="No common numeric channels")
+        self.dataset_visibility_summary_var = tk.StringVar(value="")
         self.comparison_status_var = tk.StringVar(value="")
         self.selected_dataset_detail_var = tk.StringVar(value="Select a dataset row for details.")
         self._plot_column_selector_button: ttk.Menubutton | None = None
         self._plot_column_selector_menu: tk.Menu | None = None
         self._plot_column_selector_vars: dict[str, tk.BooleanVar] = {}
         self._plot_column_hidden_count = 0
+        self._dataset_visibility_vars: dict[str, tk.BooleanVar] = {}
         self._plot_columns_initialized = False
         self._summary_item_to_dataset_path: dict[str, str] = {}
 
@@ -203,12 +342,13 @@ class ComparisonWindow(PresentationShellMixin):
             controls,
             text=f"Comparing {len(self.dataset_paths)} datasets from the current session registry.",
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 8))
-        ttk.Label(
+        self._status_label = ttk.Label(
             controls,
             textvariable=self.comparison_status_var,
             wraplength=920,
             justify=tk.LEFT,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
+        )
+        self._status_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
 
         ttk.Label(controls, text="Shared X-axis").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.x_column_combo = ttk.Combobox(controls, textvariable=self.x_column_var, state="readonly")
@@ -220,9 +360,23 @@ class ComparisonWindow(PresentationShellMixin):
         self.summary_column_combo.grid(row=1, column=3, sticky="ew", padx=5, pady=5)
         self.summary_column_combo.bind("<<ComboboxSelected>>", lambda *_args: self._update_comparison_view())
 
-        ttk.Label(controls, text="Signals").grid(row=2, column=0, sticky="nw", padx=5, pady=5)
+        ttk.Label(controls, text="Mode").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        mode_combo = ttk.Combobox(
+            controls,
+            textvariable=self.plot_mode_var,
+            values=["Overlay", "Difference (candidate - baseline)"],
+            state="readonly",
+        )
+        mode_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
+        mode_combo.bind("<<ComboboxSelected>>", lambda *_args: self._update_comparison_view())
+        ttk.Label(controls, text="Baseline").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        self.baseline_combo = ttk.Combobox(controls, textvariable=self.baseline_path_var, state="readonly")
+        self.baseline_combo.grid(row=2, column=3, sticky="ew", padx=5, pady=5)
+        self.baseline_combo.bind("<<ComboboxSelected>>", lambda *_args: self._update_comparison_view())
+
+        ttk.Label(controls, text="Signals").grid(row=3, column=0, sticky="nw", padx=5, pady=5)
         selector_row = ttk.Frame(controls)
-        selector_row.grid(row=2, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
+        selector_row.grid(row=3, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
         selector_row.columnconfigure(0, weight=1)
 
         self._plot_column_selector_button = ttk.Menubutton(
@@ -242,21 +396,35 @@ class ComparisonWindow(PresentationShellMixin):
         ttk.Button(actions, text="Refresh", command=self._refresh_from_session).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(actions, text="Open In Analysis", command=self._open_selected_dataset_in_analysis).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(actions, text="Update", command=self._update_comparison_view).pack(side=tk.LEFT, padx=(6, 0))
+        visibility_button = ttk.Menubutton(
+            actions,
+            textvariable=self.dataset_visibility_summary_var,
+            direction="below",
+        )
+        visibility_button.pack(side=tk.LEFT, padx=(6, 0))
+        self._dataset_visibility_menu = tk.Menu(visibility_button, tearoff=0)
+        visibility_button.configure(menu=self._dataset_visibility_menu)
+        self._dataset_visibility_button = visibility_button
+        options = ttk.Frame(controls)
+        options.grid(row=4, column=1, columnspan=3, sticky="w", padx=5, pady=(0, 5))
+        ttk.Checkbutton(options, text="Normalize amplitude", variable=self.normalize_var, command=self._update_comparison_view).pack(side=tk.LEFT)
+        ttk.Checkbutton(options, text="Zero-start", variable=self.zero_start_var, command=self._update_comparison_view).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Checkbutton(options, text="Trim to overlap", variable=self.trim_overlap_var, command=self._update_comparison_view).pack(side=tk.LEFT, padx=(10, 0))
 
         content_pane = ttk.Panedwindow(container, orient=tk.HORIZONTAL)
         content_pane.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
-        plot_frame = ttk.LabelFrame(content_pane, text="Overlay Plot", padding=5)
+        self.plot_frame = ttk.LabelFrame(content_pane, text="Overlay Plot", padding=5)
         summary_frame = ttk.LabelFrame(content_pane, text="Summary", padding=5)
-        content_pane.add(plot_frame, weight=3)
+        content_pane.add(self.plot_frame, weight=3)
         content_pane.add(summary_frame, weight=2)
 
-        self.plot_container = ttk.Frame(plot_frame)
+        self.plot_container = ttk.Frame(self.plot_frame)
         self.plot_container.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(
             summary_frame,
-            text="Rows/cols/missing always reflect the full dataset. Mean/std/min/max use the selected summary column.",
+            text="Rows/cols/missing always reflect the full dataset. RMS and peak-to-peak use the selected summary column. Uncheck datasets to hide them from the plot.",
             wraplength=320,
             justify=tk.LEFT,
         ).pack(anchor="w", padx=5, pady=(0, 6))
@@ -278,6 +446,10 @@ class ComparisonWindow(PresentationShellMixin):
             self.on_close(self)
 
     def _refresh_column_controls(self) -> None:
+        if self.baseline_path_var.get() not in self.dataset_paths and self.dataset_paths:
+            self.baseline_path_var.set(self.dataset_paths[0])
+        baseline_values = [path for path in self.dataset_paths if path in self.data_frames]
+        self.baseline_combo.config(values=baseline_values)
         common_columns = get_common_columns(self.dataset_paths, self.data_frames)
         common_numeric_columns = get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True)
         x_values = ["Index", *common_columns]
@@ -306,6 +478,26 @@ class ComparisonWindow(PresentationShellMixin):
         )
         self._plot_columns_initialized = True
         self._update_plot_column_summary()
+        self._refresh_visibility_controls()
+
+    def _refresh_visibility_controls(self) -> None:
+        self._dataset_visibility_menu.delete(0, tk.END)
+        old_values = self._dataset_visibility_vars
+        self._dataset_visibility_vars = {}
+        for path in self.dataset_paths:
+            variable = tk.BooleanVar(value=old_values.get(path, tk.BooleanVar(value=True)).get())
+            self._dataset_visibility_vars[path] = variable
+            self._dataset_visibility_menu.add_checkbutton(
+                label=os.path.basename(path),
+                variable=variable,
+                command=self._update_comparison_view,
+            )
+        self.dataset_visibility_summary_var.set(
+            f"Datasets ({sum(variable.get() for variable in self._dataset_visibility_vars.values())}/{len(self.dataset_paths)})"
+        )
+
+    def _get_visible_dataset_paths(self) -> list[str]:
+        return [path for path in self.dataset_paths if self._dataset_visibility_vars.get(path, tk.BooleanVar(value=True)).get()]
 
     def _handle_plot_column_selection_changed(self, *_args: object) -> None:
         self._update_plot_column_summary()
@@ -342,6 +534,9 @@ class ComparisonWindow(PresentationShellMixin):
             self._update_status_text()
             return
         selected_columns = self._get_selected_plot_columns()
+        visible_paths = self._get_visible_dataset_paths()
+        if self.plot_mode_var.get().startswith("Difference") and self.baseline_path_var.get() not in visible_paths:
+            visible_paths = [self.baseline_path_var.get(), *visible_paths]
         if not selected_columns:
             self._clear_plot()
             self._render_summary_tree()
@@ -350,19 +545,40 @@ class ComparisonWindow(PresentationShellMixin):
             self._update_status_text()
             return
 
-        figure = create_plot_figure(
-            PlotOptions(
-                cols_to_plot=selected_columns,
-                xcol=self.x_column_var.get().strip() or "Index",
-                use_subplots=False,
-                title="Session Dataset Comparison",
-                y_label="Value",
+        if not visible_paths:
+            self._clear_plot()
+            self._render_summary_tree()
+            self._update_status_text("No datasets are visible. Select at least one dataset in the visibility menu.")
+            return
+        if self.plot_mode_var.get().startswith("Difference"):
+            self.plot_frame.configure(text="Difference Plot")
+            figure = build_difference_figure(
+                visible_paths,
+                self.data_frames,
+                self.baseline_path_var.get(),
+                selected_columns,
+                x_column=self.x_column_var.get().strip() or "Index",
+                normalize=self.normalize_var.get(),
+                zero_start=self.zero_start_var.get(),
+                trim_overlap=self.trim_overlap_var.get(),
                 style=self.default_style,
-            ),
-            self.dataset_paths,
-            self.data_frames,
-            column_roles=None,
-        )
+            )
+        else:
+            self.plot_frame.configure(text="Overlay Plot")
+            plot_frames = self._build_display_frames(visible_paths, selected_columns)
+            figure = create_plot_figure(
+                PlotOptions(
+                    cols_to_plot=selected_columns,
+                    xcol=self.x_column_var.get().strip() or "Index",
+                    use_subplots=False,
+                    title="Session Dataset Comparison",
+                    y_label="Value",
+                    style=self.default_style,
+                ),
+                visible_paths,
+                plot_frames,
+                column_roles=None,
+            )
         self._render_embedded_figure(
             figure=figure,
             figure_attr="_plot_figure",
@@ -376,7 +592,28 @@ class ComparisonWindow(PresentationShellMixin):
         self._render_summary_tree()
         self._update_status_text()
 
+    def _build_display_frames(self, paths: list[str], columns: list[str]) -> dict[str, pd.DataFrame]:
+        """Apply display-only signal transforms without changing session datasets."""
+
+        frames: dict[str, pd.DataFrame] = {}
+        for path in paths:
+            frame = self.data_frames[path].copy()
+            for column in columns:
+                if column not in frame.columns:
+                    continue
+                values = pd.to_numeric(frame[column], errors="coerce")
+                if self.normalize_var.get():
+                    scale = values.abs().max()
+                    if pd.notna(scale) and scale > 0:
+                        values = values / scale
+                if self.zero_start_var.get() and not values.dropna().empty:
+                    values = values - values.dropna().iloc[0]
+                frame[column] = values
+            frames[path] = frame
+        return frames
+
     def _clear_plot(self) -> None:
+        self.plot_frame.configure(text="Plot")
         if self._plot_figure is not None:
             plt.close(self._plot_figure)
             self._plot_figure = None
@@ -394,32 +631,51 @@ class ComparisonWindow(PresentationShellMixin):
             self.dataset_paths,
             self.data_frames,
             stats_column=self.summary_column_var.get().strip() or None,
+            baseline_path=self.baseline_path_var.get(),
+            include_richer_metrics=True,
         )
-        columns = ["dataset", "rows", "cols", "missing", "mean", "std", "min", "max"]
+        columns = [
+            "dataset", "baseline", "rows", "cols", "missing", "count",
+            "mean", "std", "min", "max", "rms", "peak_to_peak", "deviation_rms",
+        ]
         tree = ttk.Treeview(self.summary_container, columns=columns, show="headings", selectmode="browse")
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar = ttk.Scrollbar(self.summary_container, orient=tk.VERTICAL, command=tree.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        tree.configure(yscrollcommand=scrollbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        vertical_scrollbar = ttk.Scrollbar(self.summary_container, orient=tk.VERTICAL, command=tree.yview)
+        vertical_scrollbar.grid(row=0, column=1, sticky="ns")
+        horizontal_scrollbar = ttk.Scrollbar(self.summary_container, orient=tk.HORIZONTAL, command=tree.xview)
+        horizontal_scrollbar.grid(row=1, column=0, sticky="ew")
+        self.summary_container.columnconfigure(0, weight=1)
+        self.summary_container.rowconfigure(0, weight=1)
+        tree.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
         tree.bind("<<TreeviewSelect>>", self._handle_summary_tree_selection_changed)
 
         headings = {
             "dataset": "Dataset",
+            "baseline": "Baseline",
             "rows": "Rows",
             "cols": "Cols",
             "missing": "Missing",
+            "count": "Count",
             "mean": "Mean",
             "std": "Std",
+            "rms": "RMS",
+            "peak_to_peak": "Peak-to-peak",
+            "deviation_rms": "Deviation RMS",
             "min": "Min",
             "max": "Max",
         }
         widths = {
             "dataset": 180,
+            "baseline": 65,
             "rows": 70,
             "cols": 60,
             "missing": 70,
+            "count": 70,
             "mean": 80,
             "std": 80,
+            "rms": 80,
+            "peak_to_peak": 100,
+            "deviation_rms": 100,
             "min": 80,
             "max": 80,
         }
@@ -434,13 +690,18 @@ class ComparisonWindow(PresentationShellMixin):
                 tk.END,
                 values=[
                     row["dataset"],
+                    "Yes" if row["baseline"] else "",
                     format_display_value(row["rows"]),
                     format_display_value(row["cols"]),
                     format_display_value(row["missing"]),
+                    format_display_value(row["count"]),
                     format_display_value(row["mean"]),
                     format_display_value(row["std"]),
                     format_display_value(row["min"]),
                     format_display_value(row["max"]),
+                    format_display_value(row["rms"]),
+                    format_display_value(row["peak_to_peak"]),
+                    format_display_value(row["deviation_rms"]),
                 ],
             )
             self._summary_item_to_dataset_path[item_id] = dataset_path
@@ -471,13 +732,35 @@ class ComparisonWindow(PresentationShellMixin):
             )
         self.dataset_paths = existing_paths
 
-    def _update_status_text(self) -> None:
+    def _update_status_text(self, extra: str = "") -> None:
+        common_numeric = get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True)
+        common_columns = get_common_columns(self.dataset_paths, self.data_frames)
+        diagnostic = ""
+        if not common_numeric:
+            diagnostic = " No shared numeric columns are available."
+        elif self.x_column_var.get() != "Index" and self.x_column_var.get() not in common_columns:
+            diagnostic = " The selected time column is not shared by every dataset."
+        elif self.x_column_var.get() != "Index" and not self._has_shared_x_overlap():
+            diagnostic = " The selected x/time ranges have too little overlap."
+        elif self.plot_mode_var.get().startswith("Difference") and len(self._get_visible_dataset_paths()) < 2:
+            diagnostic = " Difference mode needs a visible baseline and candidate."
         self.comparison_status_var.set(
             f"Comparing {len(self.dataset_paths)} session datasets. "
-            f"Session flow: selected datasets -> comparison view. "
-            f"Use Refresh to re-read the current session data for these dataset paths. "
-            f"Publish creates a new dataset entry in the main window; reopen comparison to include newly published datasets."
+            f"Use the visibility menu to hide datasets without removing them from the session. "
+            f"Refresh re-reads the current session data. {extra}{diagnostic}"
         )
+
+    def _has_shared_x_overlap(self) -> bool:
+        ranges: list[tuple[float, float]] = []
+        for path in self.dataset_paths:
+            values, _ = _comparison_x_values(self.data_frames[path], self.x_column_var.get())
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size == 0:
+                return False
+            ranges.append((float(np.min(finite_values)), float(np.max(finite_values))))
+        if not ranges:
+            return False
+        return max(lower for lower, _ in ranges) <= min(upper for _, upper in ranges)
 
     def _handle_summary_tree_selection_changed(self, _event: tk.Event | None = None) -> None:
         selected_path = self._get_selected_summary_dataset_path()

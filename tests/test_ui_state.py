@@ -48,7 +48,7 @@ def test_ui_state_loads_legacy_plot_style_file(monkeypatch, tmp_path):
     monkeypatch.setattr(ui_state.pathlib.Path, "home", lambda: tmp_path)
 
     loaded = ui_state.UiStateVars()
-    loaded.load_from_file()
+    loaded.load_from_file(legacy_path)
 
     assert loaded.table_backend.get() == "tksheet"
     assert loaded.show_grid.get() is False

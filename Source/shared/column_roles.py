@@ -14,6 +14,8 @@ except ImportError:  # headless environment (e.g. CI without a display)
 
 COLUMN_ROLE_LABELS = {
     "time": "TIME",
+    "process": "PROCESS",
+    "ambient": "AMBIENT",
     "input": "INPUT",
     "output": "OUTPUT",
     "signal": "SIGNAL",
@@ -22,6 +24,8 @@ COLUMN_ROLE_LABELS = {
 
 COLUMN_ROLE_COLORS = {
     "time": ("#dbeafe", "#111111"),
+    "process": ("#dcfce7", "#111111"),
+    "ambient": ("#fef3c7", "#111111"),
     "input": ("#fff4cc", "#111111"),
     "output": ("#d9f2d9", "#111111"),
     "signal": ("#f3e5f5", "#111111"),
@@ -30,6 +34,8 @@ COLUMN_ROLE_COLORS = {
 
 COLUMN_ROLE_PLOT_COLORS = {
     "time": "#0d47a1",
+    "process": "#15803d",
+    "ambient": "#b45309",
     "input": "#a16207",
     "output": "#1b5e20",
     "signal": "#7b1fa2",
@@ -37,6 +43,8 @@ COLUMN_ROLE_PLOT_COLORS = {
 }
 
 COLUMN_ROLE_PRIORITY = {
+    "process": 0,
+    "ambient": 1,
     "output": 0,
     "signal": 1,
     "input": 2,
@@ -45,6 +53,8 @@ COLUMN_ROLE_PRIORITY = {
 }
 
 COLUMN_ROLE_NAMES = list(COLUMN_ROLE_LABELS.keys())
+DATASET_ROLE_NAMES = ["time", "process", "ambient"]
+REFERENCE_ROLE_NAMES = ["time"]
 
 
 def infer_column_roles(dataframe: pd.DataFrame, preferred_roles: dict[str, str] | None = None) -> dict[str, str]:
@@ -109,7 +119,7 @@ def summarize_column_roles(column_roles: dict[str, str]) -> str:
         summary_parts.append(f"signals={shown_signals}")
     if metadata_count:
         summary_parts.append(f"metadata={metadata_count}")
-    return "Roles: " + " | ".join(summary_parts)
+    return "Categories: " + " | ".join(summary_parts)
 
 
 def get_preferred_role_column(
@@ -153,6 +163,18 @@ def get_available_column_roles() -> list[str]:
     """Return the supported semantic column role names in UI order."""
 
     return list(COLUMN_ROLE_NAMES)
+
+
+def get_available_reference_roles() -> list[str]:
+    """Return the intentionally small role vocabulary exposed by preparation UI."""
+
+    return list(REFERENCE_ROLE_NAMES)
+
+
+def get_available_dataset_roles() -> list[str]:
+    """Return the compact user-facing dataset categories."""
+
+    return list(DATASET_ROLE_NAMES)
 
 
 def get_column_role_colors(role: str) -> tuple[str, str]:
@@ -263,6 +285,8 @@ def _infer_column_role(column_name: str, series: pd.Series) -> str:
         return "time"
     if any(token in normalized_name for token in ("time", "timestamp", "datetime", "date")):
         return "time"
+    if any(token in normalized_name for token in ("ambient", "room", "humidity", "temperature", "temp", "environment")):
+        return "ambient"
     if any(token in normalized_name for token in ("input", "actuator", "excitation", "command", "drive", "setpoint")):
         return "input"
     if any(token in normalized_name for token in ("output", "response", "measured")):

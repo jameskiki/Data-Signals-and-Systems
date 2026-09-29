@@ -273,7 +273,7 @@ def build_prepare_tab(app, parent: ttk.Frame) -> None:
     column_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=(0, 5))
     build_column_controls(app, column_frame)
 
-    roles_frame = ttk.LabelFrame(container, text="Roles")
+    roles_frame = ttk.LabelFrame(container, text="Column Categories")
     roles_frame.grid(row=4, column=0, sticky="ew", padx=2, pady=(6, 5))
     build_role_controls_tab(app, roles_frame)
 
@@ -340,21 +340,21 @@ def build_row_range_controls(app, parent: ttk.Frame) -> None:
 
 
 def build_role_controls_tab(app, parent: ttk.Frame) -> None:
-    """Build the column role assignment controls."""
+    """Build the compact column-category controls."""
 
     role_frame = ttk.Frame(parent, padding=5)
     role_frame.pack(fill=tk.BOTH, expand=True)
     role_frame.columnconfigure(1, weight=1)
     ttk.Label(
         role_frame,
-        text="Use roles after the basic dataset choice is clear so plotting and analysis defaults stay sensible.",
+        text="Classify numeric columns as the time/reference axis, process values, or ambient values. Multiple process and ambient columns are supported; text columns remain metadata.",
         wraplength=420,
         justify=tk.LEFT,
     ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 6))
     ttk.Label(role_frame, text="Column").grid(row=1, column=0, sticky="w", padx=5, pady=(0, 2))
     app.role_editor_column_combo = ttk.Combobox(role_frame, textvariable=app.role_editor_column_var, state="readonly")
     app.role_editor_column_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=(0, 2))
-    ttk.Label(role_frame, text="Role").grid(row=2, column=0, sticky="w", padx=5, pady=2)
+    ttk.Label(role_frame, text="Category").grid(row=2, column=0, sticky="w", padx=5, pady=2)
     app.role_editor_value_combo = ttk.Combobox(role_frame, textvariable=app.role_editor_value_var, state="readonly")
     app.role_editor_value_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
 
@@ -362,13 +362,13 @@ def build_role_controls_tab(app, parent: ttk.Frame) -> None:
     role_button_row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=(6, 5))
     role_button_row.columnconfigure(0, weight=1)
     role_button_row.columnconfigure(1, weight=1)
-    ttk.Button(role_button_row, text="Apply Role", command=app.apply_selected_column_role).grid(
+    ttk.Button(role_button_row, text="Set Category", command=app.apply_selected_column_role).grid(
         row=0,
         column=0,
         sticky="ew",
         padx=(0, 4),
     )
-    ttk.Button(role_button_row, text="Reinfer Roles", command=app.reinfer_selected_dataset_roles).grid(
+    ttk.Button(role_button_row, text="Auto-detect Categories", command=app.reinfer_selected_dataset_roles).grid(
         row=0,
         column=1,
         sticky="ew",

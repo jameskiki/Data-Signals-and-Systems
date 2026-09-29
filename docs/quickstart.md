@@ -11,7 +11,7 @@ The most reliable first run is the built-in spectral demo because the expected d
 3. Select the newly loaded dataset in the dataset list.
 4. In `Selected Dataset`, confirm the dataset summary looks reasonable.
 5. In the right-side `Preview` area, open the `Table (200 rows)` tab and confirm the table contains columns such as `time_s`, `clean_signal`, and `measured_signal`.
-6. In the left preparation controls, scroll to the `Roles` section and check that `time_s` is treated as `time` and `measured_signal` or `clean_signal` is available as a signal/output column.
+6. In the left preparation controls, scroll to the `Column Categories` section and check that `time_s` is treated as `time`; classify measured channels as `process` and environmental channels as `ambient` when useful.
 7. In the same preparation area, optionally enter a clearer dataset name such as `spectral_demo_prepared`, then click `Create Dataset`.
 8. Select the new prepared dataset and open `Analysis -> Open Analysis Workspace`.
 9. In the analysis workspace sidebar, choose `measured_signal` or `clean_signal` as the active column.

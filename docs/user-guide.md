@@ -44,17 +44,16 @@ The application intentionally keeps plot families limited to four core types:
 
 There is also a `Plot Data` popup in the main window for quick ad-hoc inspection. Treat it as a utility window, not as an additional core plot type.
 
-## Column Roles
+## Column Categories
 
-| Role | Meaning | Typical columns | Used for |
+| Category | Meaning | Typical columns | Used for |
 | --- | --- | --- | --- |
-| `time` | Reference axis for ordered samples | `time_s`, timestamp | Preferred plot X axis and frequency reference |
-| `input` | Excitation, command, or forcing channel | actuator, drive, setpoint | Input-output comparisons |
-| `output` | Measured response channel | measured displacement, pressure, response | Main response analysis |
-| `signal` | Numeric analysis channel without a stronger semantic class | filtered copy, auxiliary sensor | General plotting and transformations |
-| `metadata` | Context or labels rather than primary signals | ID, marker, label, temperature | Context, grouping, sanity checks |
+| `time` / reference | Shared axis for ordered samples | `time_s`, timestamp, position | Preferred plot X axis and range selection |
+| `process` | Numeric value that belongs to the measured process | pressure, force, displacement, sensor | Plotting, statistics, comparison, and analysis |
+| `ambient` | Numeric environmental or surrounding condition | room temperature, humidity, ambient pressure | Context, correlation, and analysis |
+| Metadata | Context or labels rather than numeric signals | ID, marker, label, status | Context, grouping, sanity checks |
 
-Example: if `time_s` is marked as `time` and `measured_signal` is marked as `output`, plots and frequency analysis usually start with better defaults.
+Multiple process and ambient columns can be assigned. Only the time/reference category is intended to identify a shared x-axis.
 
 ## Example Figures
 
@@ -77,7 +76,7 @@ If you want the formal background for the spectral views shown here, see [docs/l
 ```mermaid
 flowchart TB
     Start[What do you need to do?] --> Decide{Prepare data or analyze data?}
-    Decide -->|Prepare data| Main[Main window\nLoad files\nCheck preview\nSet roles\nChoose channels\nCreate prepared dataset]
+    Decide -->|Prepare data| Main[Main window\nLoad files\nCheck preview\nSet categories\nChoose channels\nCreate prepared dataset]
     Decide -->|Analyze data| Workspace[Analysis workspace\nFilter signals\nCreate derived columns\nRun frequency analysis\nInspect statistics\nExport current view]
     Main --> Next[Open analysis workspace when the dataset is ready]
 
@@ -92,13 +91,13 @@ flowchart TB
 
 ## The Two Windows
 
-The main window is for structural work: load files, inspect them, assign roles, choose which columns to carry forward, and create prepared datasets. If one source file contains several useful row windows, `Preparation -> Split Into Subframes` is the main-window tool for breaking it apart before analysis.
+The main window is for structural work: load files, inspect them, classify numeric columns, choose which columns to carry forward, and create prepared datasets. If one source file contains several useful row windows, `Preparation -> Split Into Subframes` is the main-window tool for breaking it apart before analysis.
 
 The analysis workspace is for detailed work on one selected dataset. The sidebar sets the active context, `Preview` lets you verify the current working dataframe, `Filter` (with sub-tabs for Simple Filtering, Signal Processing, and Resample) and `Derived Signals` change that working copy, `Frequency` and `Cycles` inspect behavior, and `Statistics` summarizes the result.
 
 Where a deeper method note exists, the practical workflow should link to it. For frequency analysis, the current formal note is [docs/latex/fft_welch_example.pdf](latex/fft_welch_example.pdf).
 
-Most of the visible options fall into a few groups: dataset name, channel selection, and role assignment in the main window; then active analysis column, plot axes, filter or derived-signal method, frequency method, and cycle mode in the analysis workspace. If the app seems to pick the wrong default, one of those settings is usually the reason.
+Most of the visible options fall into a few groups: dataset name, channel selection, and reference-column selection in the main window; then active analysis column, plot axes, filter or derived-signal method, frequency method, and cycle mode in the analysis workspace. If the app seems to pick the wrong default, one of those settings is usually the reason.
 
 ## Step 1: Load Data
 
@@ -124,20 +123,19 @@ Use:
 
 Check three things: the row and column count look reasonable, the likely time and signal columns are visible, and the overview plot broadly matches what you expect from the source data.
 
-## Step 3: Confirm Column Roles
+## Step 3: Confirm Column Categories
 
-In the main window, use the `Roles` section below the core preparation controls.
+In the main window, use the `Column Categories` section below the core preparation controls.
 
-Use the role table above as the working meaning of each label.
+Select a column, choose `time`, `process`, or `ambient`, then click `Set Category`.
 
 What changes when roles are correct:
 
 - Better default X axis: `time_s` is preferred over `Index`.
-- Better active analysis default: an `output` or `signal` column is favored.
-- Better comparison choices: `input` can be paired against `output`.
-- Better visual grouping: preview and role-aware controls become easier to scan.
+- Multiple process and ambient columns are supported.
+- Text and categorical columns remain metadata.
 
-If the current role guesses are poor, use `Reinfer Roles` and then correct anything important manually.
+If the detected categories are poor, use `Auto-detect Categories` or select a column and set its category manually.
 
 ## Step 4: Choose The Output Columns
 
@@ -279,6 +277,9 @@ How views stay in sync:
 - analysis edits do not rewrite the source session dataset in place; publishing creates a new session dataset entry instead
 - role changes made in the main window propagate to open analysis workspaces that were launched from that exact dataset path
 - the comparison window works from the dataset paths chosen when it was opened; `Refresh` re-reads those same paths from the current session registry, but newly published datasets are separate new paths and therefore need to be added by opening a new comparison run
+- choose `Overlay` for the original view or `Difference (candidate - baseline)` to inspect deviations from the selected baseline
+- use `Normalize amplitude`, `Zero-start`, and `Trim to overlap` for display-only alignment controls; use the dataset visibility menu to hide runs without unloading them
+- the comparison summary includes count, RMS, peak-to-peak, and deviation RMS for the selected signal, and the status line explains missing shared columns or datasets
 
 ## Recommended Beginner Workflow
 

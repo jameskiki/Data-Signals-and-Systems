@@ -104,7 +104,7 @@ The repository now enforces architecture boundaries via `tests/test_import_bound
 3. Preview and ad-hoc plotting use shared plot contracts/builders.
 4. Prepared datasets can be opened in analysis workspace.
 5. Analysis workspace performs operations through `Source/data_ops/*`, can publish its current working dataframe back into the shared session registry, and renders results through shared plotting infrastructure plus analysis-specific orchestration.
-6. The comparison window reuses the shared session registry, plotting contracts, and summary helpers to overlay and summarize two or more datasets already present in the session.
+6. The comparison window reuses the shared session registry, plotting contracts, and summary helpers to overlay or subtract two or more datasets already present in the session.
 
 ## Session Data Flow Directions
 
@@ -127,9 +127,14 @@ The important rule is that the analysis workspace does not mutate the shared ses
 - After register/merge/split/publish/unload actions, the main dataset table is rebuilt and the relevant dataset is reselected.
 - The main preparation preview, plot, and metadata panels always render from the currently selected session dataset.
 - Open analysis workspaces keep their own dataframe copies after launch, so filter/derive/resample operations stay local to that workspace.
-- Role edits in the main window propagate to already-open analysis workspaces only when their `session.source_path` matches the edited dataset path.
+- The main window exposes only three compact categories: time/reference, process value, and ambient value. Legacy input/output/signal role metadata remains supported for existing/demo contexts, while new user assignments use the compact categories.
+- Multiple process and ambient columns are allowed; assigning time/reference keeps one time column by demoting any previous time role.
+- Category edits in the main window propagate to already-open analysis workspaces only when their `session.source_path` matches the edited dataset path.
 - Publishing from analysis creates a new dataset path in the main session registry; it does not replace the original analysis source dataset.
 - The comparison window stores the dataset paths chosen at launch. Its `Refresh` button re-reads those same paths from the current session registry and updates common-column controls, plots, and summaries.
+- A selected baseline is used for difference mode; each visible candidate is plotted as candidate minus baseline. Normalization and zero-start are display-only transforms and never mutate session data.
+- The visibility menu hides datasets from plots while retaining them in the comparison and summary. The summary reports count, RMS, peak-to-peak, and deviation RMS for the selected signal.
+- Difference mode can trim samples to the overlapping x range. `Index` compares positional samples; a shared numeric x/time column compares samples on that selected axis.
 - Newly published datasets are new session entries, so they do not appear automatically inside already-open comparison windows; open a new comparison run when you want to include them.
 
 ## Testing and CI

@@ -123,7 +123,7 @@ class UiStateVars:
         bool_keys = {"show_grid", "show_subgrid", "show_legend"}
         float_keys = {"grid_alpha", "subgrid_alpha", "line_width", "marker_size"}
         int_keys = {"title_fontsize", "label_fontsize", "tick_fontsize", "legend_fontsize"}
-        str_keys = {"font_family", "marker", "legend_location"}
+        str_keys = {"font_family", "marker", "legend_location", "table_backend"}
 
         for key in bool_keys:
             if key in data:
@@ -143,9 +143,6 @@ class UiStateVars:
         for key in str_keys:
             if key in data:
                 getattr(self, key).set(str(data[key]))
-        if "table_backend" in data:
-            backend = str(data["table_backend"]).strip().lower() or DEFAULT_TABLE_BACKEND
-            self.table_backend.set(backend)
 
     def to_plot_style(self) -> PlotStyle:
         """Build a sanitized PlotStyle from current Tk variables."""
