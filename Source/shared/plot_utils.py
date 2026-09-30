@@ -25,6 +25,7 @@ DataFrameMap = Mapping[str, pd.DataFrame]
 ColumnRoleMap = dict[str, str]
 DatasetColumnRoleMap = Mapping[str, ColumnRoleMap]
 PlotColumnRoles = ColumnRoleMap | DatasetColumnRoleMap | None
+DatasetLineStyles = Mapping[str, str] | None
 XValueList = list[np.ndarray]
 
 
@@ -33,6 +34,7 @@ def create_plot_figure(
     selected_file_paths: Sequence[str],
     data_frames: DataFrameMap,
     column_roles: PlotColumnRoles = None,
+    dataset_line_styles: DatasetLineStyles = None,
     plt_module=plt,
 ) -> plt.Figure:
     """
@@ -42,6 +44,7 @@ def create_plot_figure(
         selected_file_paths: List of selected file paths.
         data_frames: Dictionary mapping file paths to pandas DataFrames.
         column_roles: Optional dict of column roles.
+        dataset_line_styles: Optional mapping of dataset paths to Matplotlib line styles.
         plt_module: Matplotlib pyplot module (default: plt).
     Returns:
         Matplotlib Figure.
@@ -71,6 +74,7 @@ def create_plot_figure(
             y_label=plot_options.y_label,
             style=plot_options.style,
             column_roles=column_roles,
+            dataset_line_styles=dataset_line_styles,
         )
         hide_unused_subplots(axes, n)
         sync_x_axes(axes, x_values_by_axis, fig)
@@ -85,6 +89,7 @@ def create_plot_figure(
         y_label=plot_options.y_label,
         style=plot_options.style,
         column_roles=column_roles,
+        dataset_line_styles=dataset_line_styles,
         plt_module=plt_module,
     )
 
@@ -98,6 +103,7 @@ def create_overlay_figure(
     y_label: str = "Value",
     style: PlotStyle | None = None,
     column_roles: PlotColumnRoles = None,
+    dataset_line_styles: DatasetLineStyles = None,
     plt_module=plt,
 ) -> plt.Figure:
     """Build a single-axis overlay plot for the selected files and columns."""
@@ -132,6 +138,7 @@ def create_overlay_figure(
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
                 linewidth=resolved_style.line_width,
+                linestyle=(dataset_line_styles or {}).get(path, "-"),
             )
             series_index += 1
 
@@ -198,6 +205,7 @@ def plot_columns_on_axes(
     y_label: str = "Value",
     style: PlotStyle | None = None,
     column_roles: PlotColumnRoles = None,
+    dataset_line_styles: DatasetLineStyles = None,
 ) -> XValueList:
     """
     Plot selected columns from dataframes onto axes.
@@ -240,6 +248,7 @@ def plot_columns_on_axes(
                 marker=resolved_style.marker,
                 markersize=resolved_style.marker_size,
                 linewidth=resolved_style.line_width,
+                linestyle=(dataset_line_styles or {}).get(path, "-"),
             )
             series_index += 1
         _apply_axis_contract(

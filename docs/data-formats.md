@@ -19,7 +19,7 @@ If you need row-based separation, use `Preparation -> Split Into Subframes`.
 ## Exports
 
 - merge saves a merged dataset to CSV
-- `Files -> Export Clean Data` writes cleaned versions of all loaded datasets
+- `Files -> Export Selected Clean Data` lets you choose datasets, enter a custom filename prefix, and write `dropna()`-cleaned CSV files named `<prefix>_<dataset>.csv`
 - `Export Current View` in the analysis workspace writes the current working dataframe to CSV
 
 If you need a durable file from a prepared dataset, the practical path is to open it in the analysis workspace and export the current view.

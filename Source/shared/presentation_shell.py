@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import tkinter as tk
 from tkinter import ttk
 
@@ -157,6 +157,7 @@ class PresentationShellMixin(BaseAppShell):
         select_all_label: str = "Select all",
         clear_label: str = "Clear selection",
         hidden_label: str = "channels",
+        item_labels: Mapping[str, str] | None = None,
     ) -> tuple[dict[str, tk.BooleanVar], int]:
         """Populate a checkbutton-backed selector menu and return its variables."""
 
@@ -189,7 +190,7 @@ class PresentationShellMixin(BaseAppShell):
             selector_vars[item_name] = variable
             background, foreground = get_colors(item_name)
             menu.add_checkbutton(
-                label=item_name,
+                label=(item_labels or {}).get(item_name, item_name),
                 variable=variable,
                 onvalue=True,
                 offvalue=False,

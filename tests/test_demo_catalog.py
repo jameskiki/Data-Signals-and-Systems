@@ -1,12 +1,45 @@
 import numpy as np
 
 from Source.shared.demo_catalog import (
+    COMPARISON_BASELINE_DEMO,
+    COMPARISON_DEMO_SPECS,
+    COMPARISON_DRIFT_SPIKE_DEMO,
+    COMPARISON_GAIN_OFFSET_DEMO,
     CYCLE_EXCLUSION_STRESS_DEMO,
     CYCLE_VALIDATION_DEMO,
     DEMO_DATASET_SPEC_BY_KEY,
     build_demo_menu_description_lines,
     create_demo_dataset,
 )
+
+
+def test_comparison_validation_demos_are_registered() -> None:
+    for spec in COMPARISON_DEMO_SPECS:
+        assert DEMO_DATASET_SPEC_BY_KEY[spec.key] is spec
+        description_lines = build_demo_menu_description_lines(spec)
+        assert any("comparison-window" in line for line in description_lines)
+
+
+def test_comparison_validation_demos_expose_known_differences() -> None:
+    _, baseline = create_demo_dataset(COMPARISON_BASELINE_DEMO.key)
+    _, gain_offset = create_demo_dataset(COMPARISON_GAIN_OFFSET_DEMO.key)
+    _, drift_spike = create_demo_dataset(COMPARISON_DRIFT_SPIKE_DEMO.key)
+
+    expected_columns = {"time_s", "measurement", "reference_signal", "residual", "run_index"}
+    assert expected_columns == set(baseline.columns)
+    assert list(gain_offset.columns) == list(baseline.columns)
+    assert list(drift_spike.columns) == list(baseline.columns)
+    assert len(baseline) == len(gain_offset) == 1_000
+    assert len(drift_spike) == 850
+
+    np.testing.assert_allclose(baseline["measurement"], baseline["reference_signal"])
+    np.testing.assert_allclose(
+        gain_offset["measurement"],
+        1.18 * gain_offset["reference_signal"] + 0.4,
+    )
+    assert drift_spike["residual"].iloc[0] == 0.0
+    assert drift_spike["residual"].iloc[-1] == 0.8
+    assert drift_spike.loc[drift_spike["time_s"].between(5.9, 6.1, inclusive="left"), "residual"].max() > 2.0
 
 
 def test_cycle_validation_demo_is_registered() -> None:

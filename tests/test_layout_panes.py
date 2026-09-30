@@ -173,6 +173,7 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
         table_backend_var=object(),
         load_files=lambda: None,
         _load_demo_dataset=lambda _key: None,
+        load_comparison_demo_set=lambda: None,
         load_all_demo_test_signals=lambda: None,
         unload_selected_files=lambda: None,
         merge_selected_files=lambda: None,

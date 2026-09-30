@@ -143,6 +143,39 @@ Use this demo to validate frequency comparisons, transfer-style checks, coherenc
 - the output is delayed and filtered relative to the input
 - the `12 Hz` region is intentionally emphasized by the synthetic resonance
 
+## Comparison Validation Set
+
+Use these three related demos to validate overlays, summary statistics, baseline differences, normalization, zero-start adjustment, and unequal-length datasets:
+
+- `Comparison Validation - Baseline`
+- `Comparison Validation - Gain + Offset`
+- `Comparison Validation - Drift + Spike`
+
+### Recommended Checks
+
+1. From `Files -> Load Demo/Test Signal -> Comparison Validation Set`, choose `Load Full Set`. This loads all three related datasets at once.
+2. Select the three datasets in the main table and open `Analysis -> Open Comparison Window`.
+3. Select `time_s` as the shared X-axis and `measurement` as the summary column.
+4. In `Overlay` mode, confirm the gain/offset candidate sits above the baseline and the drift/spike candidate ends at 8.49 seconds.
+5. Confirm the selected baseline is drawn with a dashed line while candidate datasets use solid lines.
+6. Open the `Datasets` selector, hide the gain/offset candidate, and confirm only the baseline and drift/spike runs remain in the overlay. Use `All` to restore every run.
+7. Select at least three channels, enable `Channels in grid`, and confirm each channel gets its own subplot in a compact grid with the visible datasets overlaid.
+8. Enable `Highlight deviations` and confirm red translucent areas mark values above the baseline while blue areas mark values below it.
+9. Clear `Show legend` and confirm legends disappear from every visible subplot, then enable it again.
+10. Set the baseline dataset as `Baseline`, switch to `Difference (candidate - baseline)`, and plot `measurement`.
+11. Confirm the dashed zero-reference line identifies the baseline in Difference mode and the signed fills remain visible around zero.
+12. Confirm the gain/offset difference is smooth and periodic around a positive offset.
+13. Confirm the drift/spike difference starts at zero, rises to 0.8, and has a clear extra 1.5-unit step near 6 seconds.
+14. Enable `Normalize` and `Zero start` separately and confirm the expected scale and starting-offset changes.
+15. Enable `Trim overlap` and confirm the comparison remains limited to the shorter candidate's time range.
+
+### What Should Stand Out
+
+- the baseline has exactly 1,000 rows and zero residual
+- the gain/offset candidate is exactly `1.18 * reference_signal + 0.4`
+- the drift/spike candidate has 850 rows, linear drift, and a localized anomaly
+- all three datasets share the same columns and `time_s` role
+
 ## Fastest Useful Pass
 
 If you want one compact validation sweep across the current demos:
@@ -151,6 +184,7 @@ If you want one compact validation sweep across the current demos:
 2. On `Cycle Validation Drift Signal`, verify duration drift and mean drift in `Cycles`.
 3. On `Cycle Exclusion Stress Signal`, exclude obvious outliers and confirm the plots stabilize.
 4. On `Input-Output Validation Signal`, compare `actuator_input` and `system_output` in frequency analysis.
+5. On the `Comparison Validation` set, compare `measurement` against the baseline in Difference mode.
 
 ## Failure Signals
 
@@ -161,5 +195,6 @@ Treat the result as suspicious if any of these happen:
 - the exclusion-stress demo does not show clearly abnormal cycles
 - exclude and restore actions do not visibly affect the cycle plots
 - the input-output demo does not preserve the known driven frequencies
+- the comparison candidates do not show their known gain/offset, drift, spike, or row-count differences
 
 For broader workflow guidance, see [quickstart.md](quickstart.md), [analysis-methods.md](analysis-methods.md), and [which-tool-when.md](which-tool-when.md).

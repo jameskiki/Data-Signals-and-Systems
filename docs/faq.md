@@ -71,7 +71,7 @@ Different export actions export different things.
 
 Check:
 
-- `Export Clean Data` exports cleaned versions of loaded datasets
+- `Export Selected Clean Data` exports only the datasets you choose, applies `dropna()`, and asks for a custom filename prefix
 - merge saves a merged CSV
 - `Export Current View` exports the analysis workspace working dataframe
 

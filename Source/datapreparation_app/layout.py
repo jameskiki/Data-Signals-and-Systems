@@ -6,7 +6,7 @@ from tkinter import ttk
 from Source.shared.documentation_links import DOCUMENTATION_LINKS
 from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
-from .demo import DEMO_DATASET_SPECS, build_demo_menu_description_lines
+from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, build_demo_menu_description_lines
 
 
 def build_main_ui(app, preview_row_limit: int) -> None:
@@ -17,7 +17,10 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     file_menu = tk.Menu(menu_bar, tearoff=0)
     demo_menu = tk.Menu(file_menu, tearoff=0)
     file_menu.add_command(label="Load Files", command=app.load_files)
+    comparison_demo_keys = {spec.key for spec in COMPARISON_DEMO_SPECS}
     for spec in DEMO_DATASET_SPECS:
+        if spec.key in comparison_demo_keys:
+            continue
         spec_menu = tk.Menu(demo_menu, tearoff=0)
         spec_menu.add_command(label=spec.menu_label, state="disabled")
         spec_menu.add_separator()
@@ -29,13 +32,21 @@ def build_main_ui(app, preview_row_limit: int) -> None:
             command=lambda demo_key=spec.key: app._load_demo_dataset(demo_key),
         )
         demo_menu.add_cascade(label=spec.menu_label, menu=spec_menu)
+    comparison_menu = tk.Menu(demo_menu, tearoff=0)
+    comparison_menu.add_command(label="Comparison Validation Set", state="disabled")
+    comparison_menu.add_separator()
+    comparison_menu.add_command(label="Loads baseline plus two candidates", state="disabled")
+    comparison_menu.add_command(label="Tests gain/offset, drift, spike, and unequal lengths", state="disabled")
+    comparison_menu.add_separator()
+    comparison_menu.add_command(label="Load Full Set", command=app.load_comparison_demo_set)
+    demo_menu.add_cascade(label="Comparison Validation Set", menu=comparison_menu)
     demo_menu.add_separator()
     demo_menu.add_command(label="Load All Demo/Test Signals", command=app.load_all_demo_test_signals)
     file_menu.add_cascade(label="Load Demo/Test Signal", menu=demo_menu)
     file_menu.add_command(label="Unload File", command=app.unload_selected_files)
     file_menu.add_separator()
     file_menu.add_command(label="Merge Selected Files", command=app.merge_selected_files)
-    file_menu.add_command(label="Export Clean Data", command=app.export_clean_data)
+    file_menu.add_command(label="Export Selected Clean Data", command=app.export_clean_data)
     menu_bar.add_cascade(label="Files", menu=file_menu)
 
     preparation_menu = tk.Menu(menu_bar, tearoff=0)

@@ -16,8 +16,8 @@ class DummyNotifications:
         self.warning_messages = []
         self.info_messages = []
 
-    def success(self, message):
-        self.success_messages.append(message)
+    def success(self, message, details=None):
+        self.success_messages.append(message if details is None else (message, details))
 
     def warning(self, message, details=None):
         self.warning_messages.append((message, details))
@@ -122,6 +122,24 @@ def test_split_selected_dataset_reports_error(monkeypatch):
     assert errors == [("Split Error", "split failed")]
 
 
+def test_load_comparison_demo_set_loads_all_three_datasets(monkeypatch):
+    app = DummyApp()
+    refresh_calls = []
+    selected_paths = []
+    monkeypatch.setattr(actions, "refresh_dataset_table", lambda _app: refresh_calls.append(True))
+    monkeypatch.setattr(actions, "select_dataset_in_table", lambda _app, path: selected_paths.append(path))
+
+    loaded_paths = actions.load_comparison_demo_set(app)
+
+    assert len(loaded_paths) == 3
+    assert set(loaded_paths) == set(app.data_frames)
+    assert all(path in app.dataset_contexts for path in loaded_paths)
+    assert selected_paths == [loaded_paths[-1]]
+    assert len(refresh_calls) == 1
+    assert app.prep_views_refresh_count == 1
+    assert app.notifications.success_messages[0][0] == "Comparison Validation Set Loaded"
+
+
 def test_export_clean_data_warns_without_datasets(monkeypatch):
     app = DummyApp()
 
@@ -132,14 +150,43 @@ def test_export_clean_data_warns_without_datasets(monkeypatch):
 
 def test_export_clean_data_success(monkeypatch):
     app = DummyApp()
-    app.data_frames = {"C:/tmp/a.csv": pd.DataFrame({"x": [1, 2]})}
+    app.data_frames = {
+        "C:/tmp/a.csv": pd.DataFrame({"x": [1, 2]}),
+        "C:/tmp/b.csv": pd.DataFrame({"x": [3, 4]}),
+    }
+    app.multiple_selected_paths = ["C:/tmp/b.csv"]
 
     monkeypatch.setattr(actions.filedialog, "askdirectory", lambda title: "C:/out")
-    monkeypatch.setattr(actions, "export_clean_dataframes", lambda frames, out_dir: 1)
+    monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "custom")
+    export_calls = []
+    monkeypatch.setattr(
+        actions,
+        "export_clean_dataframes",
+        lambda frames, out_dir, filename_prefix: export_calls.append((frames, out_dir, filename_prefix)) or 1,
+    )
 
     actions.export_clean_data(app)
 
-    assert app.notifications.success_messages == ["Exported 1 files"]
+    assert list(export_calls[0][0]) == ["C:/tmp/b.csv"]
+    assert export_calls[0][1:] == ("C:/out", "custom")
+    assert app.notifications.success_messages == ["Exported 1 selected file(s)"]
+
+
+def test_export_clean_data_rejects_invalid_prefix(monkeypatch):
+    app = DummyApp()
+    app.data_frames = {"C:/tmp/a.csv": pd.DataFrame({"x": [1, 2]})}
+    app.multiple_selected_paths = ["C:/tmp/a.csv"]
+
+    directory_prompts = []
+    monkeypatch.setattr(actions.filedialog, "askdirectory", lambda title: directory_prompts.append(title) or "C:/out")
+    monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "bad/name")
+
+    actions.export_clean_data(app)
+
+    assert app.notifications.warning_messages == [
+        ('The filename prefix cannot contain < > : " / \\ | ? * or control characters.', None)
+    ]
+    assert directory_prompts == []
 
 
 def test_unload_selected_files_removes_context_and_data(monkeypatch):

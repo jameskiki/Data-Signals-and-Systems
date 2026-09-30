@@ -231,7 +231,7 @@ For a fuller task-to-tool mapping, see `which-tool-when.md`.
 
 There are several export paths:
 
-- `Files -> Export Clean Data`: writes cleaned versions of all currently loaded datasets to a chosen directory
+- `Files -> Export Selected Clean Data`: choose one or more loaded datasets, enter a custom filename prefix, and write `dropna()`-cleaned CSV files named `<prefix>_<dataset>.csv`
 - `Merge` workflow from the main window: saves a merged CSV file
 - `Export Current View` in the analysis workspace: saves the current working dataframe as a CSV file
 
@@ -247,7 +247,7 @@ The first comparison workflow is intentionally narrow:
 
 - pick two or more datasets from the current session
 - choose one shared X-axis
-- choose one or more common numeric channels
+- choose one or more numeric channels from the union across datasets; entries such as `pressure (2/3 datasets)` identify partial availability, and the status line lists combinations omitted because a dataset lacks a selected channel
 - inspect the overlay plot
 - review the simple side-by-side summary/statistics table
 - refresh the same comparison against the latest session state for those dataset paths
@@ -278,7 +278,11 @@ How views stay in sync:
 - role changes made in the main window propagate to open analysis workspaces that were launched from that exact dataset path
 - the comparison window works from the dataset paths chosen when it was opened; `Refresh` re-reads those same paths from the current session registry, but newly published datasets are separate new paths and therefore need to be added by opening a new comparison run
 - choose `Overlay` for the original view or `Difference (candidate - baseline)` to inspect deviations from the selected baseline
-- use `Normalize amplitude`, `Zero-start`, and `Trim to overlap` for display-only alignment controls; use the dataset visibility menu to hide runs without unloading them
+- use `Normalize amplitude`, `Zero-start`, and `Trim to overlap` for display-only alignment controls; overlap trimming applies to both overlay and difference plots, and difference mode aligns the baseline to candidate samples on a selected numeric x/time channel
+- enable `Channels in grid` to give each selected channel its own subplot in a compact grid while keeping the selected datasets overlaid within each channel
+- the selected baseline is dashed in overlay plots; in difference mode, a labeled dashed zero line identifies the baseline reference
+- enable `Highlight deviations` to shade candidate values above the baseline in red and values below the baseline in blue; the same signed colors are applied around zero in difference mode
+- use `Show legend` to hide or restore legends across all comparison subplots without changing the saved global plot-style preference
 - the comparison summary includes count, RMS, peak-to-peak, and deviation RMS for the selected signal, and the status line explains missing shared columns or datasets
 
 ## Recommended Beginner Workflow

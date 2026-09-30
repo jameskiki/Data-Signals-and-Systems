@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from Source.data_ops.io_ops import analyze_selected_dataframes, export_clean_dataframes, merge_selected_dataframes
+from Source.data_ops.io_ops import (
+    analyze_selected_dataframes,
+    build_export_filenames,
+    export_clean_dataframes,
+    merge_selected_dataframes,
+    validate_export_filename_prefix,
+)
 
 
 @pytest.fixture
@@ -95,3 +101,27 @@ class TestExportCleanDataframes:
     def test_returns_count(self, sample_data_frames, tmp_path):
         count = export_clean_dataframes(sample_data_frames, str(tmp_path))
         assert count == 2
+
+    def test_uses_custom_filename_prefix(self, sample_data_frames, tmp_path):
+        export_clean_dataframes(
+            sample_data_frames,
+            str(tmp_path),
+            filename_prefix="experiment",
+        )
+
+        assert (tmp_path / "experiment_file_a.csv").exists()
+        assert (tmp_path / "experiment_file_b.csv").exists()
+
+    def test_disambiguates_duplicate_source_basenames(self):
+        filenames = build_export_filenames(
+            ["C:/run_a/data.csv", "C:/run_b/data.csv"],
+            "test",
+        )
+
+        assert filenames["C:/run_a/data.csv"] == "test_data.csv"
+        assert filenames["C:/run_b/data.csv"] == "test_data_2.csv"
+
+    @pytest.mark.parametrize("prefix", ["", "  ", "bad/name", "bad:name", "bad*name", "bad."])
+    def test_rejects_invalid_custom_prefix(self, prefix):
+        with pytest.raises(ValueError):
+            validate_export_filename_prefix(prefix)

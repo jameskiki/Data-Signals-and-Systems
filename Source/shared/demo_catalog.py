@@ -117,7 +117,64 @@ CYCLE_EXCLUSION_STRESS_DEMO = DemoDatasetSpec(
     },
 )
 
-DEMO_DATASET_SPECS = (SPECTRAL_REFERENCE_DEMO, CYCLE_VALIDATION_DEMO, CYCLE_EXCLUSION_STRESS_DEMO, INPUT_OUTPUT_DEMO)
+COMPARISON_BASELINE_DEMO = DemoDatasetSpec(
+    key="comparison_baseline",
+    menu_label="Comparison Validation - Baseline",
+    basename="demo_comparison_baseline.csv",
+    suffix="synthetic_comparison_baseline",
+    description="Baseline run for deterministic comparison-window validation.",
+    summary=(
+        "Reference member of the automatically loaded comparison set. Use measurement as the summary "
+        "and difference signal."
+    ),
+    column_roles={
+        "time_s": "time",
+        "measurement": "signal",
+        "reference_signal": "signal",
+        "residual": "signal",
+        "run_index": "metadata",
+    },
+)
+
+COMPARISON_GAIN_OFFSET_DEMO = DemoDatasetSpec(
+    key="comparison_gain_offset",
+    menu_label="Comparison Validation - Gain + Offset",
+    basename="demo_comparison_gain_offset.csv",
+    suffix="synthetic_comparison_gain_offset",
+    description="Comparison candidate with a known 18 percent gain and 0.4 unit offset.",
+    summary=(
+        "Candidate member of the comparison set. Relative to the baseline, measurement is exactly "
+        "1.18 * reference_signal + 0.4."
+    ),
+    column_roles=COMPARISON_BASELINE_DEMO.column_roles,
+)
+
+COMPARISON_DRIFT_SPIKE_DEMO = DemoDatasetSpec(
+    key="comparison_drift_spike",
+    menu_label="Comparison Validation - Drift + Spike",
+    basename="demo_comparison_drift_spike.csv",
+    suffix="synthetic_comparison_drift_spike",
+    description="Shorter comparison candidate with linear drift and a localized positive spike.",
+    summary=(
+        "Candidate member of the comparison set. It has 150 fewer rows, a 0-to-0.8 unit drift, "
+        "and a 1.5 unit spike near 6 seconds."
+    ),
+    column_roles=COMPARISON_BASELINE_DEMO.column_roles,
+)
+
+COMPARISON_DEMO_SPECS = (
+    COMPARISON_BASELINE_DEMO,
+    COMPARISON_GAIN_OFFSET_DEMO,
+    COMPARISON_DRIFT_SPIKE_DEMO,
+)
+
+DEMO_DATASET_SPECS = (
+    SPECTRAL_REFERENCE_DEMO,
+    CYCLE_VALIDATION_DEMO,
+    CYCLE_EXCLUSION_STRESS_DEMO,
+    INPUT_OUTPUT_DEMO,
+    *COMPARISON_DEMO_SPECS,
+)
 DEMO_DATASET_SPEC_BY_KEY = {spec.key: spec for spec in DEMO_DATASET_SPECS}
 
 
@@ -154,6 +211,19 @@ def build_demo_menu_description_lines(spec: DemoDatasetSpec) -> list[str]:
             "Outliers: low amp, short cycle, high mean, spike",
             "Designed for exclude/restore workflow checks",
             "Use the metadata columns to confirm which cycles should stand out",
+        ]
+
+    if spec.key in {comparison_spec.key for comparison_spec in COMPARISON_DEMO_SPECS}:
+        role = {
+            COMPARISON_BASELINE_DEMO.key: "Baseline: unchanged 1,000-row reference",
+            COMPARISON_GAIN_OFFSET_DEMO.key: "Candidate: 18% gain and +0.4 offset",
+            COMPARISON_DRIFT_SPIKE_DEMO.key: "Candidate: shorter run with drift and spike",
+        }[spec.key]
+        return [
+            "100 Hz deterministic comparison-window dataset",
+            role,
+            "Loaded together as the Comparison Validation Set",
+            "Compare measurement with the baseline in Difference mode",
         ]
 
     return [spec.description, spec.summary]
@@ -429,6 +499,45 @@ def create_cycle_exclusion_stress_demo_dataset() -> pd.DataFrame:
     )
 
 
+def create_comparison_demo_dataset(demo_key: str) -> pd.DataFrame:
+    """Create one member of the deterministic comparison-window validation set."""
+
+    sample_rate_hz = 100.0
+    baseline_row_count = 1_000
+    row_count = 850 if demo_key == COMPARISON_DRIFT_SPIKE_DEMO.key else baseline_row_count
+    time_s = np.arange(row_count, dtype=float) / sample_rate_hz
+    reference_signal = (
+        2.0
+        + 1.25 * np.sin(2.0 * np.pi * 0.8 * time_s)
+        + 0.35 * np.cos(2.0 * np.pi * 3.0 * time_s + 0.2)
+    )
+
+    if demo_key == COMPARISON_BASELINE_DEMO.key:
+        measurement = reference_signal.copy()
+        run_index = 0
+    elif demo_key == COMPARISON_GAIN_OFFSET_DEMO.key:
+        measurement = 1.18 * reference_signal + 0.4
+        run_index = 1
+    elif demo_key == COMPARISON_DRIFT_SPIKE_DEMO.key:
+        drift = np.linspace(0.0, 0.8, row_count)
+        spike = np.zeros(row_count, dtype=float)
+        spike[(time_s >= 5.9) & (time_s < 6.1)] = 1.5
+        measurement = reference_signal + drift + spike
+        run_index = 2
+    else:
+        raise KeyError(f"Unsupported comparison demo dataset key: {demo_key}")
+
+    return pd.DataFrame(
+        {
+            "time_s": time_s,
+            "measurement": measurement,
+            "reference_signal": reference_signal,
+            "residual": measurement - reference_signal,
+            "run_index": np.full(row_count, run_index, dtype=int),
+        }
+    )
+
+
 def create_demo_dataset(demo_key: str) -> tuple[DemoDatasetSpec, pd.DataFrame]:
     """Create one deterministic demo dataset by key."""
 
@@ -443,6 +552,8 @@ def create_demo_dataset(demo_key: str) -> tuple[DemoDatasetSpec, pd.DataFrame]:
         return spec, create_cycle_exclusion_stress_demo_dataset()
     if demo_key == INPUT_OUTPUT_DEMO.key:
         return spec, create_input_output_demo_dataset()
+    if demo_key in {comparison_spec.key for comparison_spec in COMPARISON_DEMO_SPECS}:
+        return spec, create_comparison_demo_dataset(demo_key)
     raise KeyError(f"Unsupported demo dataset key: {demo_key}")
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import matplotlib
+import pytest
 
 matplotlib.use("Agg")
 
@@ -86,6 +87,30 @@ def test_overlay_cycles_palette_when_roles_unavailable() -> None:
     colors = [line.get_color() for line in figure.get_axes()[0].lines]
 
     assert colors == ["#123456", "#abcdef"]
+
+
+@pytest.mark.parametrize("use_subplots", [False, True])
+def test_dataset_line_styles_apply_to_overlay_and_subplots(use_subplots: bool) -> None:
+    data_frames = {
+        "baseline": pd.DataFrame({"time_s": [0.0, 1.0], "signal": [1.0, 2.0]}),
+        "candidate": pd.DataFrame({"time_s": [0.0, 1.0], "signal": [1.5, 2.5]}),
+    }
+    options = PlotOptions(
+        cols_to_plot=["signal"],
+        xcol="time_s",
+        use_subplots=use_subplots,
+    )
+
+    figure = create_plot_figure(
+        options,
+        ["baseline", "candidate"],
+        data_frames,
+        dataset_line_styles={"baseline": "--"},
+    )
+    lines = figure.get_axes()[0].lines
+
+    assert lines[0].get_linestyle() == "--"
+    assert lines[1].get_linestyle() == "-"
 
 
 def test_overlay_cycles_palette_when_role_mapping_is_missing_columns() -> None:

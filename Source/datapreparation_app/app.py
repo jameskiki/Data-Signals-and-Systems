@@ -4,6 +4,7 @@ from .actions import (
     load_files,
     load_demo_test_signal,
     load_demo_input_output_signal,
+    load_comparison_demo_set,
     load_all_demo_test_signals,
     _load_demo_dataset as _actions_load_demo_dataset,
     plot_selected_data,
@@ -262,6 +263,9 @@ class DataPreparationApp(PresentationShellMixin):
 
     def load_demo_input_output_signal(self) -> None:
         return load_demo_input_output_signal(self)
+
+    def load_comparison_demo_set(self) -> list[str]:
+        return load_comparison_demo_set(self)
 
     def load_all_demo_test_signals(self) -> None:
         return load_all_demo_test_signals(self)

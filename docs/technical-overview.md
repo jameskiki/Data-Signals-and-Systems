@@ -133,8 +133,13 @@ The important rule is that the analysis workspace does not mutate the shared ses
 - Publishing from analysis creates a new dataset path in the main session registry; it does not replace the original analysis source dataset.
 - The comparison window stores the dataset paths chosen at launch. Its `Refresh` button re-reads those same paths from the current session registry and updates common-column controls, plots, and summaries.
 - A selected baseline is used for difference mode; each visible candidate is plotted as candidate minus baseline. Normalization and zero-start are display-only transforms and never mutate session data.
-- The visibility menu hides datasets from plots while retaining them in the comparison and summary. The summary reports count, RMS, peak-to-peak, and deviation RMS for the selected signal.
-- Difference mode can trim samples to the overlapping x range. `Index` compares positional samples; a shared numeric x/time column compares samples on that selected axis.
+- The selected baseline uses a dashed line in overlay plots. In difference mode, the dashed zero-reference line is labeled with the baseline dataset name.
+- The dedicated `Datasets` selector hides datasets from plots while retaining them in the comparison and summary. Its `All` and `None` controls provide quick bulk selection. The summary reports count, RMS, peak-to-peak, and deviation RMS for the selected signal.
+- The signal selector uses the union of numeric columns across compared datasets. Partial channels are annotated with availability counts such as `pressure (2/3 datasets)`, and the status line reports dataset/channel combinations omitted from plotting. X-axis choices remain shared-only so every visible run uses the same reference axis.
+- `Channels in grid` gives every selected signal its own subplot in a balanced grid, with the visible datasets overlaid within each channel and unused cells hidden. With the option disabled, the existing combined overlay and vertically stacked difference layouts remain unchanged.
+- `Highlight deviations` fills the area above the baseline in translucent red and the area below it in translucent blue. Overlay mode fills between baseline and candidate curves; difference mode fills between each difference curve and zero.
+- `Show legend` is a comparison-window display override. It defaults to the configured plot style but can hide or restore all legends in the current comparison without changing the saved global style.
+- `Trim to overlap` limits both overlay and difference plots to the x range shared by every visible dataset. `Index` compares positional samples; a shared numeric x/time column interpolates the baseline onto each candidate's x samples before calculating differences.
 - Newly published datasets are new session entries, so they do not appear automatically inside already-open comparison windows; open a new comparison run when you want to include them.
 
 ## Testing and CI

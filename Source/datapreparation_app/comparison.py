@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
 import os
 import tkinter as tk
+from collections.abc import Mapping
+from dataclasses import replace
 from tkinter import ttk
 
 import matplotlib.pyplot as plt
@@ -20,6 +23,9 @@ from Source.shared.presentation_shell import PresentationShellMixin
 
 COMPARISON_WINDOW_GEOMETRY = "1280x820"
 COMPARISON_SELECTOR_MAX_ITEMS = 300
+POSITIVE_DEVIATION_COLOR = "#d62728"
+NEGATIVE_DEVIATION_COLOR = "#1f77b4"
+DEVIATION_FILL_ALPHA = 0.18
 
 
 def get_common_columns(
@@ -39,6 +45,58 @@ def get_common_columns(
     for dataset_path in dataset_paths[1:]:
         common_columns.intersection_update(_get_frame_columns(data_frames[dataset_path], numeric_only=numeric_only))
     return [column for column in first_columns if column in common_columns]
+
+
+def get_numeric_column_availability(
+    dataset_paths: list[str],
+    data_frames: Mapping[str, pd.DataFrame],
+) -> dict[str, int]:
+    """Count numeric-column availability while preserving first appearance order."""
+
+    availability: dict[str, int] = {}
+    for dataset_path in dataset_paths:
+        numeric_column_list = [
+            str(column_name)
+            for column_name in data_frames[dataset_path].select_dtypes(include="number").columns
+        ]
+        numeric_columns = set(numeric_column_list)
+        for column_name in numeric_column_list:
+            availability.setdefault(column_name, 0)
+        for column_name in availability:
+            if column_name in numeric_columns:
+                availability[column_name] += 1
+    return availability
+
+
+def build_numeric_column_labels(
+    availability: Mapping[str, int],
+    dataset_count: int,
+) -> dict[str, str]:
+    """Annotate numeric columns that are unavailable in some datasets."""
+
+    return {
+        column_name: (
+            column_name
+            if available_count == dataset_count
+            else f"{column_name} ({available_count}/{dataset_count} datasets)"
+        )
+        for column_name, available_count in availability.items()
+    }
+
+
+def get_missing_column_combinations(
+    dataset_paths: list[str],
+    data_frames: Mapping[str, pd.DataFrame],
+    columns: list[str],
+) -> list[tuple[str, str]]:
+    """Return selected dataset/channel combinations that cannot be plotted."""
+
+    return [
+        (dataset_path, column)
+        for dataset_path in dataset_paths
+        for column in columns
+        if column not in data_frames[dataset_path].columns
+    ]
 
 
 def resolve_default_x_column(
@@ -187,6 +245,200 @@ def calculate_difference_series(
     return candidate_values - baseline_values
 
 
+def get_shared_x_overlap_bounds(
+    dataset_paths: list[str],
+    data_frames: Mapping[str, pd.DataFrame],
+    x_column: str,
+) -> tuple[float, float] | None:
+    """Return the finite x range shared by every selected dataset."""
+
+    ranges: list[tuple[float, float]] = []
+    for path in dataset_paths:
+        x_values, _ = _comparison_x_values(data_frames[path], x_column)
+        finite_values = x_values[np.isfinite(x_values)]
+        if finite_values.size == 0:
+            return None
+        ranges.append((float(np.min(finite_values)), float(np.max(finite_values))))
+    if not ranges:
+        return None
+    lower = max(start for start, _ in ranges)
+    upper = min(end for _, end in ranges)
+    return (lower, upper) if lower <= upper else None
+
+
+def trim_dataframes_to_shared_x_overlap(
+    dataset_paths: list[str],
+    data_frames: Mapping[str, pd.DataFrame],
+    x_column: str,
+) -> dict[str, pd.DataFrame]:
+    """Copy and trim selected datasets to their common finite x range."""
+
+    bounds = get_shared_x_overlap_bounds(dataset_paths, data_frames, x_column)
+    if bounds is None:
+        return {path: data_frames[path].iloc[0:0].copy() for path in dataset_paths}
+    lower, upper = bounds
+    trimmed_frames: dict[str, pd.DataFrame] = {}
+    for path in dataset_paths:
+        frame = data_frames[path]
+        x_values, _ = _comparison_x_values(frame, x_column)
+        mask = np.isfinite(x_values) & (x_values >= lower) & (x_values <= upper)
+        trimmed_frames[path] = frame.loc[mask].copy()
+    return trimmed_frames
+
+
+def _prepare_finite_xy(x_values: np.ndarray, y_values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    count = min(len(x_values), len(y_values))
+    x_values = np.asarray(x_values[:count], dtype=float)
+    y_values = np.asarray(y_values[:count], dtype=float)
+    finite_mask = np.isfinite(x_values) & np.isfinite(y_values)
+    x_values = x_values[finite_mask]
+    y_values = y_values[finite_mask]
+    if x_values.size == 0:
+        return x_values, y_values
+    order = np.argsort(x_values, kind="stable")
+    return x_values[order], y_values[order]
+
+
+def calculate_subplot_grid(item_count: int) -> tuple[int, int]:
+    """Return a compact row/column grid for the requested subplot count."""
+
+    if item_count < 1:
+        raise ValueError("item_count must be at least 1")
+    column_count = math.ceil(math.sqrt(item_count))
+    row_count = math.ceil(item_count / column_count)
+    return row_count, column_count
+
+
+def align_comparison_series(
+    baseline_frame: pd.DataFrame,
+    candidate_frame: pd.DataFrame,
+    column: str,
+    x_column: str,
+    bounds: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Align baseline and candidate values on the candidate x samples."""
+
+    baseline_x, _ = _comparison_x_values(baseline_frame, x_column)
+    candidate_x, _ = _comparison_x_values(candidate_frame, x_column)
+    baseline_y = pd.to_numeric(baseline_frame[column], errors="coerce").to_numpy(dtype=float)
+    candidate_y = pd.to_numeric(candidate_frame[column], errors="coerce").to_numpy(dtype=float)
+    baseline_x_values, baseline_values = _prepare_finite_xy(baseline_x, baseline_y)
+    candidate_x_values, candidate_values = _prepare_finite_xy(candidate_x, candidate_y)
+    if baseline_x_values.size == 0 or candidate_x_values.size == 0:
+        return None
+
+    if x_column == "Index":
+        count = min(len(baseline_values), len(candidate_values))
+        x_values = candidate_x_values[:count]
+        baseline_values = baseline_values[:count]
+        candidate_values = candidate_values[:count]
+        if bounds is not None:
+            lower, upper = bounds
+            mask = (x_values >= lower) & (x_values <= upper)
+            x_values = x_values[mask]
+            baseline_values = baseline_values[mask]
+            candidate_values = candidate_values[mask]
+        return x_values, baseline_values, candidate_values
+
+    lower = max(float(baseline_x_values[0]), float(candidate_x_values[0]))
+    upper = min(float(baseline_x_values[-1]), float(candidate_x_values[-1]))
+    if bounds is not None:
+        lower = max(lower, bounds[0])
+        upper = min(upper, bounds[1])
+    if lower > upper:
+        return None
+    candidate_mask = (candidate_x_values >= lower) & (candidate_x_values <= upper)
+    x_values = candidate_x_values[candidate_mask]
+    candidate_values = candidate_values[candidate_mask]
+    if x_values.size == 0:
+        return None
+    unique_baseline_x, unique_indices = np.unique(baseline_x_values, return_index=True)
+    baseline_values = np.interp(x_values, unique_baseline_x, baseline_values[unique_indices])
+    return x_values, baseline_values, candidate_values
+
+
+def _fill_signed_deviation(
+    axis,
+    x_values: np.ndarray,
+    reference_values: np.ndarray,
+    candidate_values: np.ndarray,
+    *,
+    add_labels: bool,
+) -> None:
+    positive_mask = candidate_values >= reference_values
+    negative_mask = candidate_values < reference_values
+    axis.fill_between(
+        x_values,
+        reference_values,
+        candidate_values,
+        where=positive_mask,
+        interpolate=True,
+        color=POSITIVE_DEVIATION_COLOR,
+        alpha=DEVIATION_FILL_ALPHA,
+        label="Above baseline" if add_labels else "_nolegend_",
+    )
+    axis.fill_between(
+        x_values,
+        reference_values,
+        candidate_values,
+        where=negative_mask,
+        interpolate=True,
+        color=NEGATIVE_DEVIATION_COLOR,
+        alpha=DEVIATION_FILL_ALPHA,
+        label="Below baseline" if add_labels else "_nolegend_",
+    )
+
+
+def add_overlay_deviation_highlights(
+    figure: plt.Figure,
+    dataset_paths: list[str],
+    data_frames: Mapping[str, pd.DataFrame],
+    baseline_path: str,
+    columns: list[str],
+    *,
+    x_column: str,
+    channels_in_grid: bool,
+    style: PlotStyle | None = None,
+) -> None:
+    """Fill signed areas between each visible candidate and the baseline."""
+
+    if baseline_path not in data_frames:
+        return
+    resolved_style = style or PlotStyle()
+    baseline_frame = data_frames[baseline_path]
+    labeled_axes: set[int] = set()
+    for column_index, column in enumerate(columns):
+        axis_index = column_index if channels_in_grid else 0
+        axis = figure.axes[axis_index]
+        if column not in baseline_frame.columns:
+            continue
+        for path in dataset_paths:
+            if path == baseline_path or column not in data_frames[path].columns:
+                continue
+            aligned = align_comparison_series(
+                baseline_frame,
+                data_frames[path],
+                column,
+                x_column,
+            )
+            if aligned is None:
+                continue
+            x_values, baseline_values, candidate_values = aligned
+            _fill_signed_deviation(
+                axis,
+                x_values,
+                baseline_values,
+                candidate_values,
+                add_labels=axis_index not in labeled_axes,
+            )
+            labeled_axes.add(axis_index)
+        if axis_index in labeled_axes and resolved_style.show_legend:
+            axis.legend(
+                fontsize=resolved_style.legend_fontsize,
+                loc=resolved_style.legend_location,
+            )
+
+
 def build_difference_figure(
     dataset_paths: list[str],
     data_frames: dict[str, pd.DataFrame],
@@ -197,35 +449,66 @@ def build_difference_figure(
     normalize: bool = False,
     zero_start: bool = False,
     trim_overlap: bool = False,
+    channels_in_grid: bool = False,
+    highlight_deviations: bool = False,
     style: PlotStyle | None = None,
 ) -> plt.Figure:
     """Build candidate-minus-baseline curves for the selected common signals."""
 
     if baseline_path not in data_frames:
         raise ValueError("The selected baseline dataset is no longer available.")
-    figure, axes = plt.subplots(len(columns), 1, squeeze=False, figsize=(10, max(4, 3.5 * len(columns))))
+    resolved_style = style or PlotStyle()
+    if channels_in_grid:
+        row_count, column_count = calculate_subplot_grid(len(columns))
+        figure, axes = plt.subplots(
+            row_count,
+            column_count,
+            squeeze=False,
+            figsize=(6 * column_count, 4 * row_count),
+        )
+    else:
+        row_count, column_count = len(columns), 1
+        figure, axes = plt.subplots(
+            row_count,
+            column_count,
+            squeeze=False,
+            figsize=(10, max(4, 3.5 * len(columns))),
+        )
     baseline_frame = data_frames[baseline_path]
+    shared_bounds = (
+        get_shared_x_overlap_bounds(dataset_paths, data_frames, x_column)
+        if trim_overlap
+        else None
+    )
     for index, column in enumerate(columns):
-        axis = axes[index][0]
-        baseline_x, _ = _comparison_x_values(baseline_frame, x_column)
-        baseline_y = pd.to_numeric(baseline_frame[column], errors="coerce").to_numpy(dtype=float)
+        axis = axes[index // column_count][index % column_count]
+        highlights_labeled = False
+        if column not in baseline_frame.columns:
+            axis.set_title(column)
+            axis.text(
+                0.5,
+                0.5,
+                "Unavailable in baseline",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
+            axis.set_axis_off()
+            continue
         for path in dataset_paths:
             if path == baseline_path or column not in data_frames[path].columns:
                 continue
             candidate_frame = data_frames[path]
-            candidate_x, _ = _comparison_x_values(candidate_frame, x_column)
-            candidate_y = pd.to_numeric(candidate_frame[column], errors="coerce").to_numpy(dtype=float)
-            count = min(len(baseline_x), len(baseline_y), len(candidate_x), len(candidate_y))
-            if count == 0:
+            aligned = align_comparison_series(
+                baseline_frame,
+                candidate_frame,
+                column,
+                x_column,
+                shared_bounds,
+            )
+            if aligned is None:
                 continue
-            x_values = np.asarray(candidate_x[:count], dtype=float)
-            baseline_values = baseline_y[:count]
-            candidate_values = candidate_y[:count]
-            if trim_overlap:
-                lower = max(float(np.nanmin(baseline_x)), float(np.nanmin(candidate_x)))
-                upper = min(float(np.nanmax(baseline_x)), float(np.nanmax(candidate_x)))
-                mask = (x_values >= lower) & (x_values <= upper)
-                x_values, baseline_values, candidate_values = x_values[mask], baseline_values[mask], candidate_values[mask]
+            x_values, baseline_values, candidate_values = aligned
             difference = calculate_difference_series(
                 pd.Series(baseline_values),
                 pd.Series(candidate_values),
@@ -234,12 +517,34 @@ def build_difference_figure(
             )
             if difference is not None:
                 axis.plot(x_values[:len(difference)], difference, label=os.path.basename(path))
+                if highlight_deviations:
+                    zero_values = np.zeros(len(difference), dtype=float)
+                    _fill_signed_deviation(
+                        axis,
+                        x_values[:len(difference)],
+                        zero_values,
+                        difference,
+                        add_labels=not highlights_labeled,
+                    )
+                    highlights_labeled = True
         axis.set_title(column)
         axis.set_ylabel("Candidate - baseline")
         axis.grid(True, alpha=0.3)
-        axis.axhline(0.0, color="black", linewidth=0.8)
-        axis.legend()
-    axes[-1][0].set_xlabel("Index" if x_column == "Index" else x_column)
+        axis.axhline(
+            0.0,
+            color="black",
+            linewidth=1.0,
+            linestyle="--",
+            label=f"Baseline: {os.path.basename(baseline_path)} (zero)",
+        )
+        if resolved_style.show_legend:
+            axis.legend(
+                fontsize=resolved_style.legend_fontsize,
+                loc=resolved_style.legend_location,
+            )
+        axis.set_xlabel("Index" if x_column == "Index" else x_column)
+    for unused_index in range(len(columns), row_count * column_count):
+        axes[unused_index // column_count][unused_index % column_count].set_visible(False)
     figure.suptitle("Difference Comparison")
     figure.tight_layout()
     return figure
@@ -269,6 +574,15 @@ def build_display_dataset_labels(dataset_paths: list[str]) -> dict[str, str]:
         duplicate_counters[basename] = duplicate_counters.get(basename, 0) + 1
         labels[dataset_path] = f"{basename} ({duplicate_counters[basename]})"
     return labels
+
+
+def filter_visible_dataset_paths(
+    dataset_paths: list[str],
+    visibility_by_path: Mapping[str, bool],
+) -> list[str]:
+    """Return datasets enabled for plotting, preserving comparison order."""
+
+    return [path for path in dataset_paths if visibility_by_path.get(path, True)]
 
 
 class ComparisonWindow(PresentationShellMixin):
@@ -308,6 +622,9 @@ class ComparisonWindow(PresentationShellMixin):
         self.normalize_var = tk.BooleanVar(value=False)
         self.zero_start_var = tk.BooleanVar(value=False)
         self.trim_overlap_var = tk.BooleanVar(value=False)
+        self.channels_in_grid_var = tk.BooleanVar(value=False)
+        self.highlight_deviations_var = tk.BooleanVar(value=False)
+        self.show_legend_var = tk.BooleanVar(value=self.default_style.show_legend)
         self.plot_column_summary_var = tk.StringVar(value="No common numeric channels")
         self.dataset_visibility_summary_var = tk.StringVar(value="")
         self.comparison_status_var = tk.StringVar(value="")
@@ -315,6 +632,7 @@ class ComparisonWindow(PresentationShellMixin):
         self._plot_column_selector_button: ttk.Menubutton | None = None
         self._plot_column_selector_menu: tk.Menu | None = None
         self._plot_column_selector_vars: dict[str, tk.BooleanVar] = {}
+        self._plot_column_labels: dict[str, str] = {}
         self._plot_column_hidden_count = 0
         self._dataset_visibility_vars: dict[str, tk.BooleanVar] = {}
         self._plot_columns_initialized = False
@@ -348,7 +666,7 @@ class ComparisonWindow(PresentationShellMixin):
             wraplength=920,
             justify=tk.LEFT,
         )
-        self._status_label.grid(row=5, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
+        self._status_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
 
         ttk.Label(controls, text="Shared X-axis").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.x_column_combo = ttk.Combobox(controls, textvariable=self.x_column_var, state="readonly")
@@ -396,20 +714,47 @@ class ComparisonWindow(PresentationShellMixin):
         ttk.Button(actions, text="Refresh", command=self._refresh_from_session).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(actions, text="Open In Analysis", command=self._open_selected_dataset_in_analysis).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(actions, text="Update", command=self._update_comparison_view).pack(side=tk.LEFT, padx=(6, 0))
-        visibility_button = ttk.Menubutton(
-            actions,
+
+        ttk.Label(controls, text="Datasets").grid(row=4, column=0, sticky="nw", padx=5, pady=5)
+        dataset_selector_row = ttk.Frame(controls)
+        dataset_selector_row.grid(row=4, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
+        dataset_selector_row.columnconfigure(0, weight=1)
+        self._dataset_visibility_button = ttk.Menubutton(
+            dataset_selector_row,
             textvariable=self.dataset_visibility_summary_var,
             direction="below",
         )
-        visibility_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._dataset_visibility_menu = tk.Menu(visibility_button, tearoff=0)
-        visibility_button.configure(menu=self._dataset_visibility_menu)
-        self._dataset_visibility_button = visibility_button
+        self._dataset_visibility_button.grid(row=0, column=0, sticky="ew")
+        self._dataset_visibility_menu = tk.Menu(self._dataset_visibility_button, tearoff=0)
+        self._dataset_visibility_button.configure(menu=self._dataset_visibility_menu)
+        dataset_actions = ttk.Frame(dataset_selector_row)
+        dataset_actions.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        ttk.Button(dataset_actions, text="All", width=6, command=self._show_all_datasets).pack(side=tk.LEFT)
+        ttk.Button(dataset_actions, text="None", width=6, command=self._hide_all_datasets).pack(side=tk.LEFT, padx=(6, 0))
+
         options = ttk.Frame(controls)
-        options.grid(row=4, column=1, columnspan=3, sticky="w", padx=5, pady=(0, 5))
+        options.grid(row=5, column=1, columnspan=3, sticky="w", padx=5, pady=(0, 5))
         ttk.Checkbutton(options, text="Normalize amplitude", variable=self.normalize_var, command=self._update_comparison_view).pack(side=tk.LEFT)
         ttk.Checkbutton(options, text="Zero-start", variable=self.zero_start_var, command=self._update_comparison_view).pack(side=tk.LEFT, padx=(10, 0))
         ttk.Checkbutton(options, text="Trim to overlap", variable=self.trim_overlap_var, command=self._update_comparison_view).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Checkbutton(
+            options,
+            text="Channels in grid",
+            variable=self.channels_in_grid_var,
+            command=self._update_comparison_view,
+        ).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Checkbutton(
+            options,
+            text="Highlight deviations",
+            variable=self.highlight_deviations_var,
+            command=self._update_comparison_view,
+        ).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Checkbutton(
+            options,
+            text="Show legend",
+            variable=self.show_legend_var,
+            command=self._update_comparison_view,
+        ).pack(side=tk.LEFT, padx=(10, 0))
 
         content_pane = ttk.Panedwindow(container, orient=tk.HORIZONTAL)
         content_pane.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
@@ -452,6 +797,12 @@ class ComparisonWindow(PresentationShellMixin):
         self.baseline_combo.config(values=baseline_values)
         common_columns = get_common_columns(self.dataset_paths, self.data_frames)
         common_numeric_columns = get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True)
+        numeric_availability = get_numeric_column_availability(self.dataset_paths, self.data_frames)
+        numeric_columns = list(numeric_availability)
+        self._plot_column_labels = build_numeric_column_labels(
+            numeric_availability,
+            len(self.dataset_paths),
+        )
         x_values = ["Index", *common_columns]
         self.x_column_combo.config(values=x_values)
         if self.x_column_var.get() not in x_values:
@@ -462,12 +813,12 @@ class ComparisonWindow(PresentationShellMixin):
             self.summary_column_var.set(common_numeric_columns[0] if common_numeric_columns else "")
 
         default_selected = self._get_selected_plot_columns()
-        if not self._plot_columns_initialized and not default_selected and common_numeric_columns:
-            default_selected = common_numeric_columns[:1]
+        if not self._plot_columns_initialized and not default_selected and numeric_columns:
+            default_selected = numeric_columns[:1]
         self._plot_column_selector_vars, self._plot_column_hidden_count = self._build_checkbutton_selector_menu(
             menu=self._plot_column_selector_menu,
             button=self._plot_column_selector_button,
-            items=common_numeric_columns,
+            items=numeric_columns,
             selected_items=default_selected,
             max_items=COMPARISON_SELECTOR_MAX_ITEMS,
             get_colors=lambda _name: ("white", "black"),
@@ -475,6 +826,7 @@ class ComparisonWindow(PresentationShellMixin):
             on_select_all=self._select_all_plot_columns,
             on_clear_selection=self._clear_plot_columns,
             hidden_label="signals",
+            item_labels=self._plot_column_labels,
         )
         self._plot_columns_initialized = True
         self._update_plot_column_summary()
@@ -484,20 +836,45 @@ class ComparisonWindow(PresentationShellMixin):
         self._dataset_visibility_menu.delete(0, tk.END)
         old_values = self._dataset_visibility_vars
         self._dataset_visibility_vars = {}
+        display_labels = build_display_dataset_labels(self.dataset_paths)
         for path in self.dataset_paths:
-            variable = tk.BooleanVar(value=old_values.get(path, tk.BooleanVar(value=True)).get())
+            old_variable = old_values.get(path)
+            variable = tk.BooleanVar(value=old_variable.get() if old_variable is not None else True)
             self._dataset_visibility_vars[path] = variable
             self._dataset_visibility_menu.add_checkbutton(
-                label=os.path.basename(path),
+                label=display_labels[path],
                 variable=variable,
-                command=self._update_comparison_view,
+                command=self._handle_dataset_visibility_changed,
             )
+        self._update_dataset_visibility_summary()
+
+    def _handle_dataset_visibility_changed(self) -> None:
+        self._update_dataset_visibility_summary()
+        self._update_comparison_view()
+
+    def _update_dataset_visibility_summary(self) -> None:
+        visible_count = sum(variable.get() for variable in self._dataset_visibility_vars.values())
         self.dataset_visibility_summary_var.set(
-            f"Datasets ({sum(variable.get() for variable in self._dataset_visibility_vars.values())}/{len(self.dataset_paths)})"
+            f"{visible_count} of {len(self.dataset_paths)} datasets shown"
         )
 
     def _get_visible_dataset_paths(self) -> list[str]:
-        return [path for path in self.dataset_paths if self._dataset_visibility_vars.get(path, tk.BooleanVar(value=True)).get()]
+        visibility_by_path = {
+            path: variable.get()
+            for path, variable in self._dataset_visibility_vars.items()
+        }
+        return filter_visible_dataset_paths(self.dataset_paths, visibility_by_path)
+
+    def _show_all_datasets(self) -> None:
+        self._set_all_datasets_visible(True)
+
+    def _hide_all_datasets(self) -> None:
+        self._set_all_datasets_visible(False)
+
+    def _set_all_datasets_visible(self, visible: bool) -> None:
+        for variable in self._dataset_visibility_vars.values():
+            variable.set(visible)
+        self._handle_dataset_visibility_changed()
 
     def _handle_plot_column_selection_changed(self, *_args: object) -> None:
         self._update_plot_column_summary()
@@ -535,22 +912,35 @@ class ComparisonWindow(PresentationShellMixin):
             return
         selected_columns = self._get_selected_plot_columns()
         visible_paths = self._get_visible_dataset_paths()
-        if self.plot_mode_var.get().startswith("Difference") and self.baseline_path_var.get() not in visible_paths:
-            visible_paths = [self.baseline_path_var.get(), *visible_paths]
+        difference_mode = self.plot_mode_var.get().startswith("Difference")
+        if difference_mode:
+            baseline_path = self.baseline_path_var.get()
+            visible_candidates = [path for path in visible_paths if path != baseline_path]
+            if not visible_candidates:
+                self._clear_plot()
+                self._render_summary_tree()
+                self._update_status_text("No candidate datasets are visible. Select at least one candidate in the Datasets selector.")
+                return
+            if baseline_path not in visible_paths:
+                visible_paths = [baseline_path, *visible_paths]
         if not selected_columns:
             self._clear_plot()
             self._render_summary_tree()
-            if get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True):
-                self.notifications.warning("Select at least one shared numeric signal")
+            if get_numeric_column_availability(self.dataset_paths, self.data_frames):
+                self.notifications.warning("Select at least one numeric signal")
             self._update_status_text()
             return
 
         if not visible_paths:
             self._clear_plot()
             self._render_summary_tree()
-            self._update_status_text("No datasets are visible. Select at least one dataset in the visibility menu.")
+            self._update_status_text("No datasets are visible. Select at least one dataset in the Datasets selector.")
             return
-        if self.plot_mode_var.get().startswith("Difference"):
+        plot_style = replace(
+            self.default_style,
+            show_legend=self.show_legend_var.get(),
+        )
+        if difference_mode:
             self.plot_frame.configure(text="Difference Plot")
             figure = build_difference_figure(
                 visible_paths,
@@ -561,24 +951,44 @@ class ComparisonWindow(PresentationShellMixin):
                 normalize=self.normalize_var.get(),
                 zero_start=self.zero_start_var.get(),
                 trim_overlap=self.trim_overlap_var.get(),
-                style=self.default_style,
+                channels_in_grid=self.channels_in_grid_var.get(),
+                highlight_deviations=self.highlight_deviations_var.get(),
+                style=plot_style,
             )
         else:
             self.plot_frame.configure(text="Overlay Plot")
-            plot_frames = self._build_display_frames(visible_paths, selected_columns)
+            display_paths = list(visible_paths)
+            baseline_path = self.baseline_path_var.get()
+            if self.highlight_deviations_var.get() and baseline_path not in display_paths:
+                display_paths.insert(0, baseline_path)
+            plot_frames = self._build_display_frames(display_paths, selected_columns)
+            _, grid_column_count = calculate_subplot_grid(len(selected_columns))
             figure = create_plot_figure(
                 PlotOptions(
                     cols_to_plot=selected_columns,
                     xcol=self.x_column_var.get().strip() or "Index",
-                    use_subplots=False,
+                    use_subplots=self.channels_in_grid_var.get(),
                     title="Session Dataset Comparison",
                     y_label="Value",
-                    style=self.default_style,
+                    subplot_columns=grid_column_count,
+                    style=plot_style,
                 ),
                 visible_paths,
                 plot_frames,
                 column_roles=None,
+                dataset_line_styles={self.baseline_path_var.get(): "--"},
             )
+            if self.highlight_deviations_var.get():
+                add_overlay_deviation_highlights(
+                    figure,
+                    visible_paths,
+                    plot_frames,
+                    self.baseline_path_var.get(),
+                    selected_columns,
+                    x_column=self.x_column_var.get().strip() or "Index",
+                    channels_in_grid=self.channels_in_grid_var.get(),
+                    style=plot_style,
+                )
         self._render_embedded_figure(
             figure=figure,
             figure_attr="_plot_figure",
@@ -595,9 +1005,16 @@ class ComparisonWindow(PresentationShellMixin):
     def _build_display_frames(self, paths: list[str], columns: list[str]) -> dict[str, pd.DataFrame]:
         """Apply display-only signal transforms without changing session datasets."""
 
+        source_frames: Mapping[str, pd.DataFrame] = self.data_frames
+        if self.trim_overlap_var.get():
+            source_frames = trim_dataframes_to_shared_x_overlap(
+                paths,
+                self.data_frames,
+                self.x_column_var.get().strip() or "Index",
+            )
         frames: dict[str, pd.DataFrame] = {}
         for path in paths:
-            frame = self.data_frames[path].copy()
+            frame = source_frames[path].copy()
             for column in columns:
                 if column not in frame.columns:
                     continue
@@ -733,34 +1150,51 @@ class ComparisonWindow(PresentationShellMixin):
         self.dataset_paths = existing_paths
 
     def _update_status_text(self, extra: str = "") -> None:
-        common_numeric = get_common_columns(self.dataset_paths, self.data_frames, numeric_only=True)
+        numeric_availability = get_numeric_column_availability(self.dataset_paths, self.data_frames)
         common_columns = get_common_columns(self.dataset_paths, self.data_frames)
         diagnostic = ""
-        if not common_numeric:
-            diagnostic = " No shared numeric columns are available."
+        if not numeric_availability:
+            diagnostic = " No numeric columns are available."
         elif self.x_column_var.get() != "Index" and self.x_column_var.get() not in common_columns:
             diagnostic = " The selected time column is not shared by every dataset."
         elif self.x_column_var.get() != "Index" and not self._has_shared_x_overlap():
             diagnostic = " The selected x/time ranges have too little overlap."
-        elif self.plot_mode_var.get().startswith("Difference") and len(self._get_visible_dataset_paths()) < 2:
-            diagnostic = " Difference mode needs a visible baseline and candidate."
+        elif self.plot_mode_var.get().startswith("Difference"):
+            baseline_path = self.baseline_path_var.get()
+            visible_candidates = [path for path in self._get_visible_dataset_paths() if path != baseline_path]
+            if not visible_candidates:
+                diagnostic = " Difference mode needs at least one visible candidate."
+        selected_columns = self._get_selected_plot_columns()
+        visible_paths = self._get_visible_dataset_paths()
+        missing_combinations = get_missing_column_combinations(
+            visible_paths,
+            self.data_frames,
+            selected_columns,
+        )
+        omitted_text = ""
+        if missing_combinations:
+            examples = ", ".join(
+                f"{os.path.basename(path)}: {column}"
+                for path, column in missing_combinations[:3]
+            )
+            more_count = len(missing_combinations) - 3
+            more_suffix = f", +{more_count} more" if more_count else ""
+            omitted_text = (
+                f" Omitted {len(missing_combinations)} unavailable dataset/channel "
+                f"combination(s): {examples}{more_suffix}."
+            )
         self.comparison_status_var.set(
             f"Comparing {len(self.dataset_paths)} session datasets. "
-            f"Use the visibility menu to hide datasets without removing them from the session. "
-            f"Refresh re-reads the current session data. {extra}{diagnostic}"
+            f"Use the Datasets selector to hide datasets without removing them from the session. "
+            f"Refresh re-reads the current session data. {extra}{diagnostic}{omitted_text}"
         )
 
     def _has_shared_x_overlap(self) -> bool:
-        ranges: list[tuple[float, float]] = []
-        for path in self.dataset_paths:
-            values, _ = _comparison_x_values(self.data_frames[path], self.x_column_var.get())
-            finite_values = values[np.isfinite(values)]
-            if finite_values.size == 0:
-                return False
-            ranges.append((float(np.min(finite_values)), float(np.max(finite_values))))
-        if not ranges:
-            return False
-        return max(lower for lower, _ in ranges) <= min(upper for _, upper in ranges)
+        return get_shared_x_overlap_bounds(
+            self.dataset_paths,
+            self.data_frames,
+            self.x_column_var.get(),
+        ) is not None
 
     def _handle_summary_tree_selection_changed(self, _event: tk.Event | None = None) -> None:
         selected_path = self._get_selected_summary_dataset_path()

@@ -2,15 +2,15 @@
 import os
 import queue
 import threading
-from tkinter import filedialog, messagebox
-from .demo import DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
+from tkinter import filedialog, messagebox, simpledialog
+from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 from .data_parser import DataParser
 from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog
 from .preview import refresh_preview_table
 from .comparison import ComparisonWindow
-from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, write_dataframe_csv_with_progress
+from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, validate_export_filename_prefix, write_dataframe_csv_with_progress
 from Source.shared.plot_utils import create_plot_figure
 
 def load_files(app) -> None:
@@ -119,10 +119,24 @@ def load_demo_test_signal(app) -> None:
 def load_demo_input_output_signal(app) -> None:
 	_load_demo_dataset(app, INPUT_OUTPUT_DEMO.key)
 
+def load_comparison_demo_set(app) -> list[str]:
+	return _load_demo_dataset_group(
+		app,
+		COMPARISON_DEMO_SPECS,
+		notification_title="Comparison Validation Set Loaded",
+	)
+
 def load_all_demo_test_signals(app) -> None:
+	_load_demo_dataset_group(
+		app,
+		DEMO_DATASET_SPECS,
+		notification_title="Demo/Test Signals Loaded",
+	)
+
+def _load_demo_dataset_group(app, specs, *, notification_title: str) -> list[str]:
 	loaded_paths: list[str] = []
 	failed_keys: list[str] = []
-	for spec in DEMO_DATASET_SPECS:
+	for spec in specs:
 		try:
 			dataset_path = _load_demo_dataset(app, spec.key, show_message=False)
 			loaded_paths.append(dataset_path)
@@ -141,9 +155,10 @@ def load_all_demo_test_signals(app) -> None:
 		summary_lines += failed_keys
 
 	if failed_keys:
-		app.notifications.warning("Demo/Test Signals Loaded (with errors)", details="\n".join(summary_lines))
+		app.notifications.warning(f"{notification_title} (with errors)", details="\n".join(summary_lines))
 	else:
-		app.notifications.success("Demo/Test Signals Loaded", details="\n".join(summary_lines))
+		app.notifications.success(notification_title, details="\n".join(summary_lines))
+	return loaded_paths
 
 def _load_demo_dataset(app, demo_key: str, show_message: bool = True) -> str:
 	spec, dataframe = create_demo_dataset(demo_key)
@@ -448,12 +463,37 @@ def export_clean_data(app) -> None:
 		app.notifications.warning("No data loaded")
 		return
 
+	selected_file_paths = app._get_multiple_selected_file_paths("Select datasets to export")
+	if not selected_file_paths:
+		return
+
+	filename_prefix = simpledialog.askstring(
+		"Export Selected Clean Data",
+		"Filename prefix:\n\nFiles will be named <prefix>_<dataset>.csv",
+		parent=app.root,
+	)
+	if filename_prefix is None:
+		return
+	try:
+		filename_prefix = validate_export_filename_prefix(filename_prefix)
+	except ValueError as error:
+		app.notifications.warning(str(error))
+		return
+
 	output_dir = filedialog.askdirectory(title="Select output directory")
 	if not output_dir:
 		return
 
-	exported_count = export_clean_dataframes(app.data_frames, output_dir)
-	app.notifications.success(f"Exported {exported_count} files")
+	selected_data_frames = {
+		path: app.data_frames[path]
+		for path in selected_file_paths
+	}
+	exported_count = export_clean_dataframes(
+		selected_data_frames,
+		output_dir,
+		filename_prefix=filename_prefix,
+	)
+	app.notifications.success(f"Exported {exported_count} selected file(s)")
 
 def apply_selected_column_role(app) -> None:
 	selected_path = app._get_single_selected_file_path("Select exactly one dataset first")
