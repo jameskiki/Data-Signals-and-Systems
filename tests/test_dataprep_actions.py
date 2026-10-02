@@ -37,6 +37,7 @@ class DummyApp:
         self.prep_views_refresh_count = 0
         self.set_role_column_calls = []
         self.set_role_value_calls = []
+        self.propagated_role_updates = []
 
         self.split_options = None
 
@@ -54,6 +55,9 @@ class DummyApp:
 
     def _set_role_editor_value(self, value, update_var=False):
         self.set_role_value_calls.append((value, update_var))
+
+    def _propagate_role_updates(self, dataset_path, column_roles):
+        self.propagated_role_updates.append((dataset_path, dict(column_roles)))
 
     def _prompt_split_subframes_options(self):
         return self.split_options
@@ -217,15 +221,59 @@ def test_apply_selected_column_role_updates_context_and_resets_editor(monkeypatc
     app.single_selected_path = "C:/tmp/a.csv"
     app.session.role_editor_column = "sensor"
     app.session.role_editor_value = "signal"
+    app.data_frames = {"C:/tmp/a.csv": pd.DataFrame({"old": [0.0], "sensor": [1.0]})}
     app.dataset_contexts = {"C:/tmp/a.csv": DatasetContext(column_roles={"old": "time"})}
 
     actions.apply_selected_column_role(app)
 
     assert app.dataset_contexts["C:/tmp/a.csv"].column_roles["sensor"] == "signal"
+    assert app.propagated_role_updates == [
+        ("C:/tmp/a.csv", {"old": "time", "sensor": "signal"})
+    ]
     assert app.set_role_column_calls == [("", True)]
     assert app.set_role_value_calls == [("", True)]
     assert app.prep_views_refresh_count == 1
     assert app.notifications.success_messages == ["Role 'signal' applied to column 'sensor'"]
+
+
+def test_apply_time_role_reclassifies_previous_numeric_time_as_signal():
+    app = DummyApp()
+    app.single_selected_path = "C:/tmp/a.csv"
+    app.session.role_editor_column = "new_time"
+    app.session.role_editor_value = "time"
+    app.data_frames = {
+        "C:/tmp/a.csv": pd.DataFrame({"old_time": [0.0], "new_time": [1.0]})
+    }
+    app.dataset_contexts = {
+        "C:/tmp/a.csv": DatasetContext(column_roles={"old_time": "time", "new_time": "signal"})
+    }
+
+    actions.apply_selected_column_role(app)
+
+    assert app.dataset_contexts["C:/tmp/a.csv"].column_roles == {
+        "old_time": "signal",
+        "new_time": "time",
+    }
+
+
+def test_apply_time_role_reclassifies_previous_text_time_as_metadata():
+    app = DummyApp()
+    app.single_selected_path = "C:/tmp/a.csv"
+    app.session.role_editor_column = "new_time"
+    app.session.role_editor_value = "time"
+    app.data_frames = {
+        "C:/tmp/a.csv": pd.DataFrame({"old_time": ["start"], "new_time": [1.0]})
+    }
+    app.dataset_contexts = {
+        "C:/tmp/a.csv": DatasetContext(column_roles={"old_time": "time", "new_time": "signal"})
+    }
+
+    actions.apply_selected_column_role(app)
+
+    assert app.dataset_contexts["C:/tmp/a.csv"].column_roles == {
+        "old_time": "metadata",
+        "new_time": "time",
+    }
 
 
 def test_apply_selected_column_role_warns_when_selection_missing(monkeypatch):

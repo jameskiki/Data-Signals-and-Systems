@@ -3,7 +3,4 @@ numpy==2.4.3
 pandas==3.0.1
 py2exe>=0.13.0.2; platform_system == "Windows"
 scipy>=1.14
-
-# Optional: Per-cell table styling (feature-gated via EVALDATA_TABLE_BACKEND=tksheet)
-# Uncomment to enable tksheet backend for preview tables:
-# tksheet>=0.12.0
+tksheet>=0.12.0

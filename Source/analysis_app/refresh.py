@@ -8,8 +8,6 @@ import pandas as pd
 from .actions import resolve_default_output_names
 from Source.shared.display_format import format_data_summary_overview
 from Source.shared.column_roles import (
-    apply_role_combobox_style,
-    get_column_role,
     get_preferred_role_column,
     summarize_column_roles,
 )
@@ -51,9 +49,7 @@ def refresh_filter_controls(workspace) -> None:
     workspace.active_column_combo.config(values=numeric_columns or columns)
     preferred_active = get_preferred_role_column(
         workspace.column_roles,
-        "output",
         "signal",
-        "input",
         available_columns=numeric_columns,
     ) or (numeric_columns[0] if numeric_columns else (columns[0] if columns else ""))
     if preferred_active and workspace.active_column_var.get() not in (numeric_columns or columns):
@@ -82,9 +78,7 @@ def refresh_filter_controls(workspace) -> None:
         comparison_value = workspace.frequency_compare_var.get()
         preferred_compare = get_preferred_role_column(
             workspace.column_roles,
-            "input",
             "signal",
-            "output",
             available_columns=[column for column in numeric_columns if column != workspace.active_column_var.get()],
         ) or next((column for column in numeric_columns if column != workspace.active_column_var.get()), "")
         if comparison_value not in numeric_columns:
@@ -116,8 +110,7 @@ def _apply_default_sample_spacing(workspace, columns: list[str]) -> None:
         return
 
     inferred_text = _format_spacing(inferred_spacing)
-    signal_spacing = _parse_positive_float(workspace.signal_filter_spacing_var.get())
-    if signal_spacing is None:
+    if not _is_user_set(workspace, "signal_filter_spacing"):
         _set_inferred_field(workspace, "signal_filter_spacing", workspace.signal_filter_spacing_var, inferred_text)
 
     if not _is_user_set(workspace, "fft_sample_spacing"):
@@ -294,6 +287,7 @@ def _parse_positive_int(value: str) -> int | None:
 def refresh_plot_controls(workspace) -> None:
     """Refresh plot axis and series selection controls."""
 
+    workspace._plot_controls_sync_in_progress = True
     columns = [str(column) for column in workspace.session.working_frame.columns]
     x_values = ["Index", *columns]
     workspace.plot_x_combo.config(values=x_values)
@@ -309,12 +303,10 @@ def refresh_plot_controls(workspace) -> None:
     if not selected_columns and numeric_column_names:
         preferred_active = workspace.active_column_var.get() if workspace.active_column_var.get() in numeric_column_names else None
         selected_columns = [preferred_active] if preferred_active else []
-        active_role = get_column_role(workspace.column_roles, preferred_active) if preferred_active else "metadata"
         companion_columns = [column for column in numeric_column_names if column != preferred_active]
-        companion_role_order = ("output", "signal", "input") if active_role == "input" else ("input", "signal", "output")
         preferred_companion = get_preferred_role_column(
             workspace.column_roles,
-            *companion_role_order,
+            "signal",
             available_columns=companion_columns,
         )
         if preferred_companion and preferred_companion not in selected_columns:
@@ -323,26 +315,24 @@ def refresh_plot_controls(workspace) -> None:
             selected_columns = numeric_column_names[: min(2, len(numeric_column_names))]
     workspace._set_plot_y_column_options(numeric_column_names, selected_columns)
     workspace.session.selected_y_columns = [str(column) for column in selected_columns]
+    workspace._plot_controls_sync_in_progress = False
     refresh_role_widget_styles(workspace)
 
 
 def refresh_role_widget_styles(workspace) -> None:
-    """Apply role-aware colors to key selection widgets."""
+    """Keep selection widgets on the neutral application combobox style."""
 
-    apply_role_combobox_style(workspace.active_column_combo, workspace.column_roles, workspace.active_column_var.get().strip())
-    apply_role_combobox_style(workspace.plot_x_combo, workspace.column_roles, workspace.plot_x_var.get().strip())
-    apply_role_combobox_style(
-        workspace.derived_reference_combo,
-        workspace.column_roles,
-        workspace.derived_reference_var.get().strip(),
-    )
-    apply_role_combobox_style(workspace.fft_reference_combo, workspace.column_roles, workspace.fft_reference_var.get().strip())
-    apply_role_combobox_style(workspace.cycles_reference_combo, workspace.column_roles, workspace.cycle_reference_var.get().strip())
-    apply_role_combobox_style(
-        workspace.frequency_compare_combo,
-        workspace.column_roles,
-        workspace.frequency_compare_var.get().strip(),
-    )
+    for widget_name in (
+        "active_column_combo",
+        "plot_x_combo",
+        "derived_reference_combo",
+        "fft_reference_combo",
+        "cycles_reference_combo",
+        "frequency_compare_combo",
+    ):
+        widget = getattr(workspace, widget_name, None)
+        if widget is not None:
+            widget.configure(style="TCombobox")
 
 
 def set_default_output_names(workspace) -> None:

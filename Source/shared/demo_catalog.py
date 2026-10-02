@@ -34,8 +34,8 @@ SPECTRAL_REFERENCE_DEMO = DemoDatasetSpec(
     column_roles={
         "time_s": "time",
         "clean_signal": "signal",
-        "measured_signal": "output",
-        "response_signal": "output",
+        "measured_signal": "signal",
+        "response_signal": "signal",
         "dc_component": "signal",
         "low_frequency_drift": "signal",
         "structural_ringing": "signal",
@@ -57,9 +57,9 @@ INPUT_OUTPUT_DEMO = DemoDatasetSpec(
     ),
     column_roles={
         "time_s": "time",
-        "actuator_input": "input",
-        "delayed_input": "input",
-        "system_output": "output",
+        "actuator_input": "signal",
+        "delayed_input": "signal",
+        "system_output": "signal",
         "output_residual": "signal",
         "resonance_component": "signal",
     },

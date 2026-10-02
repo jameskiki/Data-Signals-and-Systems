@@ -89,6 +89,7 @@ def main() -> None:
                 "matplotlib",
                 "scipy",
                 "tkinter",
+                "tksheet",
                 "Source",
             ],
             "excludes": ["pytest"],

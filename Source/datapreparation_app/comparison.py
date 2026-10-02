@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import os
 import tkinter as tk
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from tkinter import ttk
 
@@ -16,18 +16,20 @@ import pandas as pd
 from Source.data_ops.summary import build_statistics_frame, summarize_dataframe
 from Source.shared.display_format import format_display_value
 from Source.shared.notifications import NotificationManager
-from Source.shared.plot_options import PlotOptions, PlotStyle
-from Source.shared.plot_utils import create_plot_figure
+from Source.shared.plot_options import (
+    DeviationPanelPlotData,
+    DeviationPlotData,
+    DeviationSeriesPlotData,
+    PlotDescriptor,
+    PlotOptions,
+    PlotStyle,
+)
+from Source.shared.plot_utils import create_deviation_figure, create_plot_figure, fill_signed_deviation
 from Source.shared.presentation_shell import PresentationShellMixin
 
 
 COMPARISON_WINDOW_GEOMETRY = "1280x820"
 COMPARISON_SELECTOR_MAX_ITEMS = 300
-POSITIVE_DEVIATION_COLOR = "#d62728"
-NEGATIVE_DEVIATION_COLOR = "#1f77b4"
-DEVIATION_FILL_ALPHA = 0.18
-
-
 def get_common_columns(
     dataset_paths: list[str],
     data_frames: dict[str, pd.DataFrame],
@@ -286,6 +288,43 @@ def trim_dataframes_to_shared_x_overlap(
     return trimmed_frames
 
 
+def build_comparison_display_frames(
+    dataset_paths: Sequence[str],
+    data_frames: Mapping[str, pd.DataFrame],
+    columns: Sequence[str],
+    *,
+    x_column: str,
+    trim_overlap: bool = False,
+    normalize: bool = False,
+    zero_start: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """Prepare display-only comparison frames with the production transforms."""
+
+    source_frames: Mapping[str, pd.DataFrame] = data_frames
+    if trim_overlap:
+        source_frames = trim_dataframes_to_shared_x_overlap(
+            list(dataset_paths),
+            data_frames,
+            x_column,
+        )
+    frames: dict[str, pd.DataFrame] = {}
+    for path in dataset_paths:
+        frame = source_frames[path].copy()
+        for column in columns:
+            if column not in frame.columns:
+                continue
+            values = pd.to_numeric(frame[column], errors="coerce")
+            if normalize:
+                scale = values.abs().max()
+                if pd.notna(scale) and scale > 0:
+                    values = values / scale
+            if zero_start and not values.dropna().empty:
+                values = values - values.dropna().iloc[0]
+            frame[column] = values
+        frames[path] = frame
+    return frames
+
+
 def _prepare_finite_xy(x_values: np.ndarray, y_values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     count = min(len(x_values), len(y_values))
     x_values = np.asarray(x_values[:count], dtype=float)
@@ -357,38 +396,6 @@ def align_comparison_series(
     return x_values, baseline_values, candidate_values
 
 
-def _fill_signed_deviation(
-    axis,
-    x_values: np.ndarray,
-    reference_values: np.ndarray,
-    candidate_values: np.ndarray,
-    *,
-    add_labels: bool,
-) -> None:
-    positive_mask = candidate_values >= reference_values
-    negative_mask = candidate_values < reference_values
-    axis.fill_between(
-        x_values,
-        reference_values,
-        candidate_values,
-        where=positive_mask,
-        interpolate=True,
-        color=POSITIVE_DEVIATION_COLOR,
-        alpha=DEVIATION_FILL_ALPHA,
-        label="Above baseline" if add_labels else "_nolegend_",
-    )
-    axis.fill_between(
-        x_values,
-        reference_values,
-        candidate_values,
-        where=negative_mask,
-        interpolate=True,
-        color=NEGATIVE_DEVIATION_COLOR,
-        alpha=DEVIATION_FILL_ALPHA,
-        label="Below baseline" if add_labels else "_nolegend_",
-    )
-
-
 def add_overlay_deviation_highlights(
     figure: plt.Figure,
     dataset_paths: list[str],
@@ -424,7 +431,7 @@ def add_overlay_deviation_highlights(
             if aligned is None:
                 continue
             x_values, baseline_values, candidate_values = aligned
-            _fill_signed_deviation(
+            fill_signed_deviation(
                 axis,
                 x_values,
                 baseline_values,
@@ -458,43 +465,26 @@ def build_difference_figure(
     if baseline_path not in data_frames:
         raise ValueError("The selected baseline dataset is no longer available.")
     resolved_style = style or PlotStyle()
-    if channels_in_grid:
-        row_count, column_count = calculate_subplot_grid(len(columns))
-        figure, axes = plt.subplots(
-            row_count,
-            column_count,
-            squeeze=False,
-            figsize=(6 * column_count, 4 * row_count),
-        )
-    else:
-        row_count, column_count = len(columns), 1
-        figure, axes = plt.subplots(
-            row_count,
-            column_count,
-            squeeze=False,
-            figsize=(10, max(4, 3.5 * len(columns))),
-        )
     baseline_frame = data_frames[baseline_path]
     shared_bounds = (
         get_shared_x_overlap_bounds(dataset_paths, data_frames, x_column)
         if trim_overlap
         else None
     )
-    for index, column in enumerate(columns):
-        axis = axes[index // column_count][index % column_count]
-        highlights_labeled = False
+    panels: list[DeviationPanelPlotData] = []
+    for column in columns:
         if column not in baseline_frame.columns:
-            axis.set_title(column)
-            axis.text(
-                0.5,
-                0.5,
-                "Unavailable in baseline",
-                ha="center",
-                va="center",
-                transform=axis.transAxes,
+            panels.append(
+                DeviationPanelPlotData(
+                    series=(),
+                    title=column,
+                    x_label="Index" if x_column == "Index" else x_column,
+                    y_label="Candidate - baseline",
+                    unavailable_message="Unavailable in baseline",
+                )
             )
-            axis.set_axis_off()
             continue
+        series: list[DeviationSeriesPlotData] = []
         for path in dataset_paths:
             if path == baseline_path or column not in data_frames[path].columns:
                 continue
@@ -516,38 +506,31 @@ def build_difference_figure(
                 zero_start=zero_start,
             )
             if difference is not None:
-                axis.plot(x_values[:len(difference)], difference, label=os.path.basename(path))
-                if highlight_deviations:
-                    zero_values = np.zeros(len(difference), dtype=float)
-                    _fill_signed_deviation(
-                        axis,
-                        x_values[:len(difference)],
-                        zero_values,
-                        difference,
-                        add_labels=not highlights_labeled,
+                series.append(
+                    DeviationSeriesPlotData(
+                        x_values=x_values[:len(difference)],
+                        values=difference,
+                        label=os.path.basename(path),
                     )
-                    highlights_labeled = True
-        axis.set_title(column)
-        axis.set_ylabel("Candidate - baseline")
-        axis.grid(True, alpha=0.3)
-        axis.axhline(
-            0.0,
-            color="black",
-            linewidth=1.0,
-            linestyle="--",
-            label=f"Baseline: {os.path.basename(baseline_path)} (zero)",
-        )
-        if resolved_style.show_legend:
-            axis.legend(
-                fontsize=resolved_style.legend_fontsize,
-                loc=resolved_style.legend_location,
+                )
+        panels.append(
+            DeviationPanelPlotData(
+                series=series,
+                title=column,
+                x_label="Index" if x_column == "Index" else x_column,
+                y_label="Candidate - baseline",
+                reference_label=f"Baseline: {os.path.basename(baseline_path)} (zero)",
+                fill_deviations=highlight_deviations,
             )
-        axis.set_xlabel("Index" if x_column == "Index" else x_column)
-    for unused_index in range(len(columns), row_count * column_count):
-        axes[unused_index // column_count][unused_index % column_count].set_visible(False)
-    figure.suptitle("Difference Comparison")
-    figure.tight_layout()
-    return figure
+        )
+    return create_deviation_figure(
+        DeviationPlotData(
+            panels=panels,
+            figure_title="Difference Comparison",
+            channels_in_grid=channels_in_grid,
+        ),
+        style=resolved_style,
+    )
 
 
 def _comparison_x_values(dataframe: pd.DataFrame, x_column: str) -> tuple[np.ndarray, str]:
@@ -636,6 +619,7 @@ class ComparisonWindow(PresentationShellMixin):
         self._plot_column_hidden_count = 0
         self._dataset_visibility_vars: dict[str, tk.BooleanVar] = {}
         self._plot_columns_initialized = False
+        self._plot_refresh_job_id: str | None = None
         self._summary_item_to_dataset_path: dict[str, str] = {}
 
         self._plot_figure: plt.Figure | None = None
@@ -783,6 +767,7 @@ class ComparisonWindow(PresentationShellMixin):
         self.summary_container.pack(fill=tk.BOTH, expand=True)
 
     def close(self) -> None:
+        self._cancel_scheduled(self.window, "_plot_refresh_job_id")
         if self._plot_figure is not None:
             plt.close(self._plot_figure)
             self._plot_figure = None
@@ -821,7 +806,7 @@ class ComparisonWindow(PresentationShellMixin):
             items=numeric_columns,
             selected_items=default_selected,
             max_items=COMPARISON_SELECTOR_MAX_ITEMS,
-            get_colors=lambda _name: ("white", "black"),
+            get_colors=None,
             on_changed=self._handle_plot_column_selection_changed,
             on_select_all=self._select_all_plot_columns,
             on_clear_selection=self._clear_plot_columns,
@@ -878,6 +863,10 @@ class ComparisonWindow(PresentationShellMixin):
 
     def _handle_plot_column_selection_changed(self, *_args: object) -> None:
         self._update_plot_column_summary()
+        self._schedule_comparison_update()
+
+    def _schedule_comparison_update(self) -> None:
+        self._schedule_debounced(self.window, "_plot_refresh_job_id", self._update_comparison_view)
 
     def _update_plot_column_summary(self) -> None:
         visible_count = len(self._plot_column_selector_vars)
@@ -897,10 +886,12 @@ class ComparisonWindow(PresentationShellMixin):
     def _select_all_plot_columns(self) -> None:
         self.set_selector_items_state(self._plot_column_selector_vars, True)
         self._update_plot_column_summary()
+        self._schedule_comparison_update()
 
     def _clear_plot_columns(self) -> None:
         self.set_selector_items_state(self._plot_column_selector_vars, False)
         self._update_plot_column_summary()
+        self._schedule_comparison_update()
 
     def _update_comparison_view(self) -> None:
         self._filter_existing_dataset_paths()
@@ -975,7 +966,6 @@ class ComparisonWindow(PresentationShellMixin):
                 ),
                 visible_paths,
                 plot_frames,
-                column_roles=None,
                 dataset_line_styles={self.baseline_path_var.get(): "--"},
             )
             if self.highlight_deviations_var.get():
@@ -998,6 +988,7 @@ class ComparisonWindow(PresentationShellMixin):
             root_window=self.window,
             draw_idle_on_reuse=False,
             clear_container_before_create=True,
+            plot_type=PlotDescriptor("Comparison", "Difference" if difference_mode else "Overlay"),
         )
         self._render_summary_tree()
         self._update_status_text()
@@ -1005,29 +996,15 @@ class ComparisonWindow(PresentationShellMixin):
     def _build_display_frames(self, paths: list[str], columns: list[str]) -> dict[str, pd.DataFrame]:
         """Apply display-only signal transforms without changing session datasets."""
 
-        source_frames: Mapping[str, pd.DataFrame] = self.data_frames
-        if self.trim_overlap_var.get():
-            source_frames = trim_dataframes_to_shared_x_overlap(
-                paths,
-                self.data_frames,
-                self.x_column_var.get().strip() or "Index",
-            )
-        frames: dict[str, pd.DataFrame] = {}
-        for path in paths:
-            frame = source_frames[path].copy()
-            for column in columns:
-                if column not in frame.columns:
-                    continue
-                values = pd.to_numeric(frame[column], errors="coerce")
-                if self.normalize_var.get():
-                    scale = values.abs().max()
-                    if pd.notna(scale) and scale > 0:
-                        values = values / scale
-                if self.zero_start_var.get() and not values.dropna().empty:
-                    values = values - values.dropna().iloc[0]
-                frame[column] = values
-            frames[path] = frame
-        return frames
+        return build_comparison_display_frames(
+            paths,
+            self.data_frames,
+            columns,
+            x_column=self.x_column_var.get().strip() or "Index",
+            trim_overlap=self.trim_overlap_var.get(),
+            normalize=self.normalize_var.get(),
+            zero_start=self.zero_start_var.get(),
+        )
 
     def _clear_plot(self) -> None:
         self.plot_frame.configure(text="Plot")

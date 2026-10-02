@@ -59,8 +59,6 @@ __all__ = [
     "detect_rising_edge_cycle_ranges",
     "rebuild_cycle_analysis_result",
     "detect_zero_crossing_cycle_ranges",
-    "drop_dataframe_columns",
-    "drop_dataframe_index_range",
     "export_clean_dataframes",
     "keep_dataframe_index_ranges",
     "merge_selected_dataframes",
@@ -68,8 +66,6 @@ __all__ = [
     "resample_to_uniform",
     "resolve_filtered_column_name",
     "select_dataframe_columns",
-    "slice_dataframe_by_index_range",
     "split_dataframe_by_index_ranges",
-    "subset_dataframe_rows",
     "summarize_dataframe",
 ]

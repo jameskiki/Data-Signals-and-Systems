@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from Source.shared.base_app_shell import BaseAppShell
+from Source.shared.plot_options import PlotDescriptor
 
 
 class PresentationShellMixin(BaseAppShell):
@@ -30,7 +31,14 @@ class PresentationShellMixin(BaseAppShell):
         if geometry is not None:
             dialog.geometry(geometry)
 
-    def show_figure_in_window(self, root: tk.Misc, figure, window_title: str, window_geometry: str) -> None:
+    def show_figure_in_window(
+        self,
+        root: tk.Misc,
+        figure,
+        window_title: str,
+        window_geometry: str,
+        plot_type: PlotDescriptor | None = None,
+    ) -> None:
         """Show a matplotlib figure in a dedicated Tk window."""
 
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -41,6 +49,13 @@ class PresentationShellMixin(BaseAppShell):
         window.geometry(window_geometry)
         container = ttk.Frame(window)
         container.pack(fill=tk.BOTH, expand=True)
+        if plot_type is not None:
+            ttk.Label(
+                container,
+                text=f"Plot type: {plot_type}",
+                anchor="w",
+                padding=(8, 4),
+            ).pack(side=tk.TOP, fill=tk.X)
         canvas = FigureCanvasTkAgg(figure, master=container)
         canvas.draw()
         toolbar = NavigationToolbar2Tk(canvas, container)
@@ -150,7 +165,7 @@ class PresentationShellMixin(BaseAppShell):
         items: Sequence[str],
         selected_items: Sequence[str] | set[str],
         max_items: int,
-        get_colors: Callable[[str], tuple[str, str]],
+        get_colors: Callable[[str], tuple[str, str]] | None,
         on_changed: Callable[..., None],
         on_select_all: Callable[[], None],
         on_clear_selection: Callable[[], None],
@@ -188,18 +203,22 @@ class PresentationShellMixin(BaseAppShell):
             variable = tk.BooleanVar(value=item_name in selected_set)
             variable.trace_add("write", on_changed)
             selector_vars[item_name] = variable
-            background, foreground = get_colors(item_name)
-            menu.add_checkbutton(
-                label=(item_labels or {}).get(item_name, item_name),
-                variable=variable,
-                onvalue=True,
-                offvalue=False,
-                background=background,
-                foreground=foreground,
-                activebackground=background,
-                activeforeground=foreground,
-                selectcolor=background,
-            )
+            item_options = {
+                "label": (item_labels or {}).get(item_name, item_name),
+                "variable": variable,
+                "onvalue": True,
+                "offvalue": False,
+            }
+            if get_colors is not None:
+                background, foreground = get_colors(item_name)
+                item_options.update(
+                    background=background,
+                    foreground=foreground,
+                    activebackground=background,
+                    activeforeground=foreground,
+                    selectcolor=background,
+                )
+            menu.add_checkbutton(**item_options)
 
         button.state(["!disabled"])
         return selector_vars, hidden_count

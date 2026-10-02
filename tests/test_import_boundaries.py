@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import Source.data_ops as data_ops
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "Source"
 
@@ -74,3 +76,9 @@ def test_actions_launch_boundary_import_is_present() -> None:
     assert _contains_module(imports, "Source.analysis_app.app"), (
         "actions.py should keep the sanctioned launch boundary import"
     )
+
+
+def test_data_ops_public_exports_exist() -> None:
+    missing_exports = [name for name in data_ops.__all__ if not hasattr(data_ops, name)]
+
+    assert missing_exports == []

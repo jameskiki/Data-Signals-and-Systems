@@ -8,10 +8,11 @@ from Source.shared.column_roles import (
     get_column_role_cell_colors,
     get_column_role_colors,
     get_column_role_label,
-    get_column_role_plot_color,
     get_preferred_role_column,
     get_role_label,
+    get_transformed_column_role,
     infer_column_roles,
+    infer_non_time_column_role,
     project_column_roles,
     sort_columns_by_role,
     summarize_column_roles,
@@ -38,20 +39,16 @@ class TestInferColumnRoles:
         roles = infer_column_roles(df)
         assert roles["ts"] == "time"
 
-    def test_input_column_by_name(self):
+    def test_input_and_output_columns_are_signals(self):
         df = pd.DataFrame({"input_voltage": [1.0], "output_current": [2.0]})
         roles = infer_column_roles(df)
-        assert roles["input_voltage"] == "input"
+        assert roles["input_voltage"] == "signal"
+        assert roles["output_current"] == "signal"
 
-    def test_output_column_by_name(self):
-        df = pd.DataFrame({"output_pressure": [1.0]})
-        roles = infer_column_roles(df)
-        assert roles["output_pressure"] == "output"
-
-    def test_response_column_as_output(self):
+    def test_numeric_response_column_is_signal(self):
         df = pd.DataFrame({"response_y": [1.0]})
         roles = infer_column_roles(df)
-        assert roles["response_y"] == "output"
+        assert roles["response_y"] == "signal"
 
     def test_metadata_column_by_name(self):
         df = pd.DataFrame({"status": ["ok"], "label": ["a"]})
@@ -74,6 +71,11 @@ class TestInferColumnRoles:
         roles = infer_column_roles(df, preferred_roles={"time_s": "signal"})
         assert roles["time_s"] == "signal"
 
+    def test_legacy_preferred_role_is_reinferred(self):
+        df = pd.DataFrame({"sensor": [1.0, 2.0]})
+        roles = infer_column_roles(df, preferred_roles={"sensor": "output"})
+        assert roles["sensor"] == "signal"
+
     def test_all_columns_are_covered(self):
         df = pd.DataFrame({"a": [1], "b": ["x"], "c": pd.to_datetime(["2024-01-01"])})
         roles = infer_column_roles(df)
@@ -86,10 +88,10 @@ class TestInferColumnRoles:
 class TestProjectColumnRoles:
     def test_preserves_known_roles(self):
         df = pd.DataFrame({"time_s": [0.0], "sensor": [1.0]})
-        original = {"time_s": "time", "sensor": "output"}
+        original = {"time_s": "time", "sensor": "signal"}
         projected = project_column_roles(original, df)
         assert projected["time_s"] == "time"
-        assert projected["sensor"] == "output"
+        assert projected["sensor"] == "signal"
 
     def test_drops_roles_for_removed_columns(self):
         df = pd.DataFrame({"time_s": [0.0]})
@@ -111,14 +113,19 @@ class TestUpdateProjectedColumnRoles:
     def test_overrides_are_applied(self):
         df = pd.DataFrame({"time_s": [0.0], "sensor": [1.0]})
         original = {"time_s": "time", "sensor": "signal"}
-        updated = update_projected_column_roles(original, df, role_overrides={"sensor": "output"})
-        assert updated["sensor"] == "output"
+        updated = update_projected_column_roles(original, df, role_overrides={"sensor": "metadata"})
+        assert updated["sensor"] == "metadata"
 
     def test_override_for_missing_column_is_ignored(self):
         df = pd.DataFrame({"time_s": [0.0]})
         original = {"time_s": "time"}
-        updated = update_projected_column_roles(original, df, role_overrides={"ghost_col": "input"})
+        updated = update_projected_column_roles(original, df, role_overrides={"ghost_col": "signal"})
         assert "ghost_col" not in updated
+
+    def test_legacy_override_is_ignored(self):
+        df = pd.DataFrame({"sensor": [1.0]})
+        updated = update_projected_column_roles({"sensor": "signal"}, df, {"sensor": "output"})
+        assert updated["sensor"] == "signal"
 
 
 # ── summarize_column_roles ────────────────────────────────────────────────────
@@ -167,10 +174,21 @@ class TestGetPreferredRoleColumn:
 
 class TestGetColumnRole:
     def test_returns_stored_role(self):
-        assert get_column_role({"col": "input"}, "col") == "input"
+        assert get_column_role({"col": "signal"}, "col") == "signal"
 
     def test_defaults_to_metadata_for_unknown(self):
         assert get_column_role({}, "unknown_col") == "metadata"
+
+    def test_legacy_role_defaults_to_metadata(self):
+        assert get_column_role({"col": "output"}, "col") == "metadata"
+
+
+class TestGetTransformedColumnRole:
+    def test_time_source_produces_signal(self):
+        assert get_transformed_column_role({"time_s": "time"}, "time_s") == "signal"
+
+    def test_metadata_source_stays_metadata(self):
+        assert get_transformed_column_role({"label": "metadata"}, "label") == "metadata"
 
 
 # ── get_column_role_label ─────────────────────────────────────────────────────
@@ -189,7 +207,7 @@ class TestGetColumnRoleLabel:
 
 class TestGetRoleLabel:
     def test_all_standard_roles(self):
-        for role in ("time", "input", "output", "signal", "metadata"):
+        for role in ("time", "signal", "metadata"):
             label = get_role_label(role)
             assert label == role.upper() or label in ("META",)
 
@@ -208,8 +226,7 @@ class TestGetAvailableColumnRoles:
 
     def test_includes_standard_roles(self):
         roles = get_available_column_roles()
-        for role in ("time", "input", "output", "signal", "metadata"):
-            assert role in roles
+        assert roles == ["time", "signal", "metadata"]
 
 
 # ── get_column_role_colors ────────────────────────────────────────────────────
@@ -233,26 +250,21 @@ class TestGetColumnRoleColors:
         assert avg_channel(bg_cell) >= avg_channel(bg_base)
 
 
-# ── get_column_role_plot_color ────────────────────────────────────────────────
-
-
-class TestGetColumnRolePlotColor:
-    def test_returns_hex_string(self):
-        color = get_column_role_plot_color("signal")
-        assert color.startswith("#")
-
-    def test_unknown_role_returns_metadata_color(self):
-        assert get_column_role_plot_color("unknown") == get_column_role_plot_color("metadata")
-
-
 # ── sort_columns_by_role ──────────────────────────────────────────────────────
 
 
 class TestSortColumnsByRole:
-    def test_output_before_signal_before_time(self):
-        roles = {"t": "time", "s": "signal", "o": "output"}
-        sorted_cols = sort_columns_by_role(["t", "s", "o"], roles)
-        assert sorted_cols.index("o") < sorted_cols.index("s") < sorted_cols.index("t")
+    def test_signal_before_metadata_before_time(self):
+        roles = {"t": "time", "s": "signal", "m": "metadata"}
+        assert sort_columns_by_role(["t", "s", "m"], roles) == ["s", "m", "t"]
+
+
+class TestInferNonTimeColumnRole:
+    def test_numeric_column_is_signal(self):
+        assert infer_non_time_column_role(pd.Series([1.0, 2.0])) == "signal"
+
+    def test_text_column_is_metadata(self):
+        assert infer_non_time_column_role(pd.Series(["a", "b"])) == "metadata"
 
     def test_alphabetical_within_same_role(self):
         roles = {"b_sig": "signal", "a_sig": "signal"}

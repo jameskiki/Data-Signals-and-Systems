@@ -57,26 +57,23 @@ from Source.data_ops.cycles import (
 )
 from Source.shared.display_format import format_display_number, format_display_percent
 from Source.shared.column_roles import (
-    apply_literal_role_combobox_style,
-    get_column_role,
-    get_column_role_cell_colors,
+    infer_column_roles,
     summarize_column_roles,
     update_projected_column_roles,
 )
 from Source.shared.presentation_shell import PresentationShellMixin
 from Source.shared.demo_catalog import describe_demo_frequency_expectations
-from Source.shared.table_adapter import (
-    is_tksheet_available,
-    set_configured_table_backend,
-    TREEVIEW_TABLE_BACKEND,
-    TKSHEET_TABLE_BACKEND,
-)
-
 from Source.data_ops.frame_ops import keep_dataframe_index_ranges
 from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from Source.data_ops.summary import summarize_dataframe
-from Source.shared.plot_options import PlotOptions, PlotStyle
+from Source.shared.plot_options import (
+    FrequencyPlotValues,
+    PlotOptions,
+    PlotStyle,
+    SignalComparisonPlotData,
+    SpectrogramPlotData,
+)
 from Source.shared.ui_state import UiStateVars
 from . import plotting as plotting_ops
 
@@ -97,7 +94,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.parent = parent
         self.on_close = on_close
         self.on_publish_current_view = on_publish_current_view
-        self.column_roles = dict(column_roles or {})
+        self.column_roles = infer_column_roles(dataframe, column_roles)
         self.dataset_description = dataset_description
         self.notifications = NotificationManager()
         self.session = AnalysisSession(
@@ -137,7 +134,6 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.resample_spacing_status_var = tk.StringVar(value="User-set")
 
         self.derived_operation_var = tk.StringVar(value=DERIVED_OPERATIONS[0])
-        self.derived_source_var = tk.StringVar()
         self.derived_reference_var = tk.StringVar(value="Index")
         self.derived_name_var = tk.StringVar()
         self.derived_window_var = tk.StringVar(value="5")
@@ -147,18 +143,6 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.plot_subplots_var = tk.BooleanVar(value=True)
         self.style_vars = UiStateVars()
         self.style_vars.load_from_file()
-        preferred_table_backend = self.style_vars.table_backend.get()
-        try:
-            preferred_table_backend = set_configured_table_backend(preferred_table_backend)
-        except ValueError:
-            preferred_table_backend = TREEVIEW_TABLE_BACKEND
-            set_configured_table_backend(preferred_table_backend)
-        if preferred_table_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
-            preferred_table_backend = TREEVIEW_TABLE_BACKEND
-            set_configured_table_backend(preferred_table_backend)
-            self.style_vars.table_backend.set(preferred_table_backend)
-            self.style_vars.save_to_file()
-        self.table_backend_var = tk.StringVar(value=preferred_table_backend)
         self._style_dialog: tk.Toplevel | None = None
         self.frequency_analysis_var = tk.StringVar(value=UI_FREQUENCY_ANALYSIS_METHODS[0])
         self.fft_reference_var = tk.StringVar(value="Index")
@@ -216,6 +200,8 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._plot_y_selector_hidden_count = 0
         self._plot_y_selector_warning_shown = False
         self._plot_y_selector_sync_in_progress = False
+        self._plot_controls_sync_in_progress = False
+        self._plot_refresh_job_id: str | None = None
         self._frame_replacing = False
         self._refreshing_frequency_controls = False
         self._applying_inferred_defaults = False
@@ -229,6 +215,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._bind_write(self._handle_role_widget_selection_changed,
                          self.plot_x_var, self.derived_reference_var,
                          self.fft_reference_var, self.cycle_reference_var)
+        self._bind_write(self._handle_plot_controls_changed, self.plot_x_var, self.plot_subplots_var)
         self._bind_write(self._handle_output_defaults_changed,
                          self.signal_filter_operation_var, self.derived_operation_var)
         self._bind_write(
@@ -251,6 +238,7 @@ class AnalysisWorkspace(PresentationShellMixin):
     def close(self) -> None:
         """Destroy the window and release plotting resources."""
 
+        self._cancel_scheduled(self.window, "_plot_refresh_job_id")
         self.style_vars.save_to_file()
         if self._style_dialog is not None:
             try:
@@ -320,7 +308,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._refresh_summary_widgets()
 
     def refresh_column_roles(self, column_roles: dict[str, str]) -> None:
-        self.column_roles = dict(column_roles)
+        self.column_roles = infer_column_roles(self.session.working_frame, column_roles)
         self._refresh_all_views(refresh_summary=False)
         self._refresh_live_plot()
 
@@ -330,29 +318,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             self.session.working_frame,
             PREVIEW_ROW_LIMIT,
             self.column_roles,
-            backend=self.table_backend_var.get(),
         )
-
-    def _apply_table_backend_selection(self) -> None:
-        requested_backend = self.table_backend_var.get()
-        if requested_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
-            set_configured_table_backend(TREEVIEW_TABLE_BACKEND)
-            if self.table_backend_var.get() != TREEVIEW_TABLE_BACKEND:
-                self.table_backend_var.set(TREEVIEW_TABLE_BACKEND)
-            self.style_vars.table_backend.set(TREEVIEW_TABLE_BACKEND)
-            self.style_vars.save_to_file()
-            self.notify_warning(
-                "tksheet preview backend unavailable",
-                "Install the optional tksheet package to enable it from the View menu.",
-            )
-            return
-
-        normalized_backend = set_configured_table_backend(requested_backend)
-        if self.table_backend_var.get() != normalized_backend:
-            self.table_backend_var.set(normalized_backend)
-        self.style_vars.table_backend.set(normalized_backend)
-        self.style_vars.save_to_file()
-        self._refresh_preview()
 
     def _refresh_statistics(self) -> None:
         stats_frame = self.session.last_summary.statistics_frame if self.session.last_summary else pd.DataFrame()
@@ -411,14 +377,14 @@ class AnalysisWorkspace(PresentationShellMixin):
     def _clear_plot_container(self) -> None:
         return plotting_ops.clear_plot_container(self)
 
-    def _render_fft_result(self, result: FrequencySpectrumResult) -> None:
-        return plotting_ops.render_fft_result(self, result)
+    def _render_fft_result(self, result: FrequencySpectrumResult, plot_values: FrequencyPlotValues) -> None:
+        return plotting_ops.render_fft_result(self, result, plot_values)
 
     def _clear_fft_results(self, message: str | None = None) -> None:
         return plotting_ops.clear_fft_results(self, message)
 
-    def _render_spectrogram_result(self, result: SpectrogramResult) -> None:
-        return plotting_ops.render_spectrogram_result(self, result)
+    def _render_spectrogram_result(self, result: SpectrogramResult, plot_data: SpectrogramPlotData) -> None:
+        return plotting_ops.render_spectrogram_result(self, result, plot_data)
 
     def _render_filter_bode_response(
         self,
@@ -429,39 +395,11 @@ class AnalysisWorkspace(PresentationShellMixin):
     ) -> None:
         return plotting_ops.render_filter_bode_response(self, frequencies, magnitude_db, phase_deg, operation)
 
-    def _render_signal_filter_preview(
-        self,
-        source_column: str,
-        operation: str,
-        original_series: pd.Series,
-        filtered_series: pd.Series,
-        sample_spacing: float,
-    ) -> None:
-        return plotting_ops.render_signal_filter_preview(
-            self,
-            source_column=source_column,
-            operation=operation,
-            original_series=original_series,
-            filtered_series=filtered_series,
-            sample_spacing=sample_spacing,
-        )
+    def _render_signal_filter_preview(self, plot_data: SignalComparisonPlotData) -> None:
+        return plotting_ops.render_signal_filter_preview(self, plot_data)
 
-    def _render_signal_filter_residual_preview(
-        self,
-        source_column: str,
-        operation: str,
-        original_series: pd.Series,
-        filtered_series: pd.Series,
-        sample_spacing: float,
-    ) -> None:
-        return plotting_ops.render_signal_filter_residual_preview(
-            self,
-            source_column=source_column,
-            operation=operation,
-            original_series=original_series,
-            filtered_series=filtered_series,
-            sample_spacing=sample_spacing,
-        )
+    def _render_signal_filter_residual_preview(self, plot_data) -> None:
+        return plotting_ops.render_signal_filter_residual_preview(self, plot_data)
 
     def _render_frequency_figure(self, figure: plt.Figure) -> None:
         return plotting_ops.render_frequency_figure(self, figure)
@@ -674,16 +612,18 @@ class AnalysisWorkspace(PresentationShellMixin):
         if not save_path:
             return
 
-        self.session.working_frame.to_csv(save_path, sep=";", index=False)
-
         report_saved = False
-        result = self._latest_frequency_result
-        if result is not None and result.analysis_name in {"Transfer Estimate", "Coherence"}:
-            report_path = save_path + ".analysis_report.txt"
-            report_lines = self._build_frequency_export_lines(result)
-            with open(report_path, "w", encoding="utf-8") as report_file:
-                report_file.write("\n".join(report_lines) + "\n")
-            report_saved = True
+        with self._error_dialog("Export Error") as failed:
+            self.session.working_frame.to_csv(save_path, sep=";", index=False)
+            result = self._latest_frequency_result
+            if result is not None and result.analysis_name in {"Transfer Estimate", "Coherence"}:
+                report_path = save_path + ".analysis_report.txt"
+                report_lines = self._build_frequency_export_lines(result)
+                with open(report_path, "w", encoding="utf-8") as report_file:
+                    report_file.write("\n".join(report_lines) + "\n")
+                report_saved = True
+        if failed:
+            return
 
         if report_saved:
             self.notifications.success(
@@ -726,6 +666,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._refresh_all_views()
         self._set_default_output_names()
         self._refresh_role_widget_styles()
+        self._refresh_live_plot()
 
     def _set_default_output_names(self) -> None:
         set_default_output_names(self)
@@ -807,7 +748,6 @@ class AnalysisWorkspace(PresentationShellMixin):
 
     def _refresh_role_widget_styles(self) -> None:
         refresh_role_widget_styles(self)
-        self._refresh_active_column_badges()
 
     def _refresh_frequency_method_controls(self) -> None:
         apply_frequency_method_rule(self)
@@ -834,21 +774,6 @@ class AnalysisWorkspace(PresentationShellMixin):
             return
         self.frequency_diagnostics_var.set("\n".join(self._build_frequency_export_lines(result)))
 
-    def _refresh_active_column_badges(self) -> None:
-        active_column = self.active_column_var.get().strip()
-        role_name = get_column_role(self.column_roles, active_column) if active_column else "metadata"
-        background, foreground = get_column_role_cell_colors(role_name)
-        for label_name in (
-            "filter_active_column_label",
-            "signal_filter_active_column_label",
-            "derived_active_column_label",
-            "frequency_active_column_label",
-            "cycles_active_column_label",
-        ):
-            label = getattr(self, label_name, None)
-            if label is not None:
-                label.configure(bg=background, fg=foreground)
-
     def _set_plot_y_column_options(self, numeric_columns: list[str], selected_columns: list[str]) -> None:
         if self.plot_y_selector_menu is None or self.plot_y_selector_button is None:
             return
@@ -864,7 +789,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             items=numeric_columns,
             selected_items=selected_columns,
             max_items=PLOT_Y_SELECTOR_MAX_ITEMS,
-            get_colors=self._get_plot_y_selector_colors,
+            get_colors=None,
             on_changed=self._handle_plot_y_column_selector_changed,
             on_select_all=self._select_all_plot_y_columns,
             on_clear_selection=self._clear_selected_plot_y_columns,
@@ -892,6 +817,17 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._update_plot_y_column_summary()
         if not self._plot_y_selector_sync_in_progress:
             self.session.selected_y_columns = self._get_selected_plot_y_columns()
+            self._schedule_live_plot_refresh()
+
+    def _handle_plot_controls_changed(self, *_args: object) -> None:
+        if self._plot_controls_sync_in_progress:
+            return
+        self.session.selected_x_column = self.plot_x_var.get().strip() or "Index"
+        self.session.use_subplots = self.plot_subplots_var.get()
+        self._schedule_live_plot_refresh()
+
+    def _schedule_live_plot_refresh(self) -> None:
+        self._schedule_debounced(self.window, "_plot_refresh_job_id", self._refresh_live_plot)
 
     def _update_plot_y_column_summary(self) -> None:
         selected_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
@@ -911,6 +847,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._plot_y_selector_sync_in_progress = False
         self.session.selected_y_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
         self._update_plot_y_column_summary()
+        self._schedule_live_plot_refresh()
 
     def _clear_selected_plot_y_columns(self) -> None:
         self._plot_y_selector_sync_in_progress = True
@@ -918,12 +855,10 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._plot_y_selector_sync_in_progress = False
         self.session.selected_y_columns = self.get_selected_selector_items(self.plot_y_selection_vars)
         self._update_plot_y_column_summary()
+        self._schedule_live_plot_refresh()
 
     def _get_selected_plot_y_columns(self) -> list[str]:
         return self.get_selected_selector_items(self.plot_y_selection_vars)
-
-    def _get_plot_y_selector_colors(self, column_name: str) -> tuple[str, str]:
-        return get_column_role_cell_colors(self.column_roles.get(column_name, "metadata"))
 
     def _refresh_frequency_expectation(self) -> None:
         active_column = self.active_column_var.get().strip()

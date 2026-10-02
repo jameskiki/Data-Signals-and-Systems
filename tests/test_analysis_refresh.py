@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from Source.analysis_app.app import AnalysisWorkspace
 from Source.analysis_app.refresh import (
     _apply_default_analysis_lengths,
     _apply_default_sample_spacing,
@@ -50,6 +51,30 @@ class DummyWorkspace:
         variable.set(value)
         self._inferred_fields.add(field_name)
         self._user_edited_fields.discard(field_name)
+
+
+def test_refresh_column_roles_normalizes_legacy_roles_and_covers_derived_columns() -> None:
+    frame = pd.DataFrame({"time_s": [0.0], "sensor": [1.0], "derived": [2.0]})
+    refresh_calls = []
+    plot_calls = []
+    workspace = SimpleNamespace(
+        session=SimpleNamespace(working_frame=frame),
+        _refresh_all_views=lambda **kwargs: refresh_calls.append(kwargs),
+        _refresh_live_plot=lambda: plot_calls.append(True),
+    )
+
+    AnalysisWorkspace.refresh_column_roles(
+        workspace,
+        {"time_s": "time", "sensor": "output"},
+    )
+
+    assert workspace.column_roles == {
+        "time_s": "time",
+        "sensor": "signal",
+        "derived": "signal",
+    }
+    assert refresh_calls == [{"refresh_summary": False}]
+    assert plot_calls == [True]
 
 
 def test_infer_sample_spacing_numeric_column() -> None:
@@ -98,10 +123,22 @@ def test_apply_default_sample_spacing_sets_when_invalid() -> None:
 def test_apply_default_sample_spacing_keeps_valid_user_value() -> None:
     frame = pd.DataFrame({"time_s": [0.0, 0.02, 0.04], "sensor": [1.0, 2.0, 3.0]})
     workspace = DummyWorkspace(frame, signal_spacing_value="0.5")
+    workspace._user_edited_fields.add("signal_filter_spacing")
 
     _apply_default_sample_spacing(workspace, ["time_s", "sensor"])
 
     assert workspace.signal_filter_spacing_var.get() == "0.5"
+
+
+def test_apply_default_sample_spacing_updates_previous_inference() -> None:
+    frame = pd.DataFrame({"time_s": [0.0, 0.02, 0.04], "sensor": [1.0, 2.0, 3.0]})
+    workspace = DummyWorkspace(frame, signal_spacing_value="0.1")
+    workspace._inferred_fields.add("signal_filter_spacing")
+
+    _apply_default_sample_spacing(workspace, ["time_s", "sensor"])
+
+    assert workspace.signal_filter_spacing_var.get() == "0.02"
+    assert "signal_filter_spacing" in workspace._inferred_fields
 
 
 def test_apply_default_sample_spacing_sets_fft_spacing_on_first_open() -> None:

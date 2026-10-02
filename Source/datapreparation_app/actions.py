@@ -5,12 +5,14 @@ import threading
 from tkinter import filedialog, messagebox, simpledialog
 from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 from .data_parser import DataParser
-from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path
+from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path, reconcile_merged_column_roles
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog
 from .preview import refresh_preview_table
 from .comparison import ComparisonWindow
 from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, validate_export_filename_prefix, write_dataframe_csv_with_progress
+from Source.shared.column_roles import get_available_column_roles, infer_non_time_column_role
+from Source.shared.plot_options import PlotDescriptor
 from Source.shared.plot_utils import create_plot_figure
 
 def load_files(app) -> None:
@@ -210,13 +212,15 @@ def plot_selected_data(app) -> None:
 		options,
 		selected_file_paths,
 		app.data_frames,
-		column_roles=(
-			app.dataset_contexts.get(selected_file_paths[0], DatasetContext()).column_roles
-			if len(selected_file_paths) == 1
-			else None
-		),
 	)
-	app.show_figure_in_window(app.root, figure, app.PLOT_WINDOW_TITLE, app.PLOT_WINDOW_GEOMETRY)
+	variant = "Subplots" if options.use_subplots else "Overlay"
+	app.show_figure_in_window(
+		app.root,
+		figure,
+		app.PLOT_WINDOW_TITLE,
+		app.PLOT_WINDOW_GEOMETRY,
+		plot_type=PlotDescriptor("Time series", variant),
+	)
 
 def merge_selected_files(app) -> None:
 	selected_file_paths = app._get_multiple_selected_file_paths("Select files to merge")
@@ -297,17 +301,29 @@ def merge_selected_files(app) -> None:
 			return
 
 		merged_frame = merged_result
+		merged_roles, reinferred_columns = reconcile_merged_column_roles(
+			merged_frame,
+			[app.data_frames[path] for path in selected_file_paths],
+			[
+				app.dataset_contexts.get(path, DatasetContext()).column_roles
+				for path in selected_file_paths
+			],
+		)
 		register_dataset(
 			app,
 			save_path,
 			merged_frame,
 			source_paths=collect_source_paths(app, selected_file_paths),
 			description=f"Merged from {len(selected_file_paths)} datasets",
+			column_roles=merged_roles,
 		)
 		refresh_dataset_table(app)
 		select_dataset_in_table(app, save_path)
 		app._refresh_dataset_preparation_views()
-		app.notifications.success(f"Merged file saved to: {os.path.basename(save_path)}")
+		details = None
+		if reinferred_columns:
+			details = "Re-inferred categories for columns with conflicting or missing source categories: " + ", ".join(reinferred_columns)
+		app.notifications.success(f"Merged file saved to: {os.path.basename(save_path)}", details=details)
 
 	def _poll_merge_queue() -> None:
 		nonlocal worker_done, merged_result, error_message
@@ -502,7 +518,7 @@ def apply_selected_column_role(app) -> None:
 
 	column_name = app.session.role_editor_column.strip()
 	role_name = app.session.role_editor_value.strip()
-	if not column_name or role_name not in {"time", "process", "ambient", "input", "output", "signal", "metadata"}:
+	if not column_name or role_name not in get_available_column_roles():
 		app.notifications.warning("Select a column and a role first")
 		return
 
@@ -510,11 +526,16 @@ def apply_selected_column_role(app) -> None:
 	if context is None:
 		return
 
+	dataframe = app.data_frames.get(selected_path)
 	if role_name == "time":
 		for existing_column, existing_role in list(context.column_roles.items()):
 			if existing_role == "time" and existing_column != column_name:
-				context.column_roles[existing_column] = "process"
+				if dataframe is not None and existing_column in dataframe.columns:
+					context.column_roles[existing_column] = infer_non_time_column_role(dataframe[existing_column])
+				else:
+					context.column_roles[existing_column] = "metadata"
 	context.column_roles[column_name] = role_name
+	app._propagate_role_updates(selected_path, context.column_roles)
 
 	app._set_role_editor_column("", update_var=True)
 	app._set_role_editor_value("", update_var=True)

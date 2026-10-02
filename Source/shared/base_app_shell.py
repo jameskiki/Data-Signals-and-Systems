@@ -17,6 +17,8 @@ Usage::
 from contextlib import contextmanager
 from tkinter import TclError, messagebox
 
+from Source.shared.plot_options import PlotDescriptor
+
 
 class BaseAppShell:
     """Mixin providing error-dialog handling and var-binding utilities."""
@@ -96,6 +98,23 @@ class BaseAppShell:
         The handler ignores events from child widgets so it only fires when
         the container itself changes size.
         """
+        binding_attr = f"_resize_bindings_{id(container)}"
+        previous_bindings = getattr(self, binding_attr, None)
+        if previous_bindings is not None:
+            configure_binding, destroy_binding, previous_job_attr = previous_bindings
+            previous_job = getattr(self, previous_job_attr, None)
+            if previous_job is not None:
+                try:
+                    root_window.after_cancel(previous_job)
+                except TclError:
+                    pass
+            for event_name, binding_id in (("<Configure>", configure_binding), ("<Destroy>", destroy_binding)):
+                if binding_id is not None:
+                    try:
+                        container.unbind(event_name, binding_id)
+                    except TclError:
+                        pass
+
         job_attr = f"_resize_job_{id(canvas)}"
 
         def _on_configure(event):
@@ -132,9 +151,11 @@ class BaseAppShell:
                 except TclError:
                     pass
             setattr(self, job_attr, None)
+            setattr(self, binding_attr, None)
 
-        container.bind("<Configure>", _on_configure, add="+")
-        container.bind("<Destroy>", _on_destroy, add="+")
+        configure_binding = container.bind("<Configure>", _on_configure, add="+")
+        destroy_binding = container.bind("<Destroy>", _on_destroy, add="+")
+        setattr(self, binding_attr, (configure_binding, destroy_binding, job_attr))
 
     def _bind_write(self, handler, *vars) -> None:
         """Register *handler* as the ``trace_add("write", ...)`` callback for each var.
@@ -152,6 +173,38 @@ class BaseAppShell:
         for var in vars:
             var.trace_add("write", handler)
 
+    def _schedule_debounced(self, root_window, job_attr: str, callback, delay_ms: int = 300) -> None:
+        """Run *callback* after a quiet period, replacing any pending job."""
+
+        pending_job = getattr(self, job_attr, None)
+        if pending_job is not None:
+            try:
+                root_window.after_cancel(pending_job)
+            except TclError:
+                pass
+
+        def _run() -> None:
+            setattr(self, job_attr, None)
+            callback()
+
+        try:
+            setattr(self, job_attr, root_window.after(delay_ms, _run))
+        except TclError:
+            setattr(self, job_attr, None)
+
+    def _cancel_scheduled(self, root_window, *job_attrs: str) -> None:
+        """Cancel pending jobs stored on this shell."""
+
+        for job_attr in job_attrs:
+            pending_job = getattr(self, job_attr, None)
+            if pending_job is None:
+                continue
+            try:
+                root_window.after_cancel(pending_job)
+            except TclError:
+                pass
+            setattr(self, job_attr, None)
+
     def _render_embedded_figure(
         self,
         *,
@@ -163,6 +216,7 @@ class BaseAppShell:
         root_window,
         draw_idle_on_reuse: bool,
         clear_container_before_create: bool = False,
+        plot_type: PlotDescriptor | None = None,
     ) -> None:
         """Render a matplotlib figure in a Tk container with shared lifecycle behavior.
 
@@ -172,6 +226,19 @@ class BaseAppShell:
 
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         import matplotlib.pyplot as plt
+        from tkinter import ttk
+
+        def _update_plot_type_indicator() -> None:
+            if plot_type is None:
+                return
+            indicator_text = f"Plot type: {plot_type}"
+            for child in container.winfo_children():
+                if getattr(child, "_evaldata_plot_type_indicator", False):
+                    child.configure(text=indicator_text)
+                    return
+            indicator = ttk.Label(container, text=indicator_text, anchor="w", padding=(8, 4))
+            indicator._evaldata_plot_type_indicator = True
+            indicator.pack(side="top", fill="x")
 
         existing_figure = getattr(self, figure_attr)
         existing_canvas = getattr(self, canvas_attr)
@@ -196,6 +263,7 @@ class BaseAppShell:
             can_reuse_canvas = canvas_is_alive and toolbar_is_alive and existing_figure is figure
 
             if can_reuse_canvas:
+                _update_plot_type_indicator()
                 setattr(self, figure_attr, figure)
                 existing_canvas.figure = figure
                 figure.canvas = existing_canvas
@@ -234,6 +302,8 @@ class BaseAppShell:
         if clear_container_before_create:
             for widget in container.winfo_children():
                 widget.destroy()
+
+        _update_plot_type_indicator()
 
         canvas = FigureCanvasTkAgg(figure, master=container)
         canvas.draw()

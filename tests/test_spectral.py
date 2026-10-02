@@ -11,6 +11,7 @@ from Source.data_ops.spectral import (
     _build_peak_frame,
     compute_coherence_spectrum,
     compute_fft_spectrum,
+    compute_residual_spectrum,
     compute_spectrogram,
     compute_transfer_estimate,
     compute_welch_psd,
@@ -18,6 +19,26 @@ from Source.data_ops.spectral import (
 
 
 # ── FFT ──────────────────────────────────────────────────────────────
+
+
+def test_residual_spectrum_returns_trace_and_frequency_values() -> None:
+    original = np.array([1.0, 3.0, 1.0, 3.0, 1.0, 3.0, 1.0, 3.0])
+    filtered = np.ones_like(original)
+
+    result = compute_residual_spectrum(original, filtered, sample_spacing=0.5)
+
+    np.testing.assert_array_equal(result.residual_values, [0.0, 2.0, 0.0, 2.0, 0.0, 2.0, 0.0, 2.0])
+    np.testing.assert_array_equal(result.frequencies, np.fft.rfftfreq(8, d=0.5))
+    assert result.amplitudes is not None
+    assert result.frequency_label == "Frequency [Hz]"
+
+
+def test_residual_spectrum_omits_insufficient_spectrum() -> None:
+    result = compute_residual_spectrum([1.0, 2.0, 3.0], [0.0, 0.0, 0.0], sample_spacing=0.0)
+
+    assert result.frequencies is None
+    assert result.amplitudes is None
+    assert result.frequency_label == ""
 
 
 class TestFFTSpectrum:

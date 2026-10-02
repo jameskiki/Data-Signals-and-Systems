@@ -76,8 +76,6 @@ def render_dataframe_preview(
     dataframe: pd.DataFrame,
     row_limit: int,
     column_roles: dict[str, str] | None = None,
-    *,
-    backend: str | None = None,
 ) -> tk.Widget | None:
     """Render a scrollable preview of the first rows of the dataframe."""
 
@@ -87,7 +85,6 @@ def render_dataframe_preview(
         row_limit,
         column_roles,
         layout="pack",
-        backend=backend,
     )
 
 
@@ -404,10 +401,6 @@ def _format_correlation_value(value: object) -> str:
     if abs(numeric_value) < 0.0005:
         return "0.000"
     return f"{numeric_value:+.3f}"
-
-
-def _format_preview_value(value: object) -> str:
-    return format_display_value(value)
 
 
 def _format_stat_value(value: object) -> str:

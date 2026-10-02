@@ -127,8 +127,8 @@ The important rule is that the analysis workspace does not mutate the shared ses
 - After register/merge/split/publish/unload actions, the main dataset table is rebuilt and the relevant dataset is reselected.
 - The main preparation preview, plot, and metadata panels always render from the currently selected session dataset.
 - Open analysis workspaces keep their own dataframe copies after launch, so filter/derive/resample operations stay local to that workspace.
-- The main window exposes only three compact categories: time/reference, process value, and ambient value. Legacy input/output/signal role metadata remains supported for existing/demo contexts, while new user assignments use the compact categories.
-- Multiple process and ambient columns are allowed; assigning time/reference keeps one time column by demoting any previous time role.
+- The main window and analysis workspace share exactly three column categories: time/reference, signal, and metadata.
+- Multiple signal and metadata columns are allowed. Assigning time/reference keeps one time column and reclassifies the previous time column as signal when numeric or metadata otherwise.
 - Category edits in the main window propagate to already-open analysis workspaces only when their `session.source_path` matches the edited dataset path.
 - Publishing from analysis creates a new dataset path in the main session registry; it does not replace the original analysis source dataset.
 - The comparison window stores the dataset paths chosen at launch. Its `Refresh` button re-reads those same paths from the current session registry and updates common-column controls, plots, and summaries.

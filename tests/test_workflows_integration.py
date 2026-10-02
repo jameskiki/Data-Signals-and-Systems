@@ -3,12 +3,13 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 
 from Source.analysis_app import handlers
 from Source.datapreparation_app import actions as dataprep_actions
 from Source.datapreparation_app import preparation
-from Source.datapreparation_app.datasets import register_dataset
+from Source.datapreparation_app.datasets import reconcile_merged_column_roles, register_dataset
 
 
 class DummyVar:
@@ -135,10 +136,10 @@ class AnalysisWorkspaceStub:
             }
         )
 
-    def _render_fft_result(self, result):
+    def _render_fft_result(self, result, _plot_values):
         self.render_fft_calls.append(result)
 
-    def _render_spectrogram_result(self, _result):
+    def _render_spectrogram_result(self, _result, _plot_data):
         return None
 
     def _render_cycle_result(self, _result):
@@ -146,6 +147,38 @@ class AnalysisWorkspaceStub:
 
     def _get_cycle_time_column(self):
         return "time_s"
+
+
+def test_merge_roles_preserve_unanimous_assignments():
+    source_frames = [
+        pd.DataFrame({"time_s": [0.0], "code": [1]}),
+        pd.DataFrame({"time_s": [1.0], "code": [2]}),
+    ]
+    merged_frame = pd.concat(source_frames, ignore_index=True)
+    roles, reinferred = reconcile_merged_column_roles(
+        merged_frame,
+        source_frames,
+        [
+            {"time_s": "time", "code": "metadata"},
+            {"time_s": "time", "code": "metadata"},
+        ],
+    )
+
+    assert roles == {"time_s": "time", "code": "metadata"}
+    assert reinferred == []
+
+
+def test_merge_roles_reinfer_conflicts():
+    source_frames = [pd.DataFrame({"sensor": [1.0]}), pd.DataFrame({"sensor": [2.0]})]
+    merged_frame = pd.concat(source_frames, ignore_index=True)
+    roles, reinferred = reconcile_merged_column_roles(
+        merged_frame,
+        source_frames,
+        [{"sensor": "signal"}, {"sensor": "metadata"}],
+    )
+
+    assert roles == {"sensor": "signal"}
+    assert reinferred == ["sensor"]
 
 
 def test_prepare_dataset_then_apply_filter_workflow():
@@ -207,7 +240,13 @@ def test_demo_load_prepare_then_fft_workflow(monkeypatch):
 
     workspace = AnalysisWorkspaceStub(prepared_frame, prepared_roles)
     workspace.active_column_var.set("measured_signal")
-    fft_result = SimpleNamespace(analysis_name="FFT Amplitude", window="hann")
+    fft_result = SimpleNamespace(
+        analysis_name="FFT Amplitude",
+        window="hann",
+        frequencies=np.array([0.0, 1.0]),
+        amplitudes=np.array([0.0, 2.0]),
+        phase=None,
+    )
     monkeypatch.setattr(handlers, "compute_fft_spectrum", lambda **kwargs: fft_result)
 
     handlers.compute_fft(workspace)

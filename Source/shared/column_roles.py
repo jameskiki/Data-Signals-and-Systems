@@ -4,57 +4,26 @@ from __future__ import annotations
 
 import pandas as pd
 
-try:
-    import tkinter as tk
-    from tkinter import ttk
-except ImportError:  # headless environment (e.g. CI without a display)
-    tk = None  # type: ignore[assignment]
-    ttk = None  # type: ignore[assignment]
-
 
 COLUMN_ROLE_LABELS = {
     "time": "TIME",
-    "process": "PROCESS",
-    "ambient": "AMBIENT",
-    "input": "INPUT",
-    "output": "OUTPUT",
     "signal": "SIGNAL",
     "metadata": "META",
 }
 
 COLUMN_ROLE_COLORS = {
     "time": ("#dbeafe", "#111111"),
-    "process": ("#dcfce7", "#111111"),
-    "ambient": ("#fef3c7", "#111111"),
-    "input": ("#fff4cc", "#111111"),
-    "output": ("#d9f2d9", "#111111"),
     "signal": ("#f3e5f5", "#111111"),
     "metadata": ("#eceff1", "#111111"),
 }
 
-COLUMN_ROLE_PLOT_COLORS = {
-    "time": "#0d47a1",
-    "process": "#15803d",
-    "ambient": "#b45309",
-    "input": "#a16207",
-    "output": "#1b5e20",
-    "signal": "#7b1fa2",
-    "metadata": "#455a64",
-}
-
 COLUMN_ROLE_PRIORITY = {
-    "process": 0,
-    "ambient": 1,
-    "output": 0,
-    "signal": 1,
-    "input": 2,
-    "metadata": 3,
-    "time": 4,
+    "signal": 0,
+    "metadata": 1,
+    "time": 2,
 }
 
 COLUMN_ROLE_NAMES = list(COLUMN_ROLE_LABELS.keys())
-DATASET_ROLE_NAMES = ["time", "process", "ambient"]
-REFERENCE_ROLE_NAMES = ["time"]
 
 
 def infer_column_roles(dataframe: pd.DataFrame, preferred_roles: dict[str, str] | None = None) -> dict[str, str]:
@@ -64,7 +33,7 @@ def infer_column_roles(dataframe: pd.DataFrame, preferred_roles: dict[str, str] 
     column_roles: dict[str, str] = {}
     for column in dataframe.columns:
         column_name = str(column)
-        if column_name in preferred_roles:
+        if preferred_roles.get(column_name) in COLUMN_ROLE_NAMES:
             column_roles[column_name] = preferred_roles[column_name]
             continue
         column_roles[column_name] = _infer_column_role(column_name, dataframe[column])
@@ -88,7 +57,7 @@ def update_projected_column_roles(
 
     updated_roles = project_column_roles(column_roles, dataframe)
     for column_name, role_name in (role_overrides or {}).items():
-        if str(column_name) in dataframe.columns and role_name:
+        if str(column_name) in dataframe.columns and role_name in COLUMN_ROLE_NAMES:
             updated_roles[str(column_name)] = role_name
     return updated_roles
 
@@ -100,18 +69,12 @@ def summarize_column_roles(column_roles: dict[str, str]) -> str:
         return ""
 
     time_column = get_preferred_role_column(column_roles, "time")
-    input_column = get_preferred_role_column(column_roles, "input")
-    output_column = get_preferred_role_column(column_roles, "output")
     signal_columns = [column for column, role in column_roles.items() if role == "signal"]
     metadata_count = sum(1 for role in column_roles.values() if role == "metadata")
 
     summary_parts: list[str] = []
     if time_column:
         summary_parts.append(f"time={time_column}")
-    if input_column:
-        summary_parts.append(f"input={input_column}")
-    if output_column:
-        summary_parts.append(f"output={output_column}")
     if signal_columns:
         shown_signals = ", ".join(signal_columns[:3])
         if len(signal_columns) > 3:
@@ -143,7 +106,15 @@ def get_preferred_role_column(
 def get_column_role(column_roles: dict[str, str], column_name: str) -> str:
     """Return the stored role for one column, defaulting to metadata."""
 
-    return column_roles.get(str(column_name), "metadata")
+    role = column_roles.get(str(column_name), "metadata")
+    return role if role in COLUMN_ROLE_NAMES else "metadata"
+
+
+def get_transformed_column_role(column_roles: dict[str, str], source_column: str) -> str:
+    """Return the role inherited by a column produced from one source column."""
+
+    source_role = get_column_role(column_roles, source_column)
+    return "signal" if source_role == "time" else source_role
 
 
 def get_column_role_label(column_roles: dict[str, str], column_name: str) -> str:
@@ -165,28 +136,10 @@ def get_available_column_roles() -> list[str]:
     return list(COLUMN_ROLE_NAMES)
 
 
-def get_available_reference_roles() -> list[str]:
-    """Return the intentionally small role vocabulary exposed by preparation UI."""
-
-    return list(REFERENCE_ROLE_NAMES)
-
-
-def get_available_dataset_roles() -> list[str]:
-    """Return the compact user-facing dataset categories."""
-
-    return list(DATASET_ROLE_NAMES)
-
-
 def get_column_role_colors(role: str) -> tuple[str, str]:
     """Return background and foreground colors for one role."""
 
     return COLUMN_ROLE_COLORS.get(role, COLUMN_ROLE_COLORS["metadata"])
-
-
-def get_column_role_plot_color(role: str) -> str:
-    """Return a saturated plot color for one role."""
-
-    return COLUMN_ROLE_PLOT_COLORS.get(role, COLUMN_ROLE_PLOT_COLORS["metadata"])
 
 
 def get_column_role_cell_colors(role: str) -> tuple[str, str]:
@@ -208,63 +161,10 @@ def sort_columns_by_role(columns: list[str], column_roles: dict[str, str]) -> li
     )
 
 
-def apply_role_combobox_style(
-    combobox: ttk.Combobox | None,
-    column_roles: dict[str, str],
-    selected_value: str,
-) -> None:
-    """Apply a role-aware readonly style to a combobox based on its current value."""
+def infer_non_time_column_role(series: pd.Series) -> str:
+    """Infer a signal or metadata role without considering time semantics."""
 
-    if combobox is None:
-        return
-
-    role_name = "metadata" if selected_value == "Index" else get_column_role(column_roles, selected_value)
-    background, foreground = get_column_role_cell_colors(role_name)
-    style_name = f"Role.{role_name}.TCombobox"
-    style = ttk.Style(combobox)
-    style.configure(
-        style_name,
-        fieldbackground=background,
-        background=background,
-        foreground=foreground,
-        arrowcolor=foreground,
-    )
-    style.map(
-        style_name,
-        fieldbackground=[("readonly", background), ("!disabled", background)],
-        background=[("readonly", background), ("!disabled", background)],
-        foreground=[("readonly", foreground), ("!disabled", foreground)],
-        selectbackground=[("readonly", background)],
-        selectforeground=[("readonly", foreground)],
-    )
-    combobox.configure(style=style_name)
-
-
-def apply_literal_role_combobox_style(combobox: ttk.Combobox | None, role_name: str) -> None:
-    """Apply a role-aware readonly style to a combobox given a direct role name."""
-
-    if combobox is None:
-        return
-
-    background, foreground = get_column_role_cell_colors(role_name or "metadata")
-    style_name = f"LiteralRole.{role_name or 'metadata'}.TCombobox"
-    style = ttk.Style(combobox)
-    style.configure(
-        style_name,
-        fieldbackground=background,
-        background=background,
-        foreground=foreground,
-        arrowcolor=foreground,
-    )
-    style.map(
-        style_name,
-        fieldbackground=[("readonly", background), ("!disabled", background)],
-        background=[("readonly", background), ("!disabled", background)],
-        foreground=[("readonly", foreground), ("!disabled", foreground)],
-        selectbackground=[("readonly", background)],
-        selectforeground=[("readonly", foreground)],
-    )
-    combobox.configure(style=style_name)
+    return "signal" if pd.api.types.is_numeric_dtype(series) else "metadata"
 
 
 def _lighten_hex(color: str, factor: float) -> str:
@@ -285,12 +185,6 @@ def _infer_column_role(column_name: str, series: pd.Series) -> str:
         return "time"
     if any(token in normalized_name for token in ("time", "timestamp", "datetime", "date")):
         return "time"
-    if any(token in normalized_name for token in ("ambient", "room", "humidity", "temperature", "temp", "environment")):
-        return "ambient"
-    if any(token in normalized_name for token in ("input", "actuator", "excitation", "command", "drive", "setpoint")):
-        return "input"
-    if any(token in normalized_name for token in ("output", "response", "measured")):
-        return "output"
     if any(token in normalized_name for token in ("temp", "temperature", "phase", "marker", "status", "label", "id")):
         return "metadata"
     if pd.api.types.is_numeric_dtype(series):

@@ -7,23 +7,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 import tkinter as tk
 
-from Source.shared.column_roles import (
-    apply_literal_role_combobox_style,
-    apply_role_combobox_style,
-    get_column_role,
-    get_column_role_cell_colors,
-    get_column_role_colors,
-    get_column_role_label,
-    get_column_role_plot_color,
-    get_available_dataset_roles,
-    get_preferred_role_column,
-    get_role_label,
-    infer_column_roles,
-    project_column_roles,
-    sort_columns_by_role,
-    summarize_column_roles,
-    update_projected_column_roles,
-)
+from Source.shared.column_roles import get_available_column_roles, infer_column_roles
 from Source.data_ops.models import DataSummary
 from Source.data_ops.summary import summarize_dataframe
 
@@ -55,6 +39,38 @@ def register_dataset(
         column_roles=infer_column_roles(dataframe, column_roles),
         cached_summary=None,
     )
+
+
+def reconcile_merged_column_roles(
+    merged_dataframe: pd.DataFrame,
+    source_dataframes: list[pd.DataFrame],
+    source_role_maps: list[dict[str, str]],
+) -> tuple[dict[str, str], list[str]]:
+    """Preserve unanimously assigned roles and re-infer conflicting merged columns."""
+
+    valid_roles = set(get_available_column_roles())
+    agreed_roles: dict[str, str] = {}
+    reinferred_columns: list[str] = []
+
+    for column in merged_dataframe.columns:
+        column_name = str(column)
+        contributing_roles: list[str] = []
+        roles_are_complete = True
+        for source_dataframe, source_roles in zip(source_dataframes, source_role_maps, strict=True):
+            if column not in source_dataframe.columns:
+                continue
+            role = source_roles.get(column_name)
+            if role not in valid_roles:
+                roles_are_complete = False
+                break
+            contributing_roles.append(role)
+
+        if roles_are_complete and contributing_roles and len(set(contributing_roles)) == 1:
+            agreed_roles[column_name] = contributing_roles[0]
+        else:
+            reinferred_columns.append(column_name)
+
+    return infer_column_roles(merged_dataframe, agreed_roles), reinferred_columns
 
 
 def collect_source_paths(app, dataset_paths: list[str]) -> list[str]:

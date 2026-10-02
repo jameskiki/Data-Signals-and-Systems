@@ -34,12 +34,36 @@ class DummyContainer:
         return self._children
 
 
+class BindingContainer:
+    def __init__(self):
+        self.bindings = []
+        self.unbindings = []
+
+    def bind(self, event_name, callback, add=None):
+        binding_id = f"binding-{len(self.bindings) + 1}"
+        self.bindings.append((event_name, callback, add, binding_id))
+        return binding_id
+
+    def unbind(self, event_name, binding_id):
+        self.unbindings.append((event_name, binding_id))
+
+
 class DummyRootWindow:
     def __init__(self):
         self.after_idle_calls = []
+        self.after_calls = []
+        self.cancelled_jobs = []
 
     def after_idle(self, callback):
         self.after_idle_calls.append(callback)
+
+    def after(self, delay_ms, callback):
+        job_id = f"job-{len(self.after_calls) + 1}"
+        self.after_calls.append((job_id, delay_ms, callback))
+        return job_id
+
+    def after_cancel(self, job_id):
+        self.cancelled_jobs.append(job_id)
 
 
 class DummyFigure:
@@ -171,6 +195,58 @@ def test_bind_write_registers_handler_for_all_vars():
 
     assert var_a.calls == [("write", _handler)]
     assert var_b.calls == [("write", _handler)]
+
+
+def test_schedule_debounced_replaces_pending_job_and_runs_latest_callback():
+    shell = BaseAppShell()
+    root = DummyRootWindow()
+    calls = []
+
+    shell._schedule_debounced(root, "_job_id", lambda: calls.append("first"), delay_ms=250)
+    shell._schedule_debounced(root, "_job_id", lambda: calls.append("second"), delay_ms=300)
+
+    assert root.cancelled_jobs == ["job-1"]
+    assert shell._job_id == "job-2"
+    _, delay_ms, callback = root.after_calls[-1]
+    assert delay_ms == 300
+
+    callback()
+
+    assert calls == ["second"]
+    assert shell._job_id is None
+
+
+def test_cancel_scheduled_cancels_and_clears_pending_jobs():
+    shell = BaseAppShell()
+    root = DummyRootWindow()
+    shell._first_job = "job-1"
+    shell._second_job = None
+
+    shell._cancel_scheduled(root, "_first_job", "_second_job")
+
+    assert root.cancelled_jobs == ["job-1"]
+    assert shell._first_job is None
+
+
+def test_bind_canvas_resize_replaces_existing_container_bindings():
+    shell = BaseAppShell()
+    root = DummyRootWindow()
+    container = BindingContainer()
+    first_canvas = DummyFigure()
+    first_canvas.figure = DummyFigure()
+    second_canvas = DummyFigure()
+    second_canvas.figure = DummyFigure()
+
+    shell._bind_canvas_resize(container, first_canvas, root)
+    configure_callback = container.bindings[0][1]
+    configure_callback(type("Event", (), {"widget": container})())
+    shell._bind_canvas_resize(container, second_canvas, root)
+
+    assert root.cancelled_jobs == ["job-1"]
+    assert container.unbindings == [
+        ("<Configure>", "binding-1"),
+        ("<Destroy>", "binding-2"),
+    ]
 
 
 class FigureForSyncSize:

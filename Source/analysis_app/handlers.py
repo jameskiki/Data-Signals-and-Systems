@@ -6,6 +6,8 @@ datapreparation_app/actions.py.  The corresponding AnalysisWorkspace methods
 are thin one-line delegations to these functions.
 """
 
+import numpy as np
+
 from Source.data_ops.cycles import (
     compute_cycle_analysis_from_ranges,
     compute_fixed_length_cycle_analysis,
@@ -18,11 +20,21 @@ from Source.data_ops.frame_ops import resample_to_uniform
 from Source.data_ops.spectral import (
     compute_coherence_spectrum,
     compute_fft_spectrum,
+    compute_residual_spectrum,
     compute_spectrogram,
     compute_transfer_estimate,
     compute_welch_psd,
 )
 from Source.data_ops.signals import compute_butterworth_response, evaluate_butterworth_settings
+from Source.shared.column_roles import get_transformed_column_role
+from Source.shared.plot_options import (
+    DeviationPanelPlotData,
+    DeviationSeriesPlotData,
+    FrequencySeriesPlotData,
+    ResidualSpectrumPlotData,
+    SignalComparisonPlotData,
+)
+from Source.shared.plot_preparation import prepare_frequency_plot_values, prepare_spectrogram_plot_data
 
 from .actions import (
     build_derived_signal_update,
@@ -31,6 +43,73 @@ from .actions import (
 )
 from .rules import get_rule, validate_params
 from .state import UI_FREQUENCY_ANALYSIS_METHODS
+
+
+def _get_signal_filter_cutoff_values(workspace, operation: str) -> str | list[str]:
+    if operation == "butterworth_bandpass":
+        return [
+            workspace.signal_filter_cutoff_var.get(),
+            workspace.signal_filter_cutoff_high_var.get(),
+        ]
+    return workspace.signal_filter_cutoff_var.get()
+
+
+def _parse_signal_filter_cutoff(workspace, operation: str) -> float | list[float]:
+    raw_cutoff = _get_signal_filter_cutoff_values(workspace, operation)
+    if isinstance(raw_cutoff, list):
+        defaults = ("10.0", "20.0")
+        return [float(value or default) for value, default in zip(raw_cutoff, defaults, strict=True)]
+    return float(raw_cutoff or "10.0")
+
+
+def _validate_butterworth_inputs(workspace, operation: str, notification_title: str) -> bool:
+    if not operation.startswith("butterworth"):
+        return True
+
+    errors, warnings = evaluate_butterworth_settings(
+        operation=operation,
+        cutoff_hz=_get_signal_filter_cutoff_values(workspace, operation),
+        sample_spacing=workspace.signal_filter_spacing_var.get(),
+        filter_order=workspace.signal_filter_order_var.get(),
+    )
+    if errors:
+        workspace.notifications.warning(notification_title, details="\n".join(errors))
+        return False
+    if warnings:
+        workspace.notifications.info(notification_title.replace("validation failed", "warnings"), details="\n".join(warnings))
+    return True
+
+
+def _build_signal_filter_update_from_workspace(workspace, source_column: str, operation: str, output_name: str):
+    return build_signal_filter_update(
+        workspace.session.working_frame,
+        source_column=source_column,
+        operation=operation,
+        output_name=output_name,
+        window_size=int(workspace.signal_filter_window_var.get() or "5"),
+        alpha=float(workspace.signal_filter_alpha_var.get() or "0.2"),
+        cutoff_hz=_parse_signal_filter_cutoff(workspace, operation),
+        sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
+        filter_order=int(workspace.signal_filter_order_var.get() or "4"),
+    )
+
+
+def _compute_signal_filter_preview(workspace, source_column: str, operation: str, error_title: str):
+    if not _validate_butterworth_inputs(workspace, operation, f"{error_title} validation failed"):
+        return None
+
+    preview_column = "__preview_filter__"
+    with workspace._error_dialog(error_title) as failed:
+        preview_update = _build_signal_filter_update_from_workspace(
+            workspace,
+            source_column,
+            operation,
+            preview_column,
+        )
+        sample_spacing = float(workspace.signal_filter_spacing_var.get() or "0.0")
+    if failed:
+        return None
+    return preview_update.dataframe[preview_column], sample_spacing
 
 
 def apply_filter(workspace) -> None:
@@ -56,7 +135,7 @@ def apply_filter(workspace) -> None:
 
     workspace._replace_working_frame(
         update.dataframe,
-        role_overrides={output_column: workspace.column_roles.get(column, "signal")},
+        role_overrides={output_column: get_transformed_column_role(workspace.column_roles, column)},
         focus_column=output_column,
     )
     workspace.notifications.success(f"Created {output_column} from {column} using simple filtering")
@@ -86,46 +165,22 @@ def apply_signal_filter(workspace) -> None:
             return
 
     output_column = resolve_filtered_column_name(source_column, workspace.signal_filter_name_var.get())
-    cutoff_hz: float | list[float]
-    if operation == "butterworth_bandpass":
-        cutoff_hz = [
-            float(workspace.signal_filter_cutoff_var.get() or "10.0"),
-            float(workspace.signal_filter_cutoff_high_var.get() or "20.0"),
-        ]
-    else:
-        cutoff_hz = float(workspace.signal_filter_cutoff_var.get() or "10.0")
-
-    if operation.startswith("butterworth"):
-        errors, warnings = evaluate_butterworth_settings(
-            operation=operation,
-            cutoff_hz=cutoff_hz,
-            sample_spacing=workspace.signal_filter_spacing_var.get(),
-            filter_order=workspace.signal_filter_order_var.get(),
-        )
-        if errors:
-            workspace.notifications.warning("Signal Filter validation failed", details="\n".join(errors))
-            return
-        if warnings:
-            workspace.notifications.info("Signal Filter warnings", details="\n".join(warnings))
+    if not _validate_butterworth_inputs(workspace, operation, "Signal Filter validation failed"):
+        return
 
     with workspace._error_dialog("Signal Filter Error") as _failed:
-        update = build_signal_filter_update(
-            workspace.session.working_frame,
-            source_column=source_column,
-            operation=operation,
-            output_name=workspace.signal_filter_name_var.get(),
-            window_size=int(workspace.signal_filter_window_var.get() or "5"),
-            alpha=float(workspace.signal_filter_alpha_var.get() or "0.2"),
-            cutoff_hz=cutoff_hz,
-            sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
-            filter_order=int(workspace.signal_filter_order_var.get() or "4"),
+        update = _build_signal_filter_update_from_workspace(
+            workspace,
+            source_column,
+            operation,
+            workspace.signal_filter_name_var.get(),
         )
     if _failed:
         return
 
     workspace._replace_working_frame(
         update.dataframe,
-        role_overrides={output_column: workspace.column_roles.get(source_column, "signal")},
+        role_overrides={output_column: get_transformed_column_role(workspace.column_roles, source_column)},
         focus_column=output_column,
     )
     workspace.notifications.success(f"Created {output_column} using {operation} on {source_column}")
@@ -140,31 +195,13 @@ def preview_filter_bode(workspace) -> None:
         workspace.notifications.warning("Bode preview is available only for Butterworth filters")
         return
 
-    cutoff_hz: float | list[float]
-    if operation == "butterworth_bandpass":
-        cutoff_hz = [
-            float(workspace.signal_filter_cutoff_var.get() or "10.0"),
-            float(workspace.signal_filter_cutoff_high_var.get() or "20.0"),
-        ]
-    else:
-        cutoff_hz = float(workspace.signal_filter_cutoff_var.get() or "10.0")
-
-    errors, warnings = evaluate_butterworth_settings(
-        operation=operation,
-        cutoff_hz=cutoff_hz,
-        sample_spacing=workspace.signal_filter_spacing_var.get(),
-        filter_order=workspace.signal_filter_order_var.get(),
-    )
-    if errors:
-        workspace.notifications.warning("Bode preview validation failed", details="\n".join(errors))
+    if not _validate_butterworth_inputs(workspace, operation, "Bode preview validation failed"):
         return
-    if warnings:
-        workspace.notifications.info("Bode preview warnings", details="\n".join(warnings))
 
     with workspace._error_dialog("Bode Plot Error") as failed:
         frequencies, magnitude_db, phase_deg = compute_butterworth_response(
             operation=operation,
-            cutoff_hz=cutoff_hz,
+            cutoff_hz=_parse_signal_filter_cutoff(workspace, operation),
             sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
             filter_order=int(workspace.signal_filter_order_var.get() or "4"),
         )
@@ -183,50 +220,25 @@ def preview_signal_filter_result(workspace) -> None:
         workspace.notifications.warning("Select an active analysis column")
         return
 
-    cutoff_hz: float | list[float]
-    if operation == "butterworth_bandpass":
-        cutoff_hz = [
-            float(workspace.signal_filter_cutoff_var.get() or "10.0"),
-            float(workspace.signal_filter_cutoff_high_var.get() or "20.0"),
-        ]
-    else:
-        cutoff_hz = float(workspace.signal_filter_cutoff_var.get() or "10.0")
-
-    if operation.startswith("butterworth"):
-        errors, warnings = evaluate_butterworth_settings(
-            operation=operation,
-            cutoff_hz=cutoff_hz,
-            sample_spacing=workspace.signal_filter_spacing_var.get(),
-            filter_order=workspace.signal_filter_order_var.get(),
-        )
-        if errors:
-            workspace.notifications.warning("Filter preview validation failed", details="\n".join(errors))
-            return
-        if warnings:
-            workspace.notifications.info("Filter preview warnings", details="\n".join(warnings))
-
-    preview_column = "__preview_filter__"
-    with workspace._error_dialog("Filter Preview Error") as failed:
-        preview_update = build_signal_filter_update(
-            workspace.session.working_frame,
-            source_column=source_column,
-            operation=operation,
-            output_name=preview_column,
-            window_size=int(workspace.signal_filter_window_var.get() or "5"),
-            alpha=float(workspace.signal_filter_alpha_var.get() or "0.2"),
-            cutoff_hz=cutoff_hz,
-            sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
-            filter_order=int(workspace.signal_filter_order_var.get() or "4"),
-        )
-    if failed:
+    preview_result = _compute_signal_filter_preview(workspace, source_column, operation, "Filter Preview Error")
+    if preview_result is None:
         return
+    filtered_series, sample_spacing = preview_result
+
+    original_values = workspace.session.working_frame[source_column].to_numpy(dtype=float)
+    filtered_values = filtered_series.to_numpy(dtype=float)
+    sample_indices = np.arange(len(original_values), dtype=float)
+    x_values = sample_indices * sample_spacing if sample_spacing > 0 else sample_indices
 
     workspace._render_signal_filter_preview(
-        source_column=source_column,
-        operation=operation,
-        original_series=workspace.session.working_frame[source_column],
-        filtered_series=preview_update.dataframe[preview_column],
-        sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
+        SignalComparisonPlotData(
+            x_values=x_values,
+            original_values=original_values,
+            comparison_values=filtered_values,
+            title=f"Filter Preview — {source_column} ({operation})",
+            x_label="Time [s]" if sample_spacing > 0 else "Sample",
+            y_label=source_column,
+        )
     )
 
 
@@ -239,51 +251,41 @@ def preview_signal_filter_residual(workspace) -> None:
         workspace.notifications.warning("Select an active analysis column")
         return
 
-    cutoff_hz: float | list[float]
-    if operation == "butterworth_bandpass":
-        cutoff_hz = [
-            float(workspace.signal_filter_cutoff_var.get() or "10.0"),
-            float(workspace.signal_filter_cutoff_high_var.get() or "20.0"),
-        ]
-    else:
-        cutoff_hz = float(workspace.signal_filter_cutoff_var.get() or "10.0")
-
-    if operation.startswith("butterworth"):
-        errors, warnings = evaluate_butterworth_settings(
-            operation=operation,
-            cutoff_hz=cutoff_hz,
-            sample_spacing=workspace.signal_filter_spacing_var.get(),
-            filter_order=workspace.signal_filter_order_var.get(),
-        )
-        if errors:
-            workspace.notifications.warning("Residual preview validation failed", details="\n".join(errors))
-            return
-        if warnings:
-            workspace.notifications.info("Residual preview warnings", details="\n".join(warnings))
-
-    preview_column = "__preview_filter__"
-    with workspace._error_dialog("Residual Preview Error") as failed:
-        preview_update = build_signal_filter_update(
-            workspace.session.working_frame,
-            source_column=source_column,
-            operation=operation,
-            output_name=preview_column,
-            window_size=int(workspace.signal_filter_window_var.get() or "5"),
-            alpha=float(workspace.signal_filter_alpha_var.get() or "0.2"),
-            cutoff_hz=cutoff_hz,
-            sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
-            filter_order=int(workspace.signal_filter_order_var.get() or "4"),
-        )
-    if failed:
+    preview_result = _compute_signal_filter_preview(workspace, source_column, operation, "Residual Preview Error")
+    if preview_result is None:
         return
-
-    workspace._render_signal_filter_residual_preview(
-        source_column=source_column,
-        operation=operation,
-        original_series=workspace.session.working_frame[source_column],
-        filtered_series=preview_update.dataframe[preview_column],
-        sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
+    filtered_series, sample_spacing = preview_result
+    original_values = workspace.session.working_frame[source_column].to_numpy(dtype=float)
+    filtered_values = filtered_series.to_numpy(dtype=float)
+    residual_result = compute_residual_spectrum(original_values, filtered_values, sample_spacing)
+    sample_indices = np.arange(len(residual_result.residual_values), dtype=float)
+    x_values = sample_indices * sample_spacing if sample_spacing > 0 else sample_indices
+    spectrum_plot_data = None
+    if residual_result.frequencies is not None and residual_result.amplitudes is not None:
+        spectrum_plot_data = FrequencySeriesPlotData(
+            x_values=residual_result.frequencies,
+            y_values=residual_result.amplitudes,
+            title="Residual Spectrum",
+            x_label=residual_result.frequency_label,
+            y_label="Amplitude",
+        )
+    plot_data = ResidualSpectrumPlotData(
+        deviation=DeviationPanelPlotData(
+            series=(
+                DeviationSeriesPlotData(
+                    x_values=x_values,
+                    values=residual_result.residual_values,
+                    label="Residual",
+                ),
+            ),
+            title=f"Residual Preview - {source_column} ({operation})",
+            x_label="Time [s]" if sample_spacing > 0 else "Sample",
+            y_label="Original - Filtered",
+            reference_label="Zero residual",
+        ),
+        spectrum=spectrum_plot_data,
     )
+    workspace._render_signal_filter_residual_preview(plot_data)
 
 
 def apply_resample(workspace) -> None:
@@ -333,12 +335,9 @@ def apply_derived_signal(workspace) -> None:
     if _failed:
         return
 
-    derived_role = workspace.column_roles.get(source_column, "signal")
-    if derived_role == "time":
-        derived_role = "signal"
     workspace._replace_working_frame(
         update.dataframe,
-        role_overrides={new_column: derived_role},
+        role_overrides={new_column: get_transformed_column_role(workspace.column_roles, source_column)},
         focus_column=new_column,
     )
     workspace.notifications.success(f"Created {new_column} using {operation} on {source_column}")
@@ -381,7 +380,10 @@ def compute_fft(workspace) -> None:
                 segment_length=int(workspace.welch_segment_length_var.get() or "256"),
                 overlap_fraction=float(workspace.welch_overlap_fraction_var.get() or "0.5"),
             )
-            workspace._render_spectrogram_result(spectrogram_result)
+            workspace._render_spectrogram_result(
+                spectrogram_result,
+                prepare_spectrogram_plot_data(spectrogram_result),
+            )
             workspace._latest_frequency_result = None
             diagnostics_callback = getattr(workspace, "_update_frequency_diagnostics", None)
             if diagnostics_callback is not None:
@@ -416,7 +418,11 @@ def compute_fft(workspace) -> None:
     if _failed:
         return
 
-    workspace._render_fft_result(result)
+    unwrap_phase = (
+        result.analysis_name == "Transfer Estimate"
+        and bool(workspace.transfer_unwrap_phase_var.get())
+    )
+    workspace._render_fft_result(result, prepare_frequency_plot_values(result, unwrap_phase=unwrap_phase))
     workspace._latest_frequency_result = result
     diagnostics_callback = getattr(workspace, "_update_frequency_diagnostics", None)
     if diagnostics_callback is not None:

@@ -30,16 +30,10 @@ from tkinter import messagebox, ttk
 
 from .datasets import (
     DatasetContext,
-    apply_literal_role_combobox_style,
-    apply_role_combobox_style,
-    format_source_paths,
-    get_available_dataset_roles,
-    get_column_role_cell_colors,
-    get_preferred_role_column,
-    infer_column_roles,
     refresh_dataset_table,
     select_dataset_in_table,
 )
+from .plot_gallery import PlotGallery
 from .layout import build_main_ui
 from .preview import (
     clear_preview_plot,
@@ -51,17 +45,17 @@ from .preview import (
     refresh_selected_dataset_preview_plot,
     refresh_preview_table,
 )
-from Source.shared.column_roles import summarize_column_roles
+from Source.shared.column_roles import (
+    get_available_column_roles,
+    get_column_role,
+    get_preferred_role_column,
+    infer_column_roles,
+    summarize_column_roles,
+)
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.presentation_shell import PresentationShellMixin
 from Source.shared.notifications import NotificationManager
 from Source.shared.plot_utils import normalize_x_values
-from Source.shared.table_adapter import (
-    is_tksheet_available,
-    set_configured_table_backend,
-    TREEVIEW_TABLE_BACKEND,
-    TKSHEET_TABLE_BACKEND,
-)
 from Source.shared.ui_state import UiStateVars
 from .state import (
     APP_TITLE,
@@ -100,6 +94,7 @@ class DataPreparationApp(PresentationShellMixin):
         self.dataset_contexts: dict[str, DatasetContext] = {}
         self._analysis_workspaces: list[object] = []
         self._comparison_windows: list[object] = []
+        self._plot_gallery: PlotGallery | None = None
         self._preview_plot_figure: plt.Figure | None = None
         self._preview_plot_canvas: FigureCanvasTkAgg | None = None
         self._preview_plot_toolbar: NavigationToolbar2Tk | None = None
@@ -107,22 +102,8 @@ class DataPreparationApp(PresentationShellMixin):
         self.notifications = NotificationManager()
         self.style_vars = UiStateVars()
         self.style_vars.load_from_file()
-        preferred_table_backend = self.style_vars.table_backend.get()
-        try:
-            preferred_table_backend = set_configured_table_backend(preferred_table_backend)
-        except ValueError:
-            preferred_table_backend = TREEVIEW_TABLE_BACKEND
-            set_configured_table_backend(preferred_table_backend)
-        if preferred_table_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
-            preferred_table_backend = TREEVIEW_TABLE_BACKEND
-            set_configured_table_backend(preferred_table_backend)
-            self.style_vars.table_backend.set(preferred_table_backend)
-            self.style_vars.save_to_file()
-        self.table_backend_var = tk.StringVar(value=preferred_table_backend)
 
-        self.selected_dataset_var = tk.StringVar(value="No dataset selected")
         self.dataset_shape_var = tk.StringVar(value="Select a dataset for preparation")
-        self.dataset_source_var = tk.StringVar(value="")
         self.dataset_note_var = tk.StringVar(value="")
 
         self.column_output_name_var = tk.StringVar(value=self.session.output_dataset_name)
@@ -144,6 +125,7 @@ class DataPreparationApp(PresentationShellMixin):
         self._preview_plot_signal_selector_menu: tk.Menu | None = None
         self._preview_plot_signal_vars: dict[str, tk.BooleanVar] = {}
         self._preview_plot_signal_selector_sync_in_progress = False
+        self._preview_plot_refresh_job_id: str | None = None
         self.dataset_table: ttk.Treeview | None = None
         self.role_editor_column_combo: ttk.Combobox | None = None
         self.role_editor_value_combo: ttk.Combobox | None = None
@@ -167,9 +149,6 @@ class DataPreparationApp(PresentationShellMixin):
 
     def _set_selected_dataset_path(self, dataset_path: str | None) -> None:
         self.session.selected_dataset_path = dataset_path
-        display_name = os.path.basename(dataset_path) if dataset_path else ""
-        if self.selected_dataset_var.get() != display_name:
-            self.selected_dataset_var.set(display_name)
 
     def _set_output_dataset_name(self, output_name: str, *, update_var: bool = True) -> None:
         self.session.output_dataset_name = output_name.strip()
@@ -224,27 +203,6 @@ class DataPreparationApp(PresentationShellMixin):
 
     def _handle_output_dataset_name_changed(self, *_args: object) -> None:
         self._set_output_dataset_name(self.column_output_name_var.get(), update_var=False)
-
-    def _apply_table_backend_selection(self) -> None:
-        requested_backend = self.table_backend_var.get()
-        if requested_backend == TKSHEET_TABLE_BACKEND and not is_tksheet_available():
-            set_configured_table_backend(TREEVIEW_TABLE_BACKEND)
-            if self.table_backend_var.get() != TREEVIEW_TABLE_BACKEND:
-                self.table_backend_var.set(TREEVIEW_TABLE_BACKEND)
-            self.style_vars.table_backend.set(TREEVIEW_TABLE_BACKEND)
-            self.style_vars.save_to_file()
-            self.notify_warning(
-                "tksheet preview backend unavailable",
-                "Install the optional tksheet package to enable it from the View menu.",
-            )
-            return
-
-        normalized_backend = set_configured_table_backend(requested_backend)
-        if self.table_backend_var.get() != normalized_backend:
-            self.table_backend_var.set(normalized_backend)
-        self.style_vars.table_backend.set(normalized_backend)
-        self.style_vars.save_to_file()
-        self._refresh_active_preview_table()
 
     def _refresh_active_preview_table(self) -> None:
         selected_path = self._get_single_selected_file_path()
@@ -362,6 +320,20 @@ class DataPreparationApp(PresentationShellMixin):
     def open_comparison_window(self) -> None:
         return open_comparison_window(self)
 
+    def open_plot_gallery(self) -> None:
+        if self._plot_gallery is not None:
+            self._plot_gallery.focus()
+            return
+        self._plot_gallery = PlotGallery(
+            self.root,
+            style=self.style_vars.to_plot_style(),
+            on_close=self._on_plot_gallery_closed,
+        )
+
+    def _on_plot_gallery_closed(self, gallery: PlotGallery) -> None:
+        if self._plot_gallery is gallery:
+            self._plot_gallery = None
+
     def unload_selected_files(self) -> None:
         return unload_selected_files(self)
 
@@ -432,6 +404,8 @@ class DataPreparationApp(PresentationShellMixin):
         """Persist plot style and close the root window cleanly."""
 
         self.style_vars.save_to_file()
+        if self._plot_gallery is not None:
+            self._plot_gallery.close()
         if self._style_dialog is not None:
             try:
                 self._style_dialog.destroy()
@@ -454,7 +428,6 @@ class DataPreparationApp(PresentationShellMixin):
 
         self._set_selected_dataset_path(selected_path)
         self.dataset_shape_var.set(f"{dataframe.shape[0]} rows x {dataframe.shape[1]} columns")
-        self.dataset_source_var.set(format_source_paths(context.source_paths))
         note_parts = [part for part in [context.description, summarize_column_roles(context.column_roles)] if part]
         self.dataset_note_var.set("\n".join(note_parts))
         self._refresh_role_editor(dataframe, context.column_roles)
@@ -468,7 +441,6 @@ class DataPreparationApp(PresentationShellMixin):
         message = "Select a dataset to preview or prepare it."
         self._set_selected_dataset_path(None)
         self.dataset_shape_var.set(message)
-        self.dataset_source_var.set("")
         self.dataset_note_var.set("")
         self._clear_role_editor()
         self._reset_row_range()
@@ -708,9 +680,9 @@ class DataPreparationApp(PresentationShellMixin):
             menu=self._column_selector_menu,
             button=self._column_selector_button,
             items=columns,
-            selected_items=[],
+            selected_items=self.session.selected_columns,
             max_items=COLUMN_SELECTOR_MAX_ITEMS,
-            get_colors=lambda column_name: self._get_column_selector_colors(column_name, column_roles),
+            get_colors=None,
             on_changed=self._handle_column_selector_changed,
             on_select_all=self._select_all_columns,
             on_clear_selection=self._clear_selected_columns,
@@ -737,64 +709,40 @@ class DataPreparationApp(PresentationShellMixin):
     def _set_preview_plot_signal_options(
         self,
         columns: list[str],
-        column_roles: dict[str, str],
         max_columns: int,
         selected_columns: list[str] | None = None,
     ) -> None:
         if self._preview_plot_signal_selector_menu is None or self._preview_plot_signal_selector_button is None:
             return
 
-        visible_columns = columns[:PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS]
-        self._preview_plot_signal_hidden_count = max(0, len(columns) - len(visible_columns))
-        self._preview_plot_signal_vars = {}
-        self._preview_plot_signal_selector_menu.delete(0, tk.END)
-
-        if not visible_columns:
+        if not columns:
             self._clear_preview_plot_signal_selector()
             return
 
-        self._preview_plot_signal_selector_menu.add_command(label="Select all", command=self._select_all_preview_plot_signals)
-        self._preview_plot_signal_selector_menu.add_command(label="Clear selection", command=self._clear_selected_preview_plot_signals)
-        if self._preview_plot_signal_hidden_count:
-            self._preview_plot_signal_selector_menu.add_separator()
-            self._preview_plot_signal_selector_menu.add_command(
-                label=(
-                    f"Showing first {len(visible_columns)} of {len(columns)} channels"
-                ),
-                state=tk.DISABLED,
-            )
-        self._preview_plot_signal_selector_menu.add_separator()
-
         resolved_selected_columns = [
-            column for column in (selected_columns or visible_columns[:max_columns]) if column in visible_columns
+            column for column in (selected_columns or columns[:max_columns]) if column in columns
         ]
         if not resolved_selected_columns:
-            resolved_selected_columns = visible_columns[:max_columns]
-        selected_column_set = set(resolved_selected_columns)
+            resolved_selected_columns = columns[:max_columns]
         self._preview_plot_signal_selector_sync_in_progress = True
-        for column_name in visible_columns:
-            variable = tk.BooleanVar(value=column_name in selected_column_set)
-            variable.trace_add("write", self._handle_preview_plot_signal_selector_changed)
-            self._preview_plot_signal_vars[column_name] = variable
-            background, foreground = self._get_column_selector_colors(column_name, column_roles)
-            self._preview_plot_signal_selector_menu.add_checkbutton(
-                label=column_name,
-                variable=variable,
-                onvalue=True,
-                offvalue=False,
-                background=background,
-                foreground=foreground,
-                activebackground=background,
-                activeforeground=foreground,
-                selectcolor=background,
-            )
+        self._preview_plot_signal_vars, self._preview_plot_signal_hidden_count = self._build_checkbutton_selector_menu(
+            menu=self._preview_plot_signal_selector_menu,
+            button=self._preview_plot_signal_selector_button,
+            items=columns,
+            selected_items=resolved_selected_columns,
+            max_items=PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS,
+            get_colors=None,
+            on_changed=self._handle_preview_plot_signal_selector_changed,
+            on_select_all=self._select_all_preview_plot_signals,
+            on_clear_selection=self._clear_selected_preview_plot_signals,
+            hidden_label="channels",
+        )
         self._preview_plot_signal_selector_sync_in_progress = False
 
-        self._preview_plot_signal_selector_button.state(["!disabled"])
         if self._preview_plot_signal_hidden_count and not self._preview_plot_signal_warning_shown:
             self.notifications.warning(
                 "Preview channel selector limited for very wide datasets: showing first "
-                f"{len(visible_columns)} of {len(columns)} channels."
+                f"{len(self._preview_plot_signal_vars)} of {len(columns)} channels."
             )
             self._preview_plot_signal_warning_shown = True
         self._update_preview_plot_signal_summary()
@@ -868,13 +816,6 @@ class DataPreparationApp(PresentationShellMixin):
         self.set_selector_items_state(self._column_selection_vars, False)
         self._update_column_selection_summary()
 
-    def _get_column_selector_colors(self, column_name: str, column_roles: dict[str, str]) -> tuple[str, str]:
-        if not column_name:
-            return ("#f8fafc", "#111111")
-        if column_name not in column_roles:
-            return ("#f8fafc", "#111111")
-        return get_column_role_cell_colors(column_roles.get(column_name, "metadata"))
-
     def _handle_file_selection_changed(self, _event: tk.Event | None = None) -> None:
         self._handle_dataset_combo_changed(_event)
 
@@ -884,14 +825,14 @@ class DataPreparationApp(PresentationShellMixin):
 
         columns = [str(column) for column in dataframe.columns]
         self.role_editor_column_combo.configure(values=columns)
-        self.role_editor_value_combo.configure(values=get_available_dataset_roles())
+        self.role_editor_value_combo.configure(values=get_available_column_roles())
 
         selected_column = self.role_editor_column_var.get().strip()
         if selected_column not in columns:
             selected_column = columns[0] if columns else ""
             self._set_role_editor_column(selected_column)
 
-        selected_role = "time" if selected_column and column_roles.get(selected_column) == "time" else "time"
+        selected_role = get_column_role(column_roles, selected_column) if selected_column else "metadata"
         if self.role_editor_value_var.get().strip() != selected_role:
             self._set_role_editor_value(selected_role)
 
@@ -901,14 +842,15 @@ class DataPreparationApp(PresentationShellMixin):
         if self.role_editor_column_combo is not None:
             self.role_editor_column_combo.configure(values=[])
         if self.role_editor_value_combo is not None:
-            self.role_editor_value_combo.configure(values=get_available_dataset_roles())
+            self.role_editor_value_combo.configure(values=get_available_column_roles())
         self._set_role_editor_column("")
         self._set_role_editor_value("time")
         self._refresh_role_editor_styles({})
 
     def _refresh_role_editor_styles(self, column_roles: dict[str, str]) -> None:
-        apply_role_combobox_style(self.role_editor_column_combo, column_roles, self.role_editor_column_var.get().strip())
-        apply_literal_role_combobox_style(self.role_editor_value_combo, self.role_editor_value_var.get().strip() or "time")
+        for combobox in (self.role_editor_column_combo, self.role_editor_value_combo):
+            if combobox is not None:
+                combobox.configure(style="TCombobox")
 
     def _handle_role_editor_column_changed(self, *_args: object) -> None:
         self._set_role_editor_column(self.role_editor_column_var.get(), update_var=False)
@@ -919,7 +861,7 @@ class DataPreparationApp(PresentationShellMixin):
         context = self.dataset_contexts.get(selected_path, DatasetContext())
         column_name = self.role_editor_column_var.get().strip()
         if column_name:
-            self._set_role_editor_value("time")
+            self._set_role_editor_value(get_column_role(context.column_roles, column_name))
         self._refresh_role_editor_styles(context.column_roles)
 
     def _handle_role_editor_value_changed(self, *_args: object) -> None:
@@ -1056,7 +998,11 @@ class DataPreparationApp(PresentationShellMixin):
         refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_MAX_COLUMNS)
 
     def _handle_preview_plot_control_changed(self, _event: tk.Event | None = None) -> None:
-        handle_preview_plot_control_changed(self, PREVIEW_PLOT_MAX_COLUMNS)
+        self._schedule_debounced(
+            self.root,
+            "_preview_plot_refresh_job_id",
+            lambda: handle_preview_plot_control_changed(self, PREVIEW_PLOT_MAX_COLUMNS),
+        )
 
     def _get_selected_preview_plot_columns(self, dataframe: pd.DataFrame) -> list[str]:
         return get_selected_preview_plot_columns(self, dataframe, PREVIEW_PLOT_MAX_COLUMNS)

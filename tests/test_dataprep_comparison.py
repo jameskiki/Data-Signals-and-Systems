@@ -2,9 +2,11 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 from Source.datapreparation_app.comparison import (
     add_overlay_deviation_highlights,
+    build_comparison_display_frames,
     build_difference_figure,
     build_comparison_summary_frame,
     build_dataset_detail_text,
@@ -166,6 +168,27 @@ def test_trim_dataframes_to_shared_x_overlap_trims_every_dataset() -> None:
 
     assert trimmed["baseline"]["time_s"].tolist() == [1.0, 2.0]
     assert trimmed["candidate"]["time_s"].tolist() == [1.0, 2.0]
+
+
+def test_build_comparison_display_frames_applies_shared_plot_transforms() -> None:
+    data_frames = {
+        "baseline": pd.DataFrame({"time_s": [0.0, 1.0, 2.0], "signal": [0.0, 2.0, 4.0]}),
+        "candidate": pd.DataFrame({"time_s": [1.0, 2.0, 3.0], "signal": [10.0, 20.0, 30.0]}),
+    }
+
+    frames = build_comparison_display_frames(
+        ["baseline", "candidate"],
+        data_frames,
+        ["signal"],
+        x_column="time_s",
+        trim_overlap=True,
+        normalize=True,
+        zero_start=True,
+    )
+
+    assert frames["baseline"]["time_s"].tolist() == [1.0, 2.0]
+    np.testing.assert_allclose(frames["baseline"]["signal"], [0.0, 0.5])
+    np.testing.assert_allclose(frames["candidate"]["signal"], [0.0, 0.5])
 
 
 def test_build_difference_figure_aligns_values_on_selected_x_axis() -> None:

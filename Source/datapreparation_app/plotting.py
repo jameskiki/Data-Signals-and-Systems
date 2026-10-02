@@ -8,11 +8,11 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
-from Source.shared.plot_options import PlotOptions, PlotStyle
+from Source.shared.column_roles import get_column_role, get_preferred_role_column, sort_columns_by_role
+from Source.shared.plot_options import PlotDescriptor, PlotOptions, PlotStyle
 from Source.shared.plot_utils import create_plot_figure
 from Source.shared.presentation_shell import PresentationShellMixin
 
-from .datasets import get_column_role, sort_columns_by_role
 from .state import PREVIEW_PLOT_RENDER_MAX_POINTS
 
 class PlotOptionsDialog:
@@ -122,7 +122,7 @@ def refresh_preview_plot(
         clear_preview_plot(app, "No numeric non-time columns available for overview plot.")
         return
 
-    time_col = _get_time_role_column(resolved_roles)
+    time_col = get_preferred_role_column(resolved_roles, "time")
     xcol = time_col if time_col is not None and time_col in dataframe.columns else "Index"
     sampled_dataframe = _downsample_preview_dataframe(dataframe, PREVIEW_PLOT_RENDER_MAX_POINTS)
     sampled_rows = len(sampled_dataframe)
@@ -148,7 +148,6 @@ def refresh_preview_plot(
         plot_options=plot_options,
         selected_file_paths=selected_file_paths,
         data_frames=data_frames,
-        column_roles=resolved_roles,
     )
 
     app._render_embedded_figure(
@@ -160,6 +159,7 @@ def refresh_preview_plot(
         root_window=app.root,
         draw_idle_on_reuse=True,
         clear_container_before_create=True,
+        plot_type=PlotDescriptor("Time series", "Preview overlay"),
     )
 
     axes = figure.get_axes()
@@ -197,7 +197,6 @@ def refresh_preview_plot_signal_controls(
     selected_columns = _get_preserved_preview_plot_columns(app, available_columns)
     app._set_preview_plot_signal_options(
         available_columns,
-        resolved_roles,
         max_columns,
         selected_columns=selected_columns[:max_columns],
     )
@@ -292,13 +291,6 @@ def _get_preserved_preview_plot_columns(app, available_columns: list[str]) -> li
 def _get_selected_dataset_roles(app, selected_path: str) -> dict[str, str]:
     context = app.dataset_contexts.get(selected_path)
     return dict(context.column_roles) if context is not None else {}
-
-
-def _get_time_role_column(column_roles: dict[str, str]) -> str | None:
-    for column, role in column_roles.items():
-        if role == "time":
-            return column
-    return None
 
 
 def _attach_span_selector(app, axis) -> None:

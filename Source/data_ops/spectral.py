@@ -1,6 +1,7 @@
 """Frequency-domain analysis helpers."""
 
 from dataclasses import dataclass
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -36,6 +37,43 @@ class FrequencySpectrumResult:
     segment_length: int | None = None
     overlap_fraction: float | None = None
     segment_count: int | None = None
+
+
+@dataclass(frozen=True)
+class ResidualSpectrumResult:
+    """Computed residual trace and optional quick-look amplitude spectrum."""
+
+    residual_values: np.ndarray
+    frequencies: np.ndarray | None
+    amplitudes: np.ndarray | None
+    frequency_label: str
+
+
+def compute_residual_spectrum(
+    original_values: Sequence[float],
+    filtered_values: Sequence[float],
+    sample_spacing: float,
+) -> ResidualSpectrumResult:
+    """Compute original-minus-filtered residuals and their quick-look spectrum."""
+
+    sample_count = min(len(original_values), len(filtered_values))
+    original = np.asarray(original_values[:sample_count], dtype=float)
+    filtered = np.asarray(filtered_values[:sample_count], dtype=float)
+    residual = original - filtered
+    finite_residual = residual[np.isfinite(residual)]
+    if finite_residual.size < 4:
+        return ResidualSpectrumResult(residual, None, None, "")
+
+    centered = finite_residual - np.mean(finite_residual)
+    spectrum = np.fft.rfft(centered)
+    frequencies = (
+        np.fft.rfftfreq(centered.size, d=sample_spacing)
+        if sample_spacing > 0
+        else np.arange(spectrum.size, dtype=float)
+    )
+    frequency_label = "Frequency [Hz]" if sample_spacing > 0 else "FFT bin"
+    amplitudes = np.abs(spectrum) / max(centered.size, 1)
+    return ResidualSpectrumResult(residual, frequencies, amplitudes, frequency_label)
 
 
 def compute_fft_spectrum(

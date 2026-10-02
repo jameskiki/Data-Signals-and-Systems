@@ -49,11 +49,10 @@ There is also a `Plot Data` popup in the main window for quick ad-hoc inspection
 | Category | Meaning | Typical columns | Used for |
 | --- | --- | --- | --- |
 | `time` / reference | Shared axis for ordered samples | `time_s`, timestamp, position | Preferred plot X axis and range selection |
-| `process` | Numeric value that belongs to the measured process | pressure, force, displacement, sensor | Plotting, statistics, comparison, and analysis |
-| `ambient` | Numeric environmental or surrounding condition | room temperature, humidity, ambient pressure | Context, correlation, and analysis |
-| Metadata | Context or labels rather than numeric signals | ID, marker, label, status | Context, grouping, sanity checks |
+| `signal` | Numeric value available for plotting and analysis | pressure, force, temperature, actuator input, system output | Plotting, statistics, comparison, and analysis |
+| `metadata` | Context or labels rather than numeric signals | ID, marker, label, status | Context, grouping, sanity checks |
 
-Multiple process and ambient columns can be assigned. Only the time/reference category is intended to identify a shared x-axis.
+Multiple signal and metadata columns can be assigned. Only the time/reference category identifies the preferred shared x-axis.
 
 ## Example Figures
 
@@ -104,9 +103,12 @@ Most of the visible options fall into a few groups: dataset name, channel select
 Use one of these entry points from the main window:
 
 - `Files -> Load Files` for your own data files
-- `Files -> Load Demo/Test Signal` for built-in examples
+- `Demo -> [example] -> Load This Demo` for a built-in example
+- `Demo -> Load All Demo/Test Signals` to load the built-in examples together
 
 If you want a structured manual validation pass using the built-in demos, see [demo-validation.md](demo-validation.md).
+
+Use `Demo -> Plot Gallery` to inspect time-series, FFT amplitude, Welch PSD, coherence, transfer/Bode, spectrogram, filtered-signal, residual-spectrum, dataset overlay/difference, and cycle plots. The plot controls choose the analysis and display settings; `Gallery demo inputs` selects which fixed comparison examples are shown.
 
 Supported source file types are documented in `data-formats.md`.
 
@@ -127,12 +129,12 @@ Check three things: the row and column count look reasonable, the likely time an
 
 In the main window, use the `Column Categories` section below the core preparation controls.
 
-Select a column, choose `time`, `process`, or `ambient`, then click `Set Category`.
+Select a column, choose `time`, `signal`, or `metadata`, then click `Set Category`.
 
 What changes when roles are correct:
 
 - Better default X axis: `time_s` is preferred over `Index`.
-- Multiple process and ambient columns are supported.
+- Multiple signal and metadata columns are supported.
 - Text and categorical columns remain metadata.
 
 If the detected categories are poor, use `Auto-detect Categories` or select a column and set its category manually.

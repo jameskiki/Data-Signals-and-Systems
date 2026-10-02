@@ -3,11 +3,11 @@
 import os
 
 from Source.data_ops.frame_ops import select_dataframe_columns, split_dataframe_by_index_ranges
+from Source.shared.column_roles import project_column_roles
 from .datasets import (
     build_virtual_dataset_path,
     collect_source_paths,
     parse_split_ranges,
-    project_column_roles,
     refresh_dataset_table,
     register_dataset,
     select_dataset_in_table,

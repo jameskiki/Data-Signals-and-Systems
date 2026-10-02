@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from Source.shared.documentation_links import DOCUMENTATION_LINKS
+from Source.shared.plot_controls import build_time_series_plot_controls
 from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
 from .state import DERIVED_OPERATIONS, FFT_WINDOW_OPTIONS, PREVIEW_ROW_LIMIT, UI_FREQUENCY_ANALYSIS_METHODS
@@ -16,21 +17,6 @@ def build_analysis_workspace_ui(workspace) -> None:
     menu_bar = tk.Menu(workspace.window)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)
-    preview_backend_menu = tk.Menu(view_menu, tearoff=0)
-    preview_backend_menu.add_radiobutton(
-        label="Treeview",
-        value="treeview",
-        variable=workspace.table_backend_var,
-        command=workspace._apply_table_backend_selection,
-    )
-    preview_backend_menu.add_radiobutton(
-        label="tksheet",
-        value="tksheet",
-        variable=workspace.table_backend_var,
-        command=workspace._apply_table_backend_selection,
-    )
-    view_menu.add_cascade(label="Preview Table Backend", menu=preview_backend_menu)
-    view_menu.add_separator()
     view_menu.add_command(
         label="Plot Style...",
         command=lambda: open_plot_style_dialog(
@@ -131,42 +117,18 @@ def build_notebook(workspace, parent: ttk.Frame) -> None:
 
 
 def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:
-    controls = ttk.Frame(parent)
-    controls.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
-
-    ttk.Label(controls, text="X-axis").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-    workspace.plot_x_combo = ttk.Combobox(controls, textvariable=workspace.plot_x_var, state="readonly")
-    workspace.plot_x_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-
-    ttk.Label(controls, text="Y columns").grid(row=1, column=0, sticky="nw", padx=5, pady=5)
-    plot_selector_row = ttk.Frame(controls)
-    plot_selector_row.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
-    plot_selector_row.columnconfigure(0, weight=1)
-
-    workspace.plot_y_selector_button = ttk.Menubutton(
-        plot_selector_row,
-        textvariable=workspace.plot_y_selection_summary_var,
-        direction="below",
+    plot_controls = build_time_series_plot_controls(
+        parent,
+        x_variable=workspace.plot_x_var,
+        y_summary_variable=workspace.plot_y_selection_summary_var,
+        subplots_variable=workspace.plot_subplots_var,
+        on_select_all=workspace._select_all_plot_y_columns,
+        on_clear_selection=workspace._clear_selected_plot_y_columns,
+        on_update=workspace._update_plot,
     )
-    workspace.plot_y_selector_button.grid(row=0, column=0, sticky="ew")
-    workspace.plot_y_selector_menu = tk.Menu(workspace.plot_y_selector_button, tearoff=0)
-    workspace.plot_y_selector_button.configure(menu=workspace.plot_y_selector_menu)
-    workspace.plot_y_selector_button.state(["disabled"])
-
-    plot_selector_actions = ttk.Frame(plot_selector_row)
-    plot_selector_actions.grid(row=0, column=1, sticky="e", padx=(8, 0))
-    ttk.Button(plot_selector_actions, text="All", width=6, command=workspace._select_all_plot_y_columns).pack(side=tk.LEFT)
-    ttk.Button(plot_selector_actions, text="None", width=6, command=workspace._clear_selected_plot_y_columns).pack(
-        side=tk.LEFT,
-        padx=(6, 0),
-    )
-
-    ttk.Checkbutton(controls, text="Subplots", variable=workspace.plot_subplots_var).grid(
-        row=2, column=0, sticky="w", padx=5, pady=5
-    )
-    ttk.Button(controls, text="Update Plot", command=workspace._update_plot).grid(row=2, column=1, sticky="ew", padx=5, pady=5)
-
-    controls.columnconfigure(1, weight=1)
+    workspace.plot_x_combo = plot_controls.x_combo
+    workspace.plot_y_selector_button = plot_controls.y_selector_button
+    workspace.plot_y_selector_menu = plot_controls.y_selector_menu
 
     workspace.plot_notebook = ttk.Notebook(parent)
     workspace.plot_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)

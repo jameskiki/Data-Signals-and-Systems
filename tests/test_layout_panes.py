@@ -66,6 +66,8 @@ class FakeNotebook(FakeWidget):
 
 
 class FakeMenu:
+    instances = []
+
     def __init__(self, master=None, tearoff=0):
         self.master = master
         self.tearoff = tearoff
@@ -73,6 +75,7 @@ class FakeMenu:
         self.radiobuttons = []
         self.cascades = []
         self.separators = 0
+        FakeMenu.instances.append(self)
 
     def add_command(self, **kwargs):
         self.commands.append(kwargs)
@@ -114,6 +117,7 @@ class FakeStatusBar(FakeWidget):
 
 def _patch_common_widgets(monkeypatch, module):
     FakePanedwindow.instances = []
+    FakeMenu.instances = []
     monkeypatch.setattr(module.tk, "Menu", FakeMenu)
     monkeypatch.setattr(module, "StatusBar", FakeStatusBar)
     monkeypatch.setattr(module.ttk, "Frame", FakeWidget)
@@ -141,8 +145,6 @@ def test_analysis_workspace_uses_nested_panes(monkeypatch):
     workspace = SimpleNamespace(
         window=FakeWidget(),
         notifications=object(),
-        table_backend_var=object(),
-        _apply_table_backend_selection=lambda: None,
         open_documentation=lambda _path: None,
     )
 
@@ -170,7 +172,6 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
     app = SimpleNamespace(
         root=FakeWidget(),
         notifications=object(),
-        table_backend_var=object(),
         load_files=lambda: None,
         _load_demo_dataset=lambda _key: None,
         load_comparison_demo_set=lambda: None,
@@ -183,7 +184,7 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
         plot_selected_data=lambda: None,
         open_analysis_workspace=lambda: None,
         open_comparison_window=lambda: None,
-        _apply_table_backend_selection=lambda: None,
+        open_plot_gallery=lambda: None,
         open_documentation=lambda _path: None,
     )
 
@@ -194,3 +195,18 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
     assert pane.kwargs["orient"] == dataprep_layout.tk.HORIZONTAL
     assert len(pane.add_calls) == 2
     assert [call[1] for call in pane.add_calls] == [{"weight": 3}, {"weight": 5}]
+
+    menu_bar = next(menu for menu in FakeMenu.instances if menu.master is app.root)
+    files_cascade = next(cascade for cascade in menu_bar.cascades if cascade["label"] == "Files")
+    demo_cascade = next(cascade for cascade in menu_bar.cascades if cascade["label"] == "Demo")
+    assert all(cascade["label"] != "Load Demo/Test Signal" for cascade in files_cascade["menu"].cascades)
+    assert demo_cascade["menu"].commands[0] == {
+        "label": "Plot Gallery",
+        "command": app.open_plot_gallery,
+    }
+    assert demo_cascade["menu"].commands[-1] == {
+        "label": "Load All Demo/Test Signals",
+        "command": app.load_all_demo_test_signals,
+    }
+    assert any(cascade["label"] == "Spectral Reference Signal" for cascade in demo_cascade["menu"].cascades)
+    assert any(cascade["label"] == "Comparison Validation Set" for cascade in demo_cascade["menu"].cascades)

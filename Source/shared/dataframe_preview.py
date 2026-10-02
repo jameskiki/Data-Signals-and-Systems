@@ -49,14 +49,10 @@ def render_dataframe_preview(
     *,
     layout: str = "pack",
     empty_message: str | None = None,
-    backend: str | None = None,
 ) -> tk.Widget | None:
     """Render a scrollable preview of the first dataframe rows.
 
-    Uses a table widget adapter to support multiple backends (Treeview, tksheet, etc).
-    The backend is selected via the optional *backend* override or the
-    EVALDATA_TABLE_BACKEND environment variable.
-    Defaults to ttk.Treeview for compatibility.
+    Uses tksheet for a resource-efficient, spreadsheet-style table.
     """
 
     _clear_container(container)
@@ -76,7 +72,7 @@ def render_dataframe_preview(
     outer_frame.columnconfigure(0, weight=1)
 
     # Create adapter and configure widget
-    adapter = create_table_adapter(outer_frame, selectmode="none", backend=backend)
+    adapter = create_table_adapter(outer_frame)
     
     # Build column specs with headers and metadata
     column_specs = []
@@ -97,10 +93,11 @@ def render_dataframe_preview(
     
     adapter.configure_columns(columns, column_specs)
 
-    # Insert data rows
     formatted_frame = preview_frame.astype(object).where(pd.notna(preview_frame), "")
-    for row_values in formatted_frame.itertuples(index=False, name=None):
-        adapter.insert_row(tuple(format_display_value(v) for v in row_values))
+    adapter.set_rows([
+        [format_display_value(value) for value in row_values]
+        for row_values in formatted_frame.itertuples(index=False, name=None)
+    ])
 
     # Set up scrollbars
     widget = cast(_ScrollableWidget, adapter.get_widget())

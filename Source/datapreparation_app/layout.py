@@ -15,8 +15,16 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar = tk.Menu(app.root)
 
     file_menu = tk.Menu(menu_bar, tearoff=0)
-    demo_menu = tk.Menu(file_menu, tearoff=0)
     file_menu.add_command(label="Load Files", command=app.load_files)
+    file_menu.add_command(label="Unload File", command=app.unload_selected_files)
+    file_menu.add_separator()
+    file_menu.add_command(label="Merge Selected Files", command=app.merge_selected_files)
+    file_menu.add_command(label="Export Selected Clean Data", command=app.export_clean_data)
+    menu_bar.add_cascade(label="Files", menu=file_menu)
+
+    demo_menu = tk.Menu(menu_bar, tearoff=0)
+    demo_menu.add_command(label="Plot Gallery", command=app.open_plot_gallery)
+    demo_menu.add_separator()
     comparison_demo_keys = {spec.key for spec in COMPARISON_DEMO_SPECS}
     for spec in DEMO_DATASET_SPECS:
         if spec.key in comparison_demo_keys:
@@ -42,12 +50,7 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     demo_menu.add_cascade(label="Comparison Validation Set", menu=comparison_menu)
     demo_menu.add_separator()
     demo_menu.add_command(label="Load All Demo/Test Signals", command=app.load_all_demo_test_signals)
-    file_menu.add_cascade(label="Load Demo/Test Signal", menu=demo_menu)
-    file_menu.add_command(label="Unload File", command=app.unload_selected_files)
-    file_menu.add_separator()
-    file_menu.add_command(label="Merge Selected Files", command=app.merge_selected_files)
-    file_menu.add_command(label="Export Selected Clean Data", command=app.export_clean_data)
-    menu_bar.add_cascade(label="Files", menu=file_menu)
+    menu_bar.add_cascade(label="Demo", menu=demo_menu)
 
     preparation_menu = tk.Menu(menu_bar, tearoff=0)
     preparation_menu.add_command(label="Create Prepared Dataset", command=app.create_prepared_dataset)
@@ -64,21 +67,6 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)
-    preview_backend_menu = tk.Menu(view_menu, tearoff=0)
-    preview_backend_menu.add_radiobutton(
-        label="Treeview",
-        value="treeview",
-        variable=app.table_backend_var,
-        command=app._apply_table_backend_selection,
-    )
-    preview_backend_menu.add_radiobutton(
-        label="tksheet",
-        value="tksheet",
-        variable=app.table_backend_var,
-        command=app._apply_table_backend_selection,
-    )
-    view_menu.add_cascade(label="Preview Table Backend", menu=preview_backend_menu)
-    view_menu.add_separator()
     view_menu.add_command(
         label="Plot Style...",
         command=lambda: open_plot_style_dialog(
@@ -358,7 +346,7 @@ def build_role_controls_tab(app, parent: ttk.Frame) -> None:
     role_frame.columnconfigure(1, weight=1)
     ttk.Label(
         role_frame,
-        text="Classify numeric columns as the time/reference axis, process values, or ambient values. Multiple process and ambient columns are supported; text columns remain metadata.",
+        text="Classify columns as the time/reference axis, numeric signals, or metadata. Only one column can be the time/reference axis.",
         wraplength=420,
         justify=tk.LEFT,
     ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(0, 6))

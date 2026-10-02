@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 
 from Source.analysis_app.actions import FrameUpdate
@@ -41,7 +42,7 @@ class DummyWorkspace:
 
     def __init__(self):
         self.session = SimpleNamespace(working_frame=pd.DataFrame({"time_s": [0.0, 1.0], "sensor": [1.0, 2.0]}))
-        self.column_roles = {"sensor": "pressure", "time_s": "time"}
+        self.column_roles = {"sensor": "signal", "time_s": "time"}
         self.notifications = DummyNotifications()
 
         self.active_column_var = DummyVar("sensor")
@@ -85,7 +86,9 @@ class DummyWorkspace:
 
         self.replace_calls = []
         self.render_fft_calls = []
+        self.rendered_frequency_plot_values = []
         self.render_spectrogram_calls = []
+        self.rendered_spectrogram_plot_data = []
         self.render_cycle_calls = []
         self.render_filter_preview_calls = []
         self.render_filter_residual_calls = []
@@ -108,20 +111,22 @@ class DummyWorkspace:
             }
         )
 
-    def _render_fft_result(self, result):
+    def _render_fft_result(self, result, plot_values):
         self.render_fft_calls.append(result)
+        self.rendered_frequency_plot_values.append(plot_values)
 
-    def _render_spectrogram_result(self, result):
+    def _render_spectrogram_result(self, result, plot_data):
         self.render_spectrogram_calls.append(result)
+        self.rendered_spectrogram_plot_data.append(plot_data)
 
     def _render_cycle_result(self, result):
         self.render_cycle_calls.append(result)
 
-    def _render_signal_filter_preview(self, **kwargs):
-        self.render_filter_preview_calls.append(kwargs)
+    def _render_signal_filter_preview(self, plot_data):
+        self.render_filter_preview_calls.append(plot_data)
 
-    def _render_signal_filter_residual_preview(self, **kwargs):
-        self.render_filter_residual_calls.append(kwargs)
+    def _render_signal_filter_residual_preview(self, plot_data):
+        self.render_filter_residual_calls.append(plot_data)
 
     def _get_cycle_time_column(self):
         return "time_s"
@@ -156,7 +161,7 @@ def test_apply_filter_replaces_frame_with_role_override(monkeypatch):
     assert len(workspace.replace_calls) == 1
     call = workspace.replace_calls[0]
     assert call["focus_column"] == "sensor_filt"
-    assert call["role_overrides"] == {"sensor_filt": "pressure"}
+    assert call["role_overrides"] == {"sensor_filt": "signal"}
     assert "Created sensor_filt from sensor using simple filtering" in workspace.notifications.success_messages
 
 
@@ -245,12 +250,19 @@ def test_apply_derived_signal_converts_time_role_to_signal(monkeypatch):
 
 def test_compute_fft_fft_branch_renders_result(monkeypatch):
     workspace = DummyWorkspace()
-    fft_result = SimpleNamespace(analysis_name="FFT Amplitude", window="hann")
+    fft_result = SimpleNamespace(
+        analysis_name="FFT Amplitude",
+        window="hann",
+        frequencies=np.array([0.0, 1.0]),
+        amplitudes=np.array([0.0, 2.0]),
+        phase=None,
+    )
     monkeypatch.setattr(handlers, "compute_fft_spectrum", lambda **kwargs: fft_result)
 
     handlers.compute_fft(workspace)
 
     assert workspace.render_fft_calls == [fft_result]
+    np.testing.assert_array_equal(workspace.rendered_frequency_plot_values[0].frequencies, [1.0])
     assert workspace._latest_frequency_result is fft_result
     assert workspace.frequency_diagnostics_updates == [fft_result]
     assert len(workspace.notifications.success_messages) == 1
@@ -261,12 +273,24 @@ def test_compute_fft_spectrogram_branch_renders_spectrogram(monkeypatch):
     workspace = DummyWorkspace()
     workspace.frequency_analysis_var.set("Spectrogram")
     workspace._latest_frequency_result = object()
-    spectrogram_result = SimpleNamespace(segment_length=128, sampling_frequency=100.0)
+    spectrogram_result = SimpleNamespace(
+        segment_length=128,
+        sampling_frequency=100.0,
+        source_column="sensor",
+        reference_column="time_s",
+        times=np.array([0.0, 1.0]),
+        frequencies=np.array([1.0, 2.0]),
+        power=np.array([[1.0, 10.0], [100.0, 1000.0]]),
+    )
     monkeypatch.setattr(handlers, "compute_spectrogram", lambda **kwargs: spectrogram_result)
 
     handlers.compute_fft(workspace)
 
     assert workspace.render_spectrogram_calls == [spectrogram_result]
+    np.testing.assert_allclose(
+        workspace.rendered_spectrogram_plot_data[0].power_db,
+        [[0.0, 20.0], [10.0, 30.0]],
+    )
     assert workspace.render_fft_calls == []
     assert workspace._latest_frequency_result is None
     assert workspace.frequency_diagnostics_updates == [None]
@@ -407,9 +431,11 @@ def test_preview_signal_filter_result_renders_overlay_without_replacing(monkeypa
 
     assert workspace.replace_calls == []
     assert len(workspace.render_filter_preview_calls) == 1
-    call = workspace.render_filter_preview_calls[0]
-    assert call["source_column"] == "sensor"
-    assert call["operation"] == "moving_average"
+    plot_data = workspace.render_filter_preview_calls[0]
+    assert plot_data.y_label == "sensor"
+    assert "moving_average" in plot_data.title
+    np.testing.assert_array_equal(plot_data.original_values, [1.0, 2.0])
+    np.testing.assert_array_equal(plot_data.comparison_values, [0.9, 1.8])
 
 
 def test_preview_signal_filter_result_butterworth_blocks_on_invalid_settings(monkeypatch):
@@ -436,9 +462,10 @@ def test_preview_signal_filter_residual_renders_without_replacing(monkeypatch):
 
     assert workspace.replace_calls == []
     assert len(workspace.render_filter_residual_calls) == 1
-    call = workspace.render_filter_residual_calls[0]
-    assert call["source_column"] == "sensor"
-    assert call["operation"] == "moving_average"
+    plot_data = workspace.render_filter_residual_calls[0]
+    assert plot_data.deviation.title == "Residual Preview - sensor (moving_average)"
+    assert plot_data.deviation.series[0].label == "Residual"
+    assert plot_data.spectrum is None
 
 
 def test_preview_signal_filter_residual_butterworth_blocks_on_invalid_settings(monkeypatch):

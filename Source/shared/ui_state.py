@@ -10,9 +10,6 @@ from Source.shared.plot_options import PlotStyle
 from Source.shared.runtime_paths import get_legacy_state_dir, get_state_dir
 
 
-DEFAULT_TABLE_BACKEND = "treeview"
-
-
 def _ui_state_config_path() -> pathlib.Path:
     """Return the path to the global persisted UI state JSON file."""
 
@@ -63,7 +60,6 @@ class UiStateVars:
         self.font_family = tk.StringVar(value=defaults.font_family)
         self.marker = tk.StringVar(value=defaults.marker)
         self.legend_location = tk.StringVar(value=defaults.legend_location)
-        self.table_backend = tk.StringVar(value=DEFAULT_TABLE_BACKEND)
 
     def reset_to_defaults(self) -> None:
         """Reset all variables back to PlotStyle defaults."""
@@ -83,7 +79,6 @@ class UiStateVars:
         self.font_family.set(defaults.font_family)
         self.marker.set(defaults.marker)
         self.legend_location.set(defaults.legend_location)
-        self.table_backend.set(DEFAULT_TABLE_BACKEND)
 
     def save_to_file(self, path: pathlib.Path | None = None) -> None:
         """Persist current UI settings to *path* (default: user config)."""
@@ -104,7 +99,6 @@ class UiStateVars:
             "font_family": self.font_family.get(),
             "marker": self.marker.get(),
             "legend_location": self.legend_location.get(),
-            "table_backend": self.table_backend.get(),
         }
         try:
             target.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -123,7 +117,7 @@ class UiStateVars:
         bool_keys = {"show_grid", "show_subgrid", "show_legend"}
         float_keys = {"grid_alpha", "subgrid_alpha", "line_width", "marker_size"}
         int_keys = {"title_fontsize", "label_fontsize", "tick_fontsize", "legend_fontsize"}
-        str_keys = {"font_family", "marker", "legend_location", "table_backend"}
+        str_keys = {"font_family", "marker", "legend_location"}
 
         for key in bool_keys:
             if key in data:
