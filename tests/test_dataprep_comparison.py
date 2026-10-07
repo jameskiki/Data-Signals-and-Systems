@@ -1,11 +1,15 @@
 """Tests for lightweight session-dataset comparison helpers."""
 
+from types import SimpleNamespace
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
 from Source.datapreparation_app.comparison import (
+    ComparisonWindow,
     add_overlay_deviation_highlights,
+    align_comparison_series,
     build_comparison_display_frames,
     build_difference_figure,
     build_comparison_summary_frame,
@@ -117,6 +121,35 @@ def test_filter_visible_dataset_paths_preserves_order_and_defaults_new_paths_vis
     )
 
     assert visible_paths == ["baseline", "drift_spike", "new_run"]
+
+
+def test_filter_existing_paths_repairs_removed_comparison_baseline() -> None:
+    window = ComparisonWindow.__new__(ComparisonWindow)
+    window.dataset_paths = ["baseline", "candidate_a", "candidate_b"]
+    window.data_frames = {
+        "candidate_a": pd.DataFrame({"signal": [1.0]}),
+        "candidate_b": pd.DataFrame({"signal": [2.0]}),
+    }
+    window.baseline_path_var = SimpleNamespace(value="baseline")
+    window.baseline_path_var.get = lambda: window.baseline_path_var.value
+    window.baseline_path_var.set = lambda value: setattr(window.baseline_path_var, "value", value)
+    window.notifications = None
+
+    window._filter_existing_dataset_paths()
+
+    assert window.dataset_paths == ["candidate_a", "candidate_b"]
+    assert window.baseline_path_var.get() == "candidate_a"
+
+
+def test_align_comparison_series_by_original_index_when_values_are_missing() -> None:
+    baseline = pd.DataFrame({"signal": [10.0, float("nan"), 30.0]})
+    candidate = pd.DataFrame({"signal": [11.0, 21.0, 31.0]})
+
+    aligned = align_comparison_series(baseline, candidate, "signal", "Index")
+
+    assert aligned is not None
+    np.testing.assert_array_equal(aligned[0], [0.0, 2.0])
+    np.testing.assert_allclose(aligned[2] - aligned[1], [1.0, 1.0])
 
 
 def test_calculate_subplot_grid_balances_multiple_channels() -> None:

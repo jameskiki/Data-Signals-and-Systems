@@ -1,6 +1,7 @@
 matplotlib==3.10.8
 numpy==2.4.3
 pandas==3.0.1
+pyarrow>=23.0.0
 py2exe>=0.13.0.2; platform_system == "Windows"
 scipy>=1.14
 tksheet>=0.12.0

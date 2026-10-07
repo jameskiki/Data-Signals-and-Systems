@@ -1,5 +1,18 @@
 # User Guide
 
+## Large Dataset Display
+
+Large numeric time-series plots use a peak-preserving adaptive display, marked in
+the canvas. Zoom in to inspect original samples; zoom out for a reduced overview.
+Each channel preserves its own bucket minima/maxima, and missing-data gaps remain
+line breaks. This affects plotting only: filters, analysis, and dataset exports
+still use full-resolution data.
+
+Detailed statistics and correlations are calculated when you open the Statistics
+tab and cached until the working dataset changes. Filtering no longer eagerly
+copies all unchanged columns; workspace data remains isolated through pandas
+copy-on-write.
+
 ## Purpose
 
 EvalData helps you move from raw measurement tables to prepared datasets and then into a focused analysis view.

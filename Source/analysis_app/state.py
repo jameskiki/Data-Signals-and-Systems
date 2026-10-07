@@ -51,5 +51,5 @@ class AnalysisSession:
     use_subplots: bool = True
     last_summary: DataSummary | None = None
     last_summary_revision: int = -1
+    last_summary_has_details: bool = False
     working_revision: int = 0
-

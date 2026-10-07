@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import tkinter as tk
 from collections.abc import Mapping, Sequence
@@ -24,7 +23,7 @@ from Source.shared.plot_options import (
     PlotOptions,
     PlotStyle,
 )
-from Source.shared.plot_utils import create_deviation_figure, create_plot_figure, fill_signed_deviation
+from Source.shared.plot_utils import calculate_subplot_grid, create_deviation_figure, create_plot_figure, fill_signed_deviation
 from Source.shared.presentation_shell import PresentationShellMixin
 
 
@@ -338,16 +337,6 @@ def _prepare_finite_xy(x_values: np.ndarray, y_values: np.ndarray) -> tuple[np.n
     return x_values[order], y_values[order]
 
 
-def calculate_subplot_grid(item_count: int) -> tuple[int, int]:
-    """Return a compact row/column grid for the requested subplot count."""
-
-    if item_count < 1:
-        raise ValueError("item_count must be at least 1")
-    column_count = math.ceil(math.sqrt(item_count))
-    row_count = math.ceil(item_count / column_count)
-    return row_count, column_count
-
-
 def align_comparison_series(
     baseline_frame: pd.DataFrame,
     candidate_frame: pd.DataFrame,
@@ -367,10 +356,14 @@ def align_comparison_series(
         return None
 
     if x_column == "Index":
-        count = min(len(baseline_values), len(candidate_values))
-        x_values = candidate_x_values[:count]
-        baseline_values = baseline_values[:count]
-        candidate_values = candidate_values[:count]
+        x_values, baseline_indices, candidate_indices = np.intersect1d(
+            baseline_x_values,
+            candidate_x_values,
+            assume_unique=True,
+            return_indices=True,
+        )
+        baseline_values = baseline_values[baseline_indices]
+        candidate_values = candidate_values[candidate_indices]
         if bounds is not None:
             lower, upper = bounds
             mask = (x_values >= lower) & (x_values <= upper)
@@ -1125,6 +1118,8 @@ class ComparisonWindow(PresentationShellMixin):
                 details="\n".join(removed_paths),
             )
         self.dataset_paths = existing_paths
+        if self.dataset_paths and self.baseline_path_var.get() not in self.dataset_paths:
+            self.baseline_path_var.set(self.dataset_paths[0])
 
     def _update_status_text(self, extra: str = "") -> None:
         numeric_availability = get_numeric_column_availability(self.dataset_paths, self.data_frames)

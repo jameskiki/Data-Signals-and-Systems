@@ -69,7 +69,7 @@ def add_derived_column(
     else:
         raise ValueError(f"Unsupported operation: {operation}")
 
-    result = dataframe.copy()
+    result = dataframe.copy(deep=False)
     result[new_column.strip()] = derived_series
     return result
 
@@ -113,7 +113,7 @@ def apply_signal_filter(
     else:
         raise ValueError(f"Unsupported signal filter operation: {operation}")
 
-    working_frame = dataframe.copy()
+    working_frame = dataframe.copy(deep=False)
     working_frame[resolved_column_name] = filtered_series
     return working_frame
 

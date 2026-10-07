@@ -4,8 +4,11 @@ import os
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
+from Source.data_ops.io_ops import read_dataframe_parquet, write_dataframe_with_progress
 from Source.datapreparation_app import actions
+from Source.datapreparation_app.app import DataPreparationApp
 from Source.datapreparation_app.datasets import DatasetContext
 from Source.shared.plot_options import PlotStyle
 
@@ -35,6 +38,9 @@ class DummyApp:
         self.style_vars = SimpleNamespace(to_plot_style=lambda: PlotStyle())
 
         self.prep_views_refresh_count = 0
+        self.selection_suppression_during_refresh = []
+        self._suppress_dataset_selection_refresh = False
+        self.loaded_selection = None
         self.set_role_column_calls = []
         self.set_role_value_calls = []
         self.propagated_role_updates = []
@@ -49,6 +55,11 @@ class DummyApp:
 
     def _refresh_dataset_preparation_views(self):
         self.prep_views_refresh_count += 1
+        self.selection_suppression_during_refresh.append(self._suppress_dataset_selection_refresh)
+
+    def _select_dataset_in_table_without_event_refresh(self, file_path):
+        self._suppress_dataset_selection_refresh = True
+        self.loaded_selection = file_path
 
     def _set_role_editor_column(self, value, update_var=False):
         self.set_role_column_calls.append((value, update_var))
@@ -144,6 +155,56 @@ def test_load_comparison_demo_set_loads_all_three_datasets(monkeypatch):
     assert app.notifications.success_messages[0][0] == "Comparison Validation Set Loaded"
 
 
+def test_load_files_suppresses_selection_refresh_until_preview_refresh_finishes(monkeypatch):
+    app = DummyApp()
+    app.LOG_FILE_TYPES = []
+    app.create_loading_dialog = lambda *args: (
+        object(),
+        *[SimpleNamespace(set=lambda _value: None) for _ in range(4)],
+    )
+    app.close_loading_dialog = lambda _dialog: None
+
+    class ImmediateThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(actions.filedialog, "askopenfilenames", lambda **_kwargs: ["C:/tmp/run.csv"])
+    monkeypatch.setattr(
+        actions.DataParser,
+        "load_file",
+        lambda _path, progress_callback=None: (pd.DataFrame({"signal": [1.0, 2.0]}), ",", "."),
+    )
+    monkeypatch.setattr(actions.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(actions, "refresh_dataset_table", lambda _app: None)
+    monkeypatch.setattr(actions, "analyze_selected_dataframes", lambda *_args: "")
+
+    actions.load_files(app)
+
+    assert app.loaded_selection == "C:/tmp/run.csv"
+    assert app.selection_suppression_during_refresh == [True]
+    assert app._suppress_dataset_selection_refresh is False
+    assert app.prep_views_refresh_count == 1
+
+
+def test_dataset_selection_event_skips_already_refreshed_path():
+    app = DataPreparationApp.__new__(DataPreparationApp)
+    app._suppress_dataset_selection_refresh = False
+    app._last_refreshed_dataset_path = "C:/tmp/run.csv"
+    app._get_single_selected_file_path = lambda: "C:/tmp/run.csv"
+    resets = []
+    refreshes = []
+    app._reset_row_range = lambda: resets.append(True)
+    app._refresh_dataset_preparation_views = lambda: refreshes.append(True)
+
+    DataPreparationApp._handle_dataset_combo_changed(app)
+
+    assert resets == []
+    assert refreshes == []
+
+
 def test_export_clean_data_warns_without_datasets(monkeypatch):
     app = DummyApp()
 
@@ -160,13 +221,14 @@ def test_export_clean_data_success(monkeypatch):
     }
     app.multiple_selected_paths = ["C:/tmp/b.csv"]
 
+    monkeypatch.setattr(actions, "DatasetExportFormatDialog", lambda *args: SimpleNamespace(result="csv"))
     monkeypatch.setattr(actions.filedialog, "askdirectory", lambda title: "C:/out")
     monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "custom")
     export_calls = []
     monkeypatch.setattr(
         actions,
         "export_clean_dataframes",
-        lambda frames, out_dir, filename_prefix: export_calls.append((frames, out_dir, filename_prefix)) or 1,
+        lambda frames, out_dir, filename_prefix, **kwargs: export_calls.append((frames, out_dir, filename_prefix)) or 1,
     )
 
     actions.export_clean_data(app)
@@ -181,6 +243,7 @@ def test_export_clean_data_rejects_invalid_prefix(monkeypatch):
     app.data_frames = {"C:/tmp/a.csv": pd.DataFrame({"x": [1, 2]})}
     app.multiple_selected_paths = ["C:/tmp/a.csv"]
 
+    monkeypatch.setattr(actions, "DatasetExportFormatDialog", lambda *args: SimpleNamespace(result="csv"))
     directory_prompts = []
     monkeypatch.setattr(actions.filedialog, "askdirectory", lambda title: directory_prompts.append(title) or "C:/out")
     monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "bad/name")
@@ -191,6 +254,118 @@ def test_export_clean_data_rejects_invalid_prefix(monkeypatch):
         ('The filename prefix cannot contain < > : " / \\ | ? * or control characters.', None)
     ]
     assert directory_prompts == []
+
+
+def test_export_clean_data_parquet_preserves_assigned_roles(tmp_path, monkeypatch):
+    app = DummyApp()
+    app.data_frames = {"run.csv": pd.DataFrame({"signal": [1.0, None, 3.0]})}
+    app.dataset_contexts = {"run.csv": DatasetContext(column_roles={"signal": "metadata"})}
+    app.multiple_selected_paths = ["run.csv"]
+    monkeypatch.setattr(actions, "DatasetExportFormatDialog", lambda *args: SimpleNamespace(result="parquet"))
+    monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "clean")
+    monkeypatch.setattr(actions.filedialog, "askdirectory", lambda **kwargs: str(tmp_path))
+
+    actions.export_clean_data(app)
+
+    restored = read_dataframe_parquet(str(tmp_path / "clean_run.parquet"))
+    assert restored["signal"].tolist() == [1.0, 3.0]
+    assert restored.attrs["evaldata_column_roles"] == {"signal": "metadata"}
+    assert app.notifications.success_messages == ["Exported 1 selected file(s)"]
+
+
+def test_export_clean_data_format_cancel_stops_export(monkeypatch):
+    app = DummyApp()
+    app.data_frames = {"run.csv": pd.DataFrame({"signal": [1.0]})}
+    app.multiple_selected_paths = ["run.csv"]
+    monkeypatch.setattr(actions, "DatasetExportFormatDialog", lambda *args: SimpleNamespace(result=None))
+    monkeypatch.setattr(
+        actions.simpledialog, "askstring",
+        lambda *args, **kwargs: pytest.fail("Cancelled format choice must stop the workflow"),
+    )
+    actions.export_clean_data(app)
+    assert app.notifications.success_messages == []
+
+
+def test_export_clean_data_reports_write_failure(monkeypatch):
+    app = DummyApp()
+    app.data_frames = {"run.csv": pd.DataFrame({"signal": [1.0]})}
+    app.multiple_selected_paths = ["run.csv"]
+    monkeypatch.setattr(actions, "DatasetExportFormatDialog", lambda *args: SimpleNamespace(result="parquet"))
+    monkeypatch.setattr(actions.simpledialog, "askstring", lambda *args, **kwargs: "clean")
+    monkeypatch.setattr(actions.filedialog, "askdirectory", lambda **kwargs: "output")
+
+    def fail_export(*args, **kwargs):
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(actions, "export_clean_dataframes", fail_export)
+    errors = []
+    monkeypatch.setattr(actions.messagebox, "showerror", lambda *args: errors.append(args))
+    actions.export_clean_data(app)
+    assert errors == [("Export Error", "Disk full")]
+    assert app.notifications.success_messages == []
+
+
+def _configure_immediate_dataset_workflow(app, monkeypatch):
+    app.create_loading_dialog = lambda *args, **kwargs: (
+        object(), *[SimpleNamespace(set=lambda _value: None) for _ in range(4)],
+    )
+    app.close_loading_dialog = lambda _dialog: None
+
+    class ImmediateThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(actions.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(actions, "refresh_dataset_table", lambda _app: None)
+    monkeypatch.setattr(actions, "select_dataset_in_table", lambda _app, _path: None)
+
+
+@pytest.mark.parametrize("extension", [".csv", ".parquet"])
+def test_merge_save_wires_format_and_roles(tmp_path, monkeypatch, extension):
+    app = DummyApp()
+    app.data_frames = {
+        "a.csv": pd.DataFrame({"signal": [1.5]}),
+        "b.csv": pd.DataFrame({"signal": [2.5]}),
+    }
+    app.dataset_contexts = {
+        path: DatasetContext(column_roles={"signal": "metadata"})
+        for path in app.data_frames
+    }
+    app.multiple_selected_paths = list(app.data_frames)
+    _configure_immediate_dataset_workflow(app, monkeypatch)
+    path = str(tmp_path / ("merged" + extension))
+    monkeypatch.setattr(actions, "ask_dataset_save_path", lambda *_: path)
+
+    actions.merge_selected_files(app)
+
+    restored, _, _ = actions.DataParser.load_file(path)
+    assert restored["signal"].tolist() == [1.5, 2.5]
+    assert app.dataset_contexts[path].column_roles == {"signal": "metadata"}
+    if extension == ".parquet":
+        assert restored.attrs["evaldata_column_roles"] == {"signal": "metadata"}
+    assert len(app.notifications.success_messages) == 1
+
+
+def test_load_files_restores_parquet_roles_with_csv_in_same_batch(tmp_path, monkeypatch):
+    app = DummyApp()
+    app.LOG_FILE_TYPES = []
+    _configure_immediate_dataset_workflow(app, monkeypatch)
+    parquet_path = str(tmp_path / "binary.parquet")
+    csv_path = str(tmp_path / "text.csv")
+    frame = pd.DataFrame({"signal": [1.5, 2.5]})
+    write_dataframe_with_progress(frame, parquet_path, column_roles={"signal": "metadata"})
+    write_dataframe_with_progress(frame, csv_path)
+    monkeypatch.setattr(actions.filedialog, "askopenfilenames", lambda **_: [parquet_path, csv_path])
+
+    actions.load_files(app)
+
+    assert app.dataset_contexts[parquet_path].column_roles == {"signal": "metadata"}
+    assert app.dataset_contexts[csv_path].column_roles == {"signal": "signal"}
+    assert set(app.data_frames) == {parquet_path, csv_path}
+    assert "Parquet" in app.notifications.info_messages[0][1]
 
 
 def test_unload_selected_files_removes_context_and_data(monkeypatch):

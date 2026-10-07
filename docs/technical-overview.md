@@ -53,6 +53,7 @@ Owned by `Source/shared/`:
 
 - `plot_options.py`: `PlotOptions` and `PlotStyle`
 - `plot_utils.py`: generic figure building helpers (`create_plot_figure`, axis contract helpers)
+- `plot_sampling.py`: viewport-aware, peak-preserving display reduction for large time series
 - `display_format.py`: shared axis/value display formatting helpers
 
 Depth 0 does not know app workflow state.
@@ -120,6 +121,41 @@ The current minimal session-data model intentionally keeps the flow explicit:
 - session dataset or analysis view -> export to disk
 
 The important rule is that the analysis workspace does not mutate the shared session dataframe in place. It owns a local original/working copy pair, and publishing creates a new dataset entry back in the session registry.
+
+## Large Dataset Performance
+
+The required pandas 3 runtime provides copy-on-write. Workspace original/working
+frames and filter/derived-signal results use shallow copies so unchanged numeric
+buffers can be shared. Assignments remain isolated: modifying a workspace or
+result must not change its input or another workspace. Signal calculations still
+process every original sample; no numeric precision reduction is applied.
+
+Workspace refreshes compute a lightweight overview immediately. Detailed
+statistics and correlations are computed when the Statistics tab is opened,
+then cached against the working-data revision. Changing the data invalidates the
+cache; role-only updates do not. Detailed statistics avoid unused percentile
+calculations and process RMS one column at a time.
+
+Large numeric time-series lines (over 20,000 samples) use an adaptive display
+envelope. The shared path covers preparation previews, regular overlay/subplot
+plots, comparison overlays, and original/filtered signal previews. Each channel
+retains its own bucket endpoints and extrema in sample order. Omitted missing
+values insert line breaks rather than connecting across gaps. The point budget
+depends on axis width and is bounded at 20,000 points per line.
+
+Zooming or panning on a finite monotonic numeric/datetime axis selects the visible
+source range, including neighboring boundary samples, and recomputes its envelope.
+Small ranges display every sample. Resizing adjusts the display budget; unchanged
+views reuse their existing line data. Descending and repeated x values are
+supported. Categorical, non-monotonic, missing-x, and non-numeric signal plots
+retain the original full-data rendering path.
+
+Adaptive plots are labeled in the canvas. They are visual summaries, not analytical
+resampling: FFT, filters, statistics, and CSV/Parquet dataset exports continue using
+full-resolution data. Saved plot images use the display representation.
+Frequency/cycle plots and filled comparison/deviation regions are not reduced by
+this path. Calculations still run synchronously; these changes reduce work rather
+than introduce background analysis workers.
 
 ## View Sync Rules
 

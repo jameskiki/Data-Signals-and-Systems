@@ -90,6 +90,7 @@ def test_deviation_and_residual_renderers_draw_prepared_series() -> None:
     try:
         difference_axis = difference_figure.axes[0]
         residual_axis, spectrum_axis = residual_figure.axes
+        assert residual_axis.get_subplotspec().get_gridspec().get_geometry() == (1, 2)
         np.testing.assert_array_equal(difference_axis.lines[0].get_ydata(), [-1.0, 2.0])
         assert difference_axis.lines[1].get_linestyle() == "--"
         assert {collection.get_label() for collection in difference_axis.collections} == {
@@ -120,6 +121,7 @@ def test_magnitude_phase_renderer_draws_prepared_values_without_conversion() -> 
         )
     )
     magnitude_axis, phase_axis = figure.get_axes()
+    assert magnitude_axis.get_subplotspec().get_gridspec().get_geometry() == (1, 2)
 
     np.testing.assert_array_equal(magnitude_axis.lines[0].get_xdata(), frequencies)
     np.testing.assert_array_equal(magnitude_axis.lines[0].get_ydata(), magnitude)
@@ -192,6 +194,9 @@ def test_cycle_renderer_respects_enabled_metric_controls() -> None:
     figure = create_cycle_figure(plot_data, enabled_metrics=["mean", "peak_to_peak"])
     metrics_axis = figure.get_axes()[2]
 
+    assert metrics_axis.get_subplotspec().get_gridspec().get_geometry() == (3, 1)
+    cycle_axis, representative_axis = figure.get_axes()[:2]
+    assert cycle_axis.get_position().y0 > representative_axis.get_position().y0 > metrics_axis.get_position().y0
     assert [line.get_label() for line in metrics_axis.lines] == ["mean", "p2p"]
 
 
@@ -213,7 +218,7 @@ def test_overlay_uses_contract_title_and_y_label() -> None:
 
 
 
-def test_subplot_uses_contract_y_label_and_subplots_columns() -> None:
+def test_subplot_uses_contract_y_label_and_balanced_columns() -> None:
     df = pd.DataFrame(
         {
             "time_s": [0.0, 1.0, 2.0],
@@ -234,6 +239,46 @@ def test_subplot_uses_contract_y_label_and_subplots_columns() -> None:
 
     assert len(axes) == 2
     assert all(axis.get_ylabel() == "Force [N]" for axis in axes)
+    assert axes[0].get_subplotspec().get_gridspec().get_geometry() == (1, 2)
+
+
+@pytest.mark.parametrize(
+    "panel_count, expected_grid",
+    [(1, (1, 1)), (2, (1, 2)), (3, (2, 2)), (5, (2, 3)), (9, (3, 3)), (10, (3, 4))],
+)
+def test_generic_subplots_use_balanced_grids(panel_count, expected_grid) -> None:
+    columns = [f"signal_{index}" for index in range(panel_count)]
+    dataframe = pd.DataFrame({column: [1.0, 2.0] for column in columns})
+    figure = create_plot_figure(
+        PlotOptions(cols_to_plot=columns, subplot_columns=1),
+        ["sample"],
+        {"sample": dataframe},
+    )
+    try:
+        assert figure.axes[0].get_subplotspec().get_gridspec().get_geometry() == expected_grid
+        assert sum(axis.get_visible() for axis in figure.axes) == panel_count
+        assert all(not axis.get_visible() for axis in figure.axes[panel_count:])
+    finally:
+        plt.close(figure)
+
+
+@pytest.mark.parametrize("channels_in_grid", [False, True])
+def test_deviation_panels_use_balanced_grids(channels_in_grid) -> None:
+    panel = DeviationPanelPlotData(
+        series=(DeviationSeriesPlotData([0.0, 1.0], [1.0, 2.0], "Candidate"),),
+        title="Difference",
+        x_label="Index",
+        y_label="Deviation",
+    )
+    figure = create_deviation_figure(
+        DeviationPlotData((panel,) * 5, "Differences", channels_in_grid=channels_in_grid)
+    )
+    try:
+        assert figure.axes[0].get_subplotspec().get_gridspec().get_geometry() == (2, 3)
+        assert sum(axis.get_visible() for axis in figure.axes) == 5
+        assert not figure.axes[-1].get_visible()
+    finally:
+        plt.close(figure)
 
 
 

@@ -114,6 +114,7 @@ def build_notebook(workspace, parent: ttk.Frame) -> None:
     build_frequency_tab(workspace)
     build_cycles_tab(workspace)
     build_statistics_tab(workspace)
+    workspace.notebook.bind("<<NotebookTabChanged>>", workspace._handle_analysis_tab_changed)
 
 
 def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:

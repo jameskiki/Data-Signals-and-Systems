@@ -34,6 +34,7 @@ Canonical plotting is intentionally limited to four core types:
 The main window also provides an ad-hoc `Plot Data` popup for quick inspection, but it is not a separate core plot family.
 
 - dataset import and summary views
+- CSV/log import and CSV export, plus compressed Parquet load/save for typed binary datasets
 - preparation workflows for assigning compact time/reference, process-value, and ambient-value categories, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
 - session-level dataset reuse across preparation, analysis publishing, and comparison

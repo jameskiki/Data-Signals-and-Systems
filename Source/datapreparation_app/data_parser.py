@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Callable
 
 import pandas as pd
+from Source.data_ops.io_ops import is_parquet_path, read_dataframe_parquet
 
 
 MIN_DATETIME_PARSE_RATIO = 0.8
@@ -127,15 +128,21 @@ class DataParser:
         progress_callback: Callable[[float, float, str], None] | None = None,
     ) -> tuple[pd.DataFrame, str, str]:
         """
-        Load a log file into a pandas DataFrame, auto-detecting separator and decimal marker.
+        Load CSV/log or Parquet data, detecting text-file formatting when needed.
         Args:
             file_path: Path to the log file.
         Returns:
-            Tuple of (DataFrame, separator, decimal marker)
+            Tuple of (DataFrame, separator, decimal marker); Parquet uses empty markers.
         """
         def _report(current: float, total: float, label: str) -> None:
             if progress_callback is not None:
                 progress_callback(current, total, label)
+
+        if is_parquet_path(file_path):
+            _report(0.0, 100.0, "Reading Parquet data")
+            dataframe = read_dataframe_parquet(file_path)
+            _report(100.0, 100.0, "Parquet load complete")
+            return dataframe, "", ""
 
         def _read_csv_with_pandas(file_path: str, sep: str, skiprows: int, decimal_marker: str, dt_format_map: dict[str, str]) -> pd.DataFrame:
             return pd.read_csv(

@@ -10,7 +10,8 @@ from .preparation import create_prepared_dataset as create_prepared_dataset_work
 from .plotting import PlotOptionsDialog
 from .preview import refresh_preview_table
 from .comparison import ComparisonWindow
-from Source.data_ops.io_ops import analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, validate_export_filename_prefix, write_dataframe_csv_with_progress
+from Source.data_ops.io_ops import DATAFRAME_ROLE_ATTR, analyze_selected_dataframes, merge_selected_dataframes, export_clean_dataframes, validate_export_filename_prefix, write_dataframe_with_progress, is_parquet_path
+from Source.shared.dataset_dialogs import ask_dataset_save_path, DatasetExportFormatDialog
 from Source.shared.column_roles import get_available_column_roles, infer_non_time_column_role
 from Source.shared.plot_options import PlotDescriptor
 from Source.shared.plot_utils import create_plot_figure
@@ -61,8 +62,11 @@ def load_files(app) -> None:
 			return
 
 		report_text = analyze_selected_dataframes(loaded_file_paths, app.data_frames)
-		app._select_dataset_in_table_without_event_refresh(loaded_file_paths[-1])
-		app._refresh_dataset_preparation_views()
+		try:
+			app._select_dataset_in_table_without_event_refresh(loaded_file_paths[-1])
+			app._refresh_dataset_preparation_views()
+		finally:
+			app._suppress_dataset_selection_refresh = False
 
 		summary_lines = [" | ".join(parse_info), report_text]
 		if error_messages:
@@ -86,9 +90,14 @@ def load_files(app) -> None:
 					dataframe,
 					source_paths=[file_path],
 					description="Loaded source dataset",
+					column_roles=dataframe.attrs.get(DATAFRAME_ROLE_ATTR),
 				)
 				loaded_file_paths.append(file_path)
-				parse_info.append(f"{os.path.basename(file_path)}: sep='{separator}', decimal='{decimal_marker}'")
+				parse_info.append(
+					f"{os.path.basename(file_path)}: Parquet"
+					if is_parquet_path(file_path)
+					else f"{os.path.basename(file_path)}: sep='{separator}', decimal='{decimal_marker}'"
+				)
 				overall_progress_var.set(float(index))
 				overall_status_var.set(f"Loaded {index} of {len(files)}: {os.path.basename(file_path)}")
 				file_step_progress_var.set(100.0)
@@ -230,11 +239,7 @@ def merge_selected_files(app) -> None:
 		app.notifications.warning("Select at least two files to merge")
 		return
 
-	save_path = filedialog.asksaveasfilename(
-		title="Save merged CSV",
-		defaultextension=".csv",
-		filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-	)
+	save_path = ask_dataset_save_path(app.root, "Save merged dataset")
 	if not save_path:
 		return
 
@@ -268,11 +273,20 @@ def merge_selected_files(app) -> None:
 			def _on_write_progress(written_rows: int, total_rows: int) -> None:
 				merge_queue.put(("write_progress", written_rows, total_rows))
 
-			write_dataframe_csv_with_progress(
+			merged_roles, _ = reconcile_merged_column_roles(
+				merged_frame,
+				[app.data_frames[path] for path in selected_file_paths],
+				[
+					app.dataset_contexts.get(path, DatasetContext()).column_roles
+					for path in selected_file_paths
+				],
+			)
+			write_dataframe_with_progress(
 				merged_frame,
 				save_path,
 				sep=";",
 				progress_callback=_on_write_progress,
+				column_roles=merged_roles,
 			)
 			merge_queue.put(("write_done",))
 			merge_queue.put(("result", merged_frame))
@@ -340,7 +354,7 @@ def merge_selected_files(app) -> None:
 				detail_progress_var.set(0.0)
 			elif message_type == "merge_done":
 				overall_progress_var.set(1.0)
-				overall_status_var.set("Merge complete. Writing CSV...")
+				overall_status_var.set("Merge complete. Writing dataset...")
 				detail_status_var.set("Writing merged data to disk")
 			elif message_type == "write_progress":
 				_, written_rows, total_rows = message
@@ -354,7 +368,7 @@ def merge_selected_files(app) -> None:
 			elif message_type == "write_done":
 				overall_progress_var.set(2.0)
 				detail_progress_var.set(100.0)
-				detail_status_var.set("CSV write complete")
+				detail_status_var.set("Dataset write complete")
 				overall_status_var.set("Finalizing merged dataset...")
 			elif message_type == "result":
 				_, merged_result = message
@@ -483,9 +497,13 @@ def export_clean_data(app) -> None:
 	if not selected_file_paths:
 		return
 
+	file_format = DatasetExportFormatDialog(app.root, "Export Selected Clean Data").result
+	if file_format is None:
+		return
+
 	filename_prefix = simpledialog.askstring(
 		"Export Selected Clean Data",
-		"Filename prefix:\n\nFiles will be named <prefix>_<dataset>.csv",
+		f"Filename prefix:\n\nFiles will be named <prefix>_<dataset>.{file_format}",
 		parent=app.root,
 	)
 	if filename_prefix is None:
@@ -504,11 +522,20 @@ def export_clean_data(app) -> None:
 		path: app.data_frames[path]
 		for path in selected_file_paths
 	}
-	exported_count = export_clean_dataframes(
-		selected_data_frames,
-		output_dir,
-		filename_prefix=filename_prefix,
-	)
+	try:
+		exported_count = export_clean_dataframes(
+			selected_data_frames,
+			output_dir,
+			filename_prefix=filename_prefix,
+			file_format=file_format,
+			column_roles_by_path={
+				path: app.dataset_contexts.get(path, DatasetContext()).column_roles
+				for path in selected_file_paths
+			},
+		)
+	except Exception as error:
+		messagebox.showerror("Export Error", str(error))
+		return
 	app.notifications.success(f"Exported {exported_count} selected file(s)")
 
 def apply_selected_column_role(app) -> None:

@@ -89,7 +89,7 @@ def build_derived_signal_update(
 def build_reset_update(original_frame: pd.DataFrame) -> FrameUpdate:
     """Reset the working dataframe to its original state."""
 
-    return FrameUpdate(dataframe=original_frame.copy())
+    return FrameUpdate(dataframe=original_frame.copy(deep=False))
 
 
 def resolve_default_output_names(

@@ -10,7 +10,9 @@ def summarize_dataframe(dataframe: pd.DataFrame, include_details: bool = True) -
     """Return structured summary data, engineering statistics, and correlations for one dataframe."""
 
     row_count, col_count = dataframe.shape
-    missing_by_col = dataframe.isna().sum()
+    missing_by_col = pd.Series({
+        column: int(dataframe[column].isna().sum()) for column in dataframe.columns
+    }, dtype="int64")
     total_missing = int(missing_by_col.sum())
     numeric_columns = list(dataframe.select_dtypes(include="number").columns)
     datetime_columns = [
@@ -20,11 +22,11 @@ def summarize_dataframe(dataframe: pd.DataFrame, include_details: bool = True) -
     time_ranges: list[tuple[str, object | None, object | None]] = []
     if datetime_columns:
         for column in datetime_columns:
-            valid_values = dataframe[column].dropna()
-            if valid_values.empty:
+            values = dataframe[column]
+            if values.notna().sum() == 0:
                 time_ranges.append((str(column), None, None))
             else:
-                time_ranges.append((str(column), valid_values.min(), valid_values.max()))
+                time_ranges.append((str(column), values.min(), values.max()))
 
     missing_columns = tuple(
         (str(column), int(missing_by_col[column]))
@@ -56,21 +58,17 @@ def build_statistics_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
     if numeric_frame.empty:
         return pd.DataFrame(columns=stats_columns)
 
-    clean_frame = numeric_frame.apply(pd.to_numeric, errors="coerce")
-    missing_counts = clean_frame.isna().sum()
-    desc = clean_frame.describe()  # single pass: count, mean, std, min, 25%, 50%, 75%, max
-    rms_values = np.sqrt((clean_frame ** 2).mean())  # vectorised; .mean() skips NaN
-
     statistics_rows: list[dict[str, float | int | str]] = []
-    for column in clean_frame.columns:
-        col_desc = desc[column]
-        n = int(col_desc["count"])
+    for column in numeric_frame.columns:
+        values = pd.to_numeric(numeric_frame[column], errors="coerce")
+        n = int(values.count())
+        missing = len(values) - n
         if n == 0:
             statistics_rows.append(
                 {
                     "column": column,
                     "count": 0,
-                    "missing": int(missing_counts[column]),
+                    "missing": missing,
                     "min": np.nan,
                     "max": np.nan,
                     "mean": np.nan,
@@ -81,18 +79,18 @@ def build_statistics_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
             )
             continue
 
-        col_min = float(col_desc["min"])
-        col_max = float(col_desc["max"])
+        col_min = float(values.min())
+        col_max = float(values.max())
         statistics_rows.append(
             {
                 "column": column,
                 "count": n,
-                "missing": int(missing_counts[column]),
+                "missing": missing,
                 "min": col_min,
                 "max": col_max,
-                "mean": float(col_desc["mean"]),
-                "std": float(col_desc["std"]) if n > 1 else 0.0,
-                "rms": float(rms_values[column]),
+                "mean": float(values.mean()),
+                "std": float(values.std(ddof=1)) if n > 1 else 0.0,
+                "rms": float(np.sqrt((values ** 2).mean())),
                 "peak_to_peak": col_max - col_min,
             }
         )

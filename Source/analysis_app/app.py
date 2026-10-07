@@ -8,7 +8,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.notifications import NotificationManager
@@ -64,6 +64,8 @@ from Source.shared.column_roles import (
 from Source.shared.presentation_shell import PresentationShellMixin
 from Source.shared.demo_catalog import describe_demo_frequency_expectations
 from Source.data_ops.frame_ops import keep_dataframe_index_ranges
+from Source.data_ops.io_ops import write_dataframe_with_progress
+from Source.shared.dataset_dialogs import ask_dataset_save_path
 from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.spectral import FrequencySpectrumResult, SpectrogramResult
 from Source.data_ops.summary import summarize_dataframe
@@ -99,8 +101,8 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.notifications = NotificationManager()
         self.session = AnalysisSession(
             source_path=dataset_path,
-            original_frame=dataframe.copy(),
-            working_frame=dataframe.copy(),
+            original_frame=dataframe.copy(deep=False),
+            working_frame=dataframe.copy(deep=False),
         )
         self.window = tk.Toplevel(parent)
         self.window.title(f"Analysis Workspace - {os.path.basename(dataset_path)}")
@@ -274,15 +276,28 @@ class AnalysisWorkspace(PresentationShellMixin):
     def _refresh_signal_filter_controls(self) -> None:
         apply_signal_filter_rule(self)
 
-    def _ensure_current_summary(self) -> None:
-        if self.session.last_summary is not None and self.session.last_summary_revision == self.session.working_revision:
+    def _ensure_current_summary(self, include_details: bool = True) -> None:
+        if (
+            self.session.last_summary is not None
+            and self.session.last_summary_revision == self.session.working_revision
+            and (not include_details or self.session.last_summary_has_details)
+        ):
             return
-        self.session.last_summary = summarize_dataframe(self.session.working_frame)
+        self.session.last_summary = summarize_dataframe(
+            self.session.working_frame, include_details=include_details,
+        )
         self.session.last_summary_revision = self.session.working_revision
+        self.session.last_summary_has_details = include_details
+
+    def _handle_analysis_tab_changed(self, _event=None) -> None:
+        if self.notebook.select() == str(self.statistics_tab):
+            self._refresh_summary_views()
 
     def _refresh_all_views(self, refresh_summary: bool = True) -> None:
         if refresh_summary:
-            self._ensure_current_summary()
+            self._ensure_current_summary(
+                include_details=self.notebook.select() == str(self.statistics_tab),
+            )
         self._refresh_summary_widgets()
         self._refresh_preview()
         refresh_filter_controls(self)
@@ -604,17 +619,15 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.notifications.success("Reset working dataframe to the original loaded state")
 
     def _export_current_view(self) -> None:
-        save_path = filedialog.asksaveasfilename(
-            title="Export current view",
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-        )
+        save_path = ask_dataset_save_path(self.window, "Export current view")
         if not save_path:
             return
 
         report_saved = False
         with self._error_dialog("Export Error") as failed:
-            self.session.working_frame.to_csv(save_path, sep=";", index=False)
+            write_dataframe_with_progress(
+                self.session.working_frame, save_path, column_roles=self.column_roles,
+            )
             result = self._latest_frequency_result
             if result is not None and result.analysis_name in {"Transfer Estimate", "Coherence"}:
                 report_path = save_path + ".analysis_report.txt"
@@ -644,7 +657,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         role_overrides: dict[str, str] | None = None,
         focus_column: str | None = None,
     ) -> None:
-        self.session.working_frame = dataframe.copy()
+        self.session.working_frame = dataframe.copy(deep=False)
         self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
         self.session.working_revision += 1
         self.session.last_summary = None

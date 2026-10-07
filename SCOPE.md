@@ -19,6 +19,12 @@
 
 The following features are planned for future development and are not yet implemented:
 
+- **Analysis Measurement Tools**
+	- Interactive slope measurement in the Analysis Workspace
+	- General measurement tools for inspecting plotted data
+- **Comparison Time Alignment**
+	- Shift dataset time axes to align measurements for comparison in the Comparison App
+
 - **Systems Section**
 	- Model building (system modeling from data or first principles)
 	- Simulation of system behavior

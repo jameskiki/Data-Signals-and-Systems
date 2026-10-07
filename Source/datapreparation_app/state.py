@@ -5,10 +5,14 @@ APP_TITLE = "Dataset Preparation and Analysis"
 WINDOW_GEOMETRY = "1000x900"
 PLOT_WINDOW_TITLE = "Plot"
 PLOT_WINDOW_GEOMETRY = "900x600"
-LOG_FILE_TYPES = [("Log files", "*.txt *.csv *.log"), ("All files", "*.*")]
+LOG_FILE_TYPES = [
+    ("Datasets", "*.txt *.csv *.log *.parquet *.pq"),
+    ("Log files", "*.txt *.csv *.log"),
+    ("Parquet files", "*.parquet *.pq"),
+    ("All files", "*.*"),
+]
 PREVIEW_ROW_LIMIT = 200
 PREVIEW_PLOT_MAX_COLUMNS = 3
-PREVIEW_PLOT_RENDER_MAX_POINTS = 20_000
 COLUMN_SELECTOR_MAX_ITEMS = 300
 PREVIEW_SIGNAL_SELECTOR_MAX_ITEMS = 300
 

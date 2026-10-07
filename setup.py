@@ -51,6 +51,8 @@ def _verify_required_binary_modules(dist_lib_dir: pathlib.Path) -> None:
         "scipy.special.cython_special",
         "scipy.stats._stats",
         "scipy.special._ufuncs",
+        "pyarrow.lib",
+        "pyarrow._parquet",
     ]
     missing = []
     for module_name in required_modules:
@@ -86,6 +88,7 @@ def main() -> None:
             "packages": [
                 "numpy",
                 "pandas",
+                "pyarrow",
                 "matplotlib",
                 "scipy",
                 "tkinter",
@@ -103,8 +106,10 @@ def main() -> None:
     )
 
     copied_total = 0
-    for package in ("scipy", "numpy", "pandas", "matplotlib"):
+    for package in ("scipy", "numpy", "pandas", "matplotlib", "pyarrow"):
         copied_total += _sync_package_binary_extensions(package, dist_lib_dir)
+    for library in _package_dir("pyarrow").glob("*.dll"):
+        shutil.copy2(library, dist_lib_dir / library.name)
     _verify_required_binary_modules(dist_lib_dir)
     print(f"Synchronized {copied_total} compiled extension module(s) into {dist_lib_dir}.")
 

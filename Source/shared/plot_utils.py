@@ -28,6 +28,7 @@ import os
 import pandas as pd
 
 from .display_format import apply_numeric_axis_format
+from .plot_sampling import plot_adaptive_line
 
 
 DataFrameMap = Mapping[str, pd.DataFrame]
@@ -35,11 +36,19 @@ DatasetLineStyles = Mapping[str, str] | None
 XValueList = list[np.ndarray]
 
 
+def calculate_subplot_grid(item_count: int) -> tuple[int, int]:
+    """Return a balanced grid with at least as many columns as rows."""
+    if item_count < 1:
+        raise ValueError("item_count must be at least 1")
+    column_count = int(np.ceil(np.sqrt(item_count)))
+    return (item_count + column_count - 1) // column_count, column_count
+
+
 def create_magnitude_phase_figure(
     plot_data: MagnitudePhasePlotData,
     *,
     style: PlotStyle | None = None,
-    figsize: tuple[float, float] = (6.2, 5.0),
+    figsize: tuple[float, float] = (10.0, 4.6),
     dpi: int = 100,
     plt_module=plt,
 ) -> plt.Figure:
@@ -50,8 +59,7 @@ def create_magnitude_phase_figure(
     magnitude_color = palette[0] if palette else "#1f77b4"
     phase_color = palette[3 % len(palette)] if palette else "#d62728"
     figure, (magnitude_axis, phase_axis) = plt_module.subplots(
-        2,
-        1,
+        *calculate_subplot_grid(2),
         figsize=figsize,
         dpi=dpi,
         sharex=True,
@@ -66,7 +74,7 @@ def create_magnitude_phase_figure(
     apply_axis_contract(
         magnitude_axis,
         title=plot_data.magnitude_title,
-        x_label="",
+        x_label=plot_data.x_label,
         y_label=plot_data.magnitude_label,
         style=resolved_style,
     )
@@ -123,13 +131,8 @@ def create_deviation_figure(
         raise ValueError("plot_data.panels must not be empty")
     resolved_style = style or PlotStyle()
     panel_count = len(plot_data.panels)
-    if plot_data.channels_in_grid:
-        column_count = min(max(1, int(np.ceil(np.sqrt(panel_count)))), panel_count)
-        row_count = (panel_count + column_count - 1) // column_count
-        figsize = (6.2 * column_count, 3.8 * row_count)
-    else:
-        row_count, column_count = panel_count, 1
-        figsize = (10.0, max(3.8, 3.5 * panel_count))
+    row_count, column_count = calculate_subplot_grid(panel_count)
+    figsize = (5.0 * column_count, 4.6 * row_count)
     figure, axes = plt_module.subplots(
         row_count,
         column_count,
@@ -157,9 +160,8 @@ def create_residual_spectrum_figure(
 
     resolved_style = style or PlotStyle()
     figure, (deviation_axis, spectrum_axis) = plt_module.subplots(
-        2,
-        1,
-        figsize=(6.2, 5.0),
+        *calculate_subplot_grid(2),
+        figsize=(10.0, 4.6),
         dpi=100,
         sharex=False,
     )
@@ -398,7 +400,8 @@ def create_signal_comparison_figure(
     resolved_style = style or PlotStyle()
     figure, axis = plt_module.subplots(figsize=(6.2, 3.8), dpi=100)
     colors = resolved_style.color_palette or ["#1f77b4", "#ff7f0e"]
-    axis.plot(
+    plot_adaptive_line(
+        axis,
         plot_data.x_values,
         plot_data.original_values,
         linewidth=resolved_style.line_width,
@@ -407,7 +410,8 @@ def create_signal_comparison_figure(
         alpha=0.9,
         label=plot_data.original_label,
     )
-    axis.plot(
+    plot_adaptive_line(
+        axis,
         plot_data.x_values,
         plot_data.comparison_values,
         linewidth=resolved_style.line_width,
@@ -628,7 +632,8 @@ def create_overlay_figure(
             if x_arr.size > 0:
                 x_values_by_axis.append(x_arr)
 
-            ax.plot(
+            plot_adaptive_line(
+                ax,
                 x_vals,
                 df[col_name],
                 label=_build_overlay_label(path, col_name, selected_file_paths, cols_to_plot),
@@ -686,14 +691,13 @@ def create_subplots(
     Create a grid of matplotlib subplots.
     Args:
         n: Number of subplots.
-        ncols: Number of columns.
+        ncols: Legacy column preference; balanced grid sizing takes precedence.
     Returns:
         Tuple of (Figure, Axes array, nrows, ncols)
     """
-    ncols = min(ncols, n)
-    nrows = (n + ncols - 1) // ncols
+    nrows, ncols = calculate_subplot_grid(n)
     _ = style  # Reserved for future style-driven figure sizing.
-    fig, axes = plt_module.subplots(nrows=nrows, ncols=ncols, figsize=(8 * ncols, 4 * nrows), squeeze=False)
+    fig, axes = plt_module.subplots(nrows=nrows, ncols=ncols, figsize=(5.0 * ncols, 4.6 * nrows), squeeze=False)
     return fig, axes, nrows, ncols
 
 
@@ -735,7 +739,8 @@ def plot_columns_on_axes(
             x_arr = np.asarray(x_vals)
             if x_arr.size > 0:
                 x_values_by_axis.append(x_arr)
-            ax.plot(
+            plot_adaptive_line(
+                ax,
                 x_vals,
                 df[col_name],
                 label=os.path.basename(path),
@@ -833,7 +838,7 @@ def _resolve_plot_color(
 def normalize_x_values(series: pd.Series) -> pd.Series:
     """Convert x-axis values to numeric or datetime when the whole series supports it."""
 
-    if np.issubdtype(series.dtype, np.number) or np.issubdtype(series.dtype, np.datetime64):
+    if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_datetime64_any_dtype(series):
         return series
 
     numeric_values = pd.to_numeric(series, errors="coerce")
@@ -867,6 +872,7 @@ def hide_unused_subplots(axes: object, n: int) -> None:
         row = idx // ncols
         col = idx % ncols
         axes[row][col].axis('off')
+        axes[row][col].set_visible(False)
 
 
 def sync_x_axes(axes: object, x_values_by_axis: XValueList, fig: plt.Figure) -> None:
@@ -916,17 +922,23 @@ def compute_shared_xlim(x_values_by_axis: XValueList) -> tuple[object, object] |
         return None
 
     if all(np.issubdtype(values.dtype, np.number) for values in non_empty_arrays):
-        combined = np.concatenate([values.astype(float, copy=False) for values in non_empty_arrays])
-        finite_values = combined[np.isfinite(combined)]
-        if finite_values.size == 0:
+        bounds = []
+        for values in non_empty_arrays:
+            finite_values = values[np.isfinite(values)]
+            if finite_values.size:
+                bounds.append((float(finite_values.min()), float(finite_values.max())))
+        if not bounds:
             return None
-        return float(finite_values.min()), float(finite_values.max())
+        return min(low for low, _ in bounds), max(high for _, high in bounds)
 
     if all(np.issubdtype(values.dtype, np.datetime64) for values in non_empty_arrays):
-        combined = np.concatenate([values.astype("datetime64[ns]") for values in non_empty_arrays])
-        valid_values = combined[~np.isnat(combined)]
-        if valid_values.size == 0:
+        bounds = []
+        for values in non_empty_arrays:
+            valid_values = values[~np.isnat(values)].astype("datetime64[ns]")
+            if valid_values.size:
+                bounds.append((valid_values.min(), valid_values.max()))
+        if not bounds:
             return None
-        return valid_values.min(), valid_values.max()
+        return min(low for low, _ in bounds), max(high for _, high in bounds)
 
     return None

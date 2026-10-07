@@ -31,7 +31,7 @@ def apply_simple_filter(
     series = dataframe[source_column]
     mask = _build_filter_mask(series, minimum_value, maximum_value, keep_missing)
 
-    working_frame = dataframe.copy()
+    working_frame = dataframe.copy(deep=False)
     working_frame[resolved_column_name] = series.where(mask)
     return working_frame
 

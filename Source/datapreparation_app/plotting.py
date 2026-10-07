@@ -3,7 +3,6 @@
 
 import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
-import numpy as np
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk
@@ -12,8 +11,6 @@ from Source.shared.column_roles import get_column_role, get_preferred_role_colum
 from Source.shared.plot_options import PlotDescriptor, PlotOptions, PlotStyle
 from Source.shared.plot_utils import create_plot_figure
 from Source.shared.presentation_shell import PresentationShellMixin
-
-from .state import PREVIEW_PLOT_RENDER_MAX_POINTS
 
 class PlotOptionsDialog:
     """Modal dialog for choosing plot columns and axis options."""
@@ -124,12 +121,7 @@ def refresh_preview_plot(
 
     time_col = get_preferred_role_column(resolved_roles, "time")
     xcol = time_col if time_col is not None and time_col in dataframe.columns else "Index"
-    sampled_dataframe = _downsample_preview_dataframe(dataframe, PREVIEW_PLOT_RENDER_MAX_POINTS)
-    sampled_rows = len(sampled_dataframe)
-    full_rows = len(dataframe)
     title = "Overlay Plot"
-    if sampled_rows < full_rows:
-        title = f"Overlay Plot (preview sampled: {sampled_rows:,}/{full_rows:,} rows)"
 
     plot_options = PlotOptions(
         cols_to_plot=preview_columns,
@@ -141,7 +133,7 @@ def refresh_preview_plot(
     )
 
     dummy_path = "preview"
-    data_frames = {dummy_path: sampled_dataframe}
+    data_frames = {dummy_path: dataframe}
     selected_file_paths = [dummy_path]
 
     figure = create_plot_figure(
@@ -165,20 +157,6 @@ def refresh_preview_plot(
     axes = figure.get_axes()
     if axes:
         _attach_span_selector(app, axes[0])
-
-
-def _downsample_preview_dataframe(dataframe: pd.DataFrame, max_points: int) -> pd.DataFrame:
-    """Return a uniformly sampled dataframe for fast preview plotting."""
-
-    if max_points <= 0:
-        return dataframe
-    row_count = len(dataframe)
-    if row_count <= max_points:
-        return dataframe
-
-    indices = np.linspace(0, row_count - 1, num=max_points, dtype=np.int64)
-    unique_indices = np.unique(indices)
-    return dataframe.iloc[unique_indices]
 
 
 def refresh_preview_plot_signal_controls(

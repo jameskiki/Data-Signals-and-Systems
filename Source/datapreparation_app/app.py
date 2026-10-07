@@ -138,6 +138,7 @@ class DataPreparationApp(PresentationShellMixin):
         self._preview_plot_signal_warning_shown = False
         self._row_range_reset_button: ttk.Button | None = None
         self._suppress_dataset_selection_refresh = False
+        self._last_refreshed_dataset_path: str | None = None
 
         build_main_ui(self, PREVIEW_ROW_LIMIT)
         self.column_output_name_var.trace_add("write", self._handle_output_dataset_name_changed)
@@ -419,6 +420,7 @@ class DataPreparationApp(PresentationShellMixin):
 
     def _refresh_dataset_preparation_views(self) -> None:
         selected_path = self._get_single_selected_file_path()
+        self._last_refreshed_dataset_path = selected_path
         if selected_path is None:
             self._clear_preparation_views()
             return
@@ -972,6 +974,9 @@ class DataPreparationApp(PresentationShellMixin):
     def _handle_dataset_combo_changed(self, _event: tk.Event | None = None) -> None:
         if self._suppress_dataset_selection_refresh:
             return
+        selected_path = self._get_single_selected_file_path()
+        if selected_path == self._last_refreshed_dataset_path:
+            return
         self._reset_row_range()
         self._refresh_dataset_preparation_views()
 
@@ -989,10 +994,6 @@ class DataPreparationApp(PresentationShellMixin):
 
         self._suppress_dataset_selection_refresh = True
         select_dataset_in_table(self, file_path)
-        self.root.after_idle(self._clear_dataset_selection_suppression)
-
-    def _clear_dataset_selection_suppression(self) -> None:
-        self._suppress_dataset_selection_refresh = False
 
     def _refresh_selected_dataset_preview_plot(self) -> None:
         refresh_selected_dataset_preview_plot(self, PREVIEW_PLOT_MAX_COLUMNS)
