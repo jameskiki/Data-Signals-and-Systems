@@ -2,7 +2,8 @@
 
 import json
 import hashlib
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -11,8 +12,8 @@ from Source.data_ops.filtering import apply_simple_filter
 from Source.data_ops.models import SIGNAL_FILTER_OPERATIONS
 from Source.data_ops.signals import add_derived_column, apply_signal_filter
 from Source.data_ops.time_axis import reference_axis_seconds
-from Source.shared.column_roles import get_transformed_column_role, update_projected_column_roles
-from Source.shared.operation_history import HistoryStep
+from Source.shared.column_roles import get_transformed_column_role, infer_column_roles, update_projected_column_roles
+from Source.shared.operation_history import BASED_ON_KEY, BEFORE_APPEND_KEY, METADATA_OPERATIONS, HistoryStep
 from .datasets import build_virtual_dataset_path, collect_source_paths, register_dataset
 
 
@@ -32,6 +33,9 @@ class AppendPlan:
     warnings: tuple[str, ...]
     input_fingerprints: tuple[str, str, str]
     added_columns: tuple[str, ...]
+    chain: tuple[HistoryStep, ...] = ()
+    recomputed_paths: tuple[str, ...] = ()
+    stale_step_ids: tuple[str, ...] = ()
 
 
 def _frame_fingerprint(frame: pd.DataFrame) -> str:
@@ -74,10 +78,11 @@ def _creators(history) -> dict[str, HistoryStep]:
     }
 
 
-def _recipe(app, path: str) -> tuple[str, tuple[HistoryStep, ...]]:
+def _walk(app, path: str) -> tuple[str, tuple[HistoryStep, ...]]:
+    """Return the raw dataset and every creating step (operations and publishes) from it to ``path``."""
     creators = _creators(app.operation_history)
     revision = app.dataset_contexts[path].revision_id
-    operations: list[HistoryStep] = []
+    chain: list[HistoryStep] = []
     visited: set[str] = set()
     while revision not in visited:
         visited.add(revision)
@@ -91,9 +96,10 @@ def _recipe(app, path: str) -> tuple[str, tuple[HistoryStep, ...]]:
             ]
             if not candidates:
                 raise ValueError("The original raw dataset is no longer in the project. Reload/reopen it first.")
-            return candidates[0], tuple(reversed(operations))
+            return candidates[0], tuple(reversed(chain))
         if step.operation == "publish" and len(step.input_revisions) == 1:
             # Publishing snapshots the working data without transforming it.
+            chain.append(step)
             revision = step.input_revisions[0]
             continue
         supported = step.operation in SIGNAL_FILTER_OPERATIONS or step.operation == "simple_filter"
@@ -105,9 +111,43 @@ def _recipe(app, path: str) -> tuple[str, tuple[HistoryStep, ...]]:
                 f"Cannot reapply '{step.operation}'. This prototype supports filters and derived signals only; "
                 "preparation ranges, splits/merges, resampling, resets and manual selections require a new explicit recipe."
             )
-        operations.append(step)
+        chain.append(step)
         revision = step.input_revisions[0]
     raise ValueError("Cyclic processing history.")
+
+
+def _recipe(app, path: str) -> tuple[str, tuple[HistoryStep, ...]]:
+    raw_path, chain = _walk(app, path)
+    return raw_path, tuple(step for step in chain if step.operation != "publish")
+
+
+def _downstream(history, chain: tuple[HistoryStep, ...]) -> tuple[frozenset[str], tuple[str, ...]]:
+    """Revisions that depend on the rewritten chain, and steps whose outputs were computed on old data."""
+    chain_ids = {step.id for step in chain}
+    chain_revisions = {step.output_revision for step in chain}
+    derived: set[str] = set()
+    stale: list[str] = []
+    for step in history.steps:
+        if step.id in chain_ids or not set(step.input_revisions) & (chain_revisions | derived):
+            continue
+        self_loop = step.output_revision in step.input_revisions
+        if step.operation in METADATA_OPERATIONS or (
+            step.operation == "publish" and self_loop and step.output_revision in chain_revisions
+        ):
+            continue
+        stale.append(step.id)
+        if not self_loop:
+            derived.add(step.output_revision)
+    return frozenset(chain_revisions | derived), tuple(stale)
+
+
+def _replay_chain(frame: pd.DataFrame, roles: dict[str, str], chain: tuple[HistoryStep, ...]) -> dict[str, tuple[pd.DataFrame, dict[str, str]]]:
+    states: dict[str, tuple[pd.DataFrame, dict[str, str]]] = {}
+    for step in chain:
+        if step.operation != "publish":
+            frame, roles = replay_operation(frame, roles, step)
+        states[step.output_revision] = frame, roles
+    return states
 
 
 def replay_operation(frame: pd.DataFrame, roles: dict[str, str], step: HistoryStep) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -153,7 +193,8 @@ def replay_operation(frame: pd.DataFrame, roles: dict[str, str], step: HistorySt
 def plan_append(app, target_path: str, incoming_path: str) -> AppendPlan:
     if target_path == incoming_path:
         raise ValueError("Select a different incoming dataset.")
-    raw_path, operations = _recipe(app, target_path)
+    raw_path, chain = _walk(app, target_path)
+    operations = tuple(step for step in chain if step.operation != "publish")
     incoming_raw, incoming_operations = _recipe(app, incoming_path)
     if incoming_operations or incoming_raw != incoming_path:
         raise ValueError("Incoming data must be raw, not an already processed dataset.")
@@ -217,28 +258,49 @@ def plan_append(app, target_path: str, incoming_path: str) -> AppendPlan:
             "New columns: " + ", ".join(added_columns)
             + ". Earlier rows will be missing; no processing is automatically added for these columns."
         )
-    replayed = old
-    replay_roles = dict(roles)
-    for step in operations:
-        replayed, replay_roles = replay_operation(replayed, replay_roles, step)
-    try:
-        pd.testing.assert_frame_equal(replayed, app.data_frames[target_path], check_flags=False)
-    except AssertionError as error:
-        raise ValueError("Recorded recipe no longer reproduces the selected dataset. Automatic reapplication is blocked.") from error
+    states = _replay_chain(old, dict(roles), chain)
+    affected, stale_step_ids = _downstream(app.operation_history, chain)
+    chain_revisions = {step.output_revision for step in chain}
+    recomputed_paths = tuple(
+        path for path, context in app.dataset_contexts.items() if context.revision_id in chain_revisions
+    )
+    for path in recomputed_paths:
+        try:
+            pd.testing.assert_frame_equal(
+                states[app.dataset_contexts[path].revision_id][0], app.data_frames[path], check_flags=False,
+            )
+        except AssertionError as error:
+            raise ValueError(
+                "Recorded recipe no longer reproduces the selected dataset. Automatic reapplication is blocked."
+            ) from error
+    open_workspaces = [
+        workspace for workspace in getattr(app, "_analysis_workspaces", [])
+        if {getattr(workspace, "history_revision", None), getattr(workspace, "original_history_revision", None)} & affected
+    ]
+    if open_workspaces:
+        raise ValueError(
+            "Close the analysis windows opened on this processing chain first; "
+            "their data would no longer match the rewritten history."
+        )
     return AppendPlan(
         target_path, raw_path, incoming_path, operations, time_column, tuple(warnings),
         tuple(_frame_fingerprint(app.data_frames[path]) for path in (raw_path, incoming_path, target_path)),
-        added_columns,
+        added_columns, chain, recomputed_paths, stale_step_ids,
     )
 
 
 def execute_append(app, plan: AppendPlan) -> tuple[str, str]:
+    """Append raw rows upstream of the existing chain and recompute its datasets in place.
+
+    The chain's steps keep their ids and revisions; only the first step is re-pointed to the
+    combined raw revision. Results/views/branches computed on the old data are kept and marked
+    with ``before_append`` instead of being silently presented as describing the combined run.
+    """
     # Revalidate at execution so a stale preview never authorizes different data.
     current = plan_append(app, plan.target_path, plan.incoming_path)
     if current != plan:
         raise ValueError("Append inputs changed after preview. Review the operation list again.")
     raw = _combined_raw(app.data_frames[plan.raw_path], app.data_frames[plan.incoming_path], plan.added_columns)
-    processed = raw
     roles = dict(app.dataset_contexts[plan.raw_path].column_roles)
     incoming_roles = app.dataset_contexts[plan.incoming_path].column_roles
     for column in plan.added_columns:
@@ -247,34 +309,45 @@ def execute_append(app, plan: AppendPlan) -> tuple[str, str]:
             raise ValueError(f"New column '{column}' is marked as another time axis. Assign a non-time role first.")
         if role is not None:
             roles[column] = role
-    raw_roles = dict(roles)
-    for step in plan.operations:
-        processed, roles = replay_operation(processed, roles, step)
+    states = _replay_chain(raw, dict(roles), plan.chain)
     raw_path = build_virtual_dataset_path(app.data_frames, plan.raw_path, "appended_raw")
-    processed_path = build_virtual_dataset_path(app.data_frames, raw_path, "processed")
     parents = tuple(app.dataset_contexts[path].revision_id for path in (plan.raw_path, plan.incoming_path))
     if any(parent is None for parent in parents):
         raise ValueError("Append inputs are missing revision identities.")
     register_dataset(
         app, raw_path, raw, source_paths=collect_source_paths(app, [plan.raw_path, plan.incoming_path]),
-        description="Combined raw inputs; previous datasets and snapshot results are unchanged.",
-        column_roles=raw_roles,
+        description="Combined raw inputs; the processing chain downstream was re-pointed to this data.",
+        column_roles=roles,
         history_operation="append_raw", history_inputs=parents,
         history_parameters={
             "time_column": plan.time_column, "warnings": list(plan.warnings),
             "added_columns": list(plan.added_columns), "earlier_rows_missing": len(app.data_frames[plan.raw_path]),
+            "rewritten_steps": [step.id for step in plan.chain],
+            "recomputed_datasets": list(plan.recomputed_paths),
         },
     )
-    if not plan.operations:
+    if not plan.chain:
         return raw_path, raw_path
-    revision = app.dataset_contexts[raw_path].revision_id
-    for step in plan.operations:
-        revision = app.operation_history.record(
-            step.operation, processed_path, (revision,), json.loads(step.parameters_json),
-        )
-    register_dataset(
-        app, processed_path, processed, source_paths=collect_source_paths(app, [raw_path]),
-        description=f"Reapplied {len(plan.operations)} processing operations to combined raw data.",
-        column_roles=roles, history_operation="publish", history_inputs=(revision,),
-    )
-    return raw_path, processed_path
+    history = app.operation_history
+    append_step = history.steps[-1]
+    replacements = {plan.chain[0].id: replace(plan.chain[0], input_revisions=(append_step.output_revision,))}
+    basis = {
+        "sources": [os.path.basename(path) for path in collect_source_paths(app, [plan.raw_path])],
+        "raw_rows": len(app.data_frames[plan.raw_path]),
+    }
+    for step in history.steps:
+        if step.id in plan.stale_step_ids:
+            parameters = json.loads(step.parameters_json)
+            if BEFORE_APPEND_KEY not in parameters:
+                parameters[BEFORE_APPEND_KEY] = append_step.id
+                parameters[BASED_ON_KEY] = basis
+            replacements[step.id] = replace(step, parameters_json=json.dumps(parameters, sort_keys=True, allow_nan=False))
+    history.rewrite_steps(replacements)
+    for path in plan.recomputed_paths:
+        context = app.dataset_contexts[path]
+        frame, replay_roles = states[context.revision_id]
+        app.data_frames[path] = frame
+        context.column_roles = infer_column_roles(frame, {**replay_roles, **context.column_roles})
+        context.cached_summary = None
+        context.source_paths = list(dict.fromkeys(context.source_paths + collect_source_paths(app, [plan.incoming_path])))
+    return raw_path, plan.target_path

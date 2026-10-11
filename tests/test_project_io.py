@@ -89,6 +89,53 @@ def rewrite_manifest(path, update):
             archive.writestr(name, payload)
 
 
+def test_report_selection_is_per_publish_persistent_and_cleaned_on_deletion(tmp_path):
+    original = snapshot()
+    history = original.history
+    source = history.steps[0]
+    history.set_note(source.id, "Data source decision")
+    history.record("publish", "first.csv", (source.output_revision,), {"workspace_steps": [source.id]})
+    first = history.steps[-1].id
+    history.record("publish", "second.csv", (source.output_revision,), {"workspace_steps": [source.id]})
+    second = history.steps[-1].id
+    history.set_report_node_enabled(first, source.id, False)
+    assert not history.report_node_enabled(first, source.id)
+    assert history.report_node_enabled(second, source.id)
+    with pytest.raises(ValueError):
+        history.set_report_node_enabled(first, "unknown", True)
+    with pytest.raises(ValueError):
+        history.set_report_node_enabled(first, source.id, "yes")
+    path = tmp_path / "choices.evaldata"
+    project_io.save_project(str(path), original)
+    restored = project_io.load_project(str(path)).history
+    assert restored.report_selection == {first: {source.id: False}}
+    restored.remove_steps(frozenset({first}))
+    assert restored.report_selection == {}
+    rewrite_manifest(path, lambda manifest: manifest.pop("report_selection"))
+    legacy = project_io.load_project(str(path)).history
+    assert legacy.report_node_enabled(first, source.id)
+
+
+@pytest.mark.parametrize("choices", [
+    [],
+    {"missing": {}},
+    {"TARGET": {"unknown": True}},
+    {"TARGET": {"SOURCE": "yes"}},
+])
+def test_invalid_report_selection_is_rejected(tmp_path, choices):
+    original = snapshot()
+    history = original.history
+    source = history.steps[0]
+    history.record("publish", "first.csv", (source.output_revision,), {"workspace_steps": [source.id]})
+    publish_id = history.steps[-1].id
+    path = tmp_path / "choices.evaldata"
+    project_io.save_project(str(path), original)
+    converted = json.loads(json.dumps(choices).replace("TARGET", publish_id).replace("SOURCE", source.id))
+    rewrite_manifest(path, lambda manifest: manifest.update(report_selection=converted))
+    with pytest.raises(ValueError):
+        project_io.load_project(str(path))
+
+
 @pytest.mark.parametrize("change", [
     lambda m: m.update(schema_version=99),
     lambda m: m["history"][0].update(input_revisions=["missing"]),
@@ -159,6 +206,7 @@ def test_project_open_invalid_or_cancelled_does_not_mutate_session(tmp_path, mon
         operation_history=current.history, _analysis_workspaces=[], _comparison_windows=[],
     )
     errors = []
+    app.open_project_path = lambda selected: app_module.DataPreparationApp.open_project_path(app, selected)
     path = tmp_path / "project.evaldata"
     path.write_bytes(b"invalid")
     monkeypatch.setattr(app_module.filedialog, "askopenfilename", lambda **kwargs: str(path))

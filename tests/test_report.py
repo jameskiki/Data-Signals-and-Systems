@@ -18,12 +18,62 @@ from Source.data_ops.spectral import compute_fft_spectrum, compute_spectrogram
 from Source.datapreparation_app.datasets import register_dataset, rename_dataset
 from Source.datapreparation_app.history_deletion import delete_history_nodes, plan_history_deletion
 from Source.datapreparation_app.project_io import ProjectSnapshot, load_project, save_project
-from Source.datapreparation_app.report import _edges, build_publish_report
+from Source.datapreparation_app.report import _edges, _key_values, _table_html, build_publish_report
 from Source.shared.operation_history import record_workspace_view
 from Source.shared.plot_options import PlotDescriptor
 from Source.shared.plot_utils import create_plot_figure
 
 STAMP = datetime(2026, 10, 11, tzinfo=timezone.utc)
+
+
+def test_data_tables_are_collapsed_labelled_escaped_and_keep_preview_limits():
+    frame = pd.DataFrame({"signal": ["<script>"] * 25})
+    content = _table_html(frame, title="<Result data>")
+    assert content.startswith('<details class="table-panel">')
+    assert '<summary>&lt;Result data&gt; (25 rows, 1 column)</summary>' in content
+    assert "<script>" not in content
+    assert content.count("&lt;script&gt;") == 20
+    assert "First 20 of 25 rows shown." in content
+    assert 'class="table-scroll"' in content
+    assert content.endswith("</details>")
+    summary = _key_values({"Signal": "<measurement>"})
+    assert summary.startswith('<div class="table-panel">')
+    assert "<details" not in summary
+    assert "&lt;measurement&gt;" in summary
+
+
+def test_report_selection_excludes_result_view_and_notes_without_changing_pipeline(monkeypatch):
+    from Source.datapreparation_app import report as report_module
+    monkeypatch.setattr(report_module, "_figure_html", lambda figure, caption: f"<figure>{caption}</figure>")
+    app, publish_id, linked = published_session()
+    history = app.operation_history
+    fft_id = linked[1]
+    history.set_note(fft_id, "UNIQUE FFT DECISION")
+    revision = app.dataset_contexts["raw__median_analysis.csv"].revision_id
+    history.record("report_view", "raw__median_analysis.csv", (revision,), {
+        "title": "UNIQUE ZOOM", "x_column": "time", "y_columns": ["median"],
+    }, output_revision=revision)
+    view_id = history.steps[-1].id
+    history.set_note(view_id, "UNIQUE VIEW DECISION")
+    original_steps = history.steps
+    original_frame = app.data_frames["raw__median_analysis.csv"].copy()
+    assert "UNIQUE ZOOM" in build_publish_report(app, publish_id, STAMP)
+    history.set_report_node_enabled(publish_id, fft_id, False)
+    history.set_report_node_enabled(publish_id, view_id, False)
+    report = build_publish_report(app, publish_id, STAMP)
+    assert "FFT Amplitude" not in report
+    assert "UNIQUE FFT DECISION" not in report
+    assert "UNIQUE ZOOM" not in report
+    assert "UNIQUE VIEW DECISION" not in report
+    assert "2 node(s) intentionally excluded" in report
+    assert "Published Data" in report and "Spectrogram" in report
+    assert history.steps == original_steps
+    pd.testing.assert_frame_equal(app.data_frames["raw__median_analysis.csv"], original_frame)
+    assert fft_id in history.artifact_tables
+    history.set_report_node_enabled(publish_id, fft_id, True)
+    assert "FFT Amplitude" in build_publish_report(app, publish_id, STAMP)
+    history.set_report_node_enabled(publish_id, history.steps[0].id, True)
+    assert "load_file" in build_publish_report(app, publish_id, STAMP)
 
 
 def published_session():
@@ -67,6 +117,10 @@ def test_report_lists_linked_operations_results_and_flags_earlier_state():
     assert "dominant_frequency" in report
     assert "not a quality approval" in report
     assert '<ul class="warn">' not in report
+    tables = re.findall(r'<details class="table-panel">.*?</details>', report, re.DOTALL)
+    assert any("Statistics (numeric columns, full data)" in table for table in tables)
+    assert any("peaks_frame" in table for table in tables)
+    assert all("<summary>" in table and "<table" in table for table in tables)
 
 
 def test_report_makes_missing_and_deleted_state_visible():

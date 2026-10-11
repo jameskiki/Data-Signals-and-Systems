@@ -906,19 +906,21 @@ class DataPreparationApp(PresentationShellMixin):
         path = filedialog.askopenfilename(
             parent=self.root, title="Open Embedded Project", filetypes=[("EvalData project", "*.evaldata")],
         )
-        if not path:
-            return
+        if path:
+            self.open_project_path(path)
+
+    def open_project_path(self, path: str) -> bool:
         try:
             snapshot = load_project(path)
         except Exception as error:
             messagebox.showerror("Project Open Error", str(error), parent=self.root)
-            return
+            return False
         if self.data_frames or self._analysis_workspaces or self._comparison_windows:
             if not messagebox.askyesno(
                 "Replace Current Session", "Opening replaces the current datasets and history and closes analysis/comparison "
                 "windows. Unsaved changes will be lost. Continue?", parent=self.root,
             ):
-                return
+                return False
         for workspace in list(self._analysis_workspaces):
             workspace.close()
         for window in list(self._comparison_windows):
@@ -934,7 +936,8 @@ class DataPreparationApp(PresentationShellMixin):
         self._reset_row_range()
         refresh_dataset_table(self)
         self._refresh_dataset_preparation_views()
-        self.notifications.success("Embedded project reopened; saved results are available in History / Workflow")
+        self.notifications.success("Embedded project reopened; saved results are available in Workflow / Pipeline")
+        return True
 
     def append_selected_dataset(self) -> None:
         target = self._get_single_selected_file_path("Select the dataset whose processing should be continued")
@@ -954,13 +957,24 @@ class DataPreparationApp(PresentationShellMixin):
         operations = "\n".join(
             f"{index}. {step.operation}: {step.parameters_json}" for index, step in enumerate(plan.operations, 1)
         ) or "(No reusable processing; create combined raw data only.)"
+        names = ", ".join(
+            dataset_display_name(path, self.dataset_contexts[path]) for path in plan.recomputed_paths
+        )
+        rewrite = (
+            f"History is REWRITTEN: the append node is inserted before these operations (same nodes, no copies). "
+            f"Recomputed in place: {names}.\n"
+            f"{len(plan.stale_step_ids)} later node(s) (saved FFT/Welch/statistics/cycle results, report views, "
+            "branches) were computed on the old data; they are kept and marked 'before append'. "
+            "The old processed values are not kept (the raw files are unchanged). "
+            "Save the project first if you want a copy of the previous state.\n\n"
+            if plan.chain else ""
+        )
         preview = (
             f"Raw source: {dataset_display_name(plan.raw_path, self.dataset_contexts[plan.raw_path])}\n"
             f"Incoming: {dataset_display_name(plan.incoming_path, self.dataset_contexts[plan.incoming_path])}\n\n"
             f"Operations to reapply over the FULL combined run:\n{operations}\n\n"
             + ("\n".join(plan.warnings) + "\n\n" if plan.warnings else "")
-            + "Old data and FFT/Welch/statistics/cycle snapshots stay unchanged. "
-            "New snapshot analyses must be requested separately. Continue?"
+            + rewrite + "New snapshot analyses must be requested separately. Continue?"
         )
         if not messagebox.askyesno("Append + Reapply Processing", preview, parent=self.root):
             return
@@ -972,9 +986,11 @@ class DataPreparationApp(PresentationShellMixin):
         refresh_dataset_table(self)
         select_dataset_in_table(self, result_path)
         self._refresh_dataset_preparation_views()
+        if self._history_window is not None and self._history_window.window.winfo_exists():
+            self._history_window.refresh()
         self.notifications.success(
-            "Appended raw data and reapplied processing; previous results preserved",
-            details=f"Combined raw: {raw_path}\nResult: {result_path}",
+            "Appended raw data before the existing processing; results from before the append are marked",
+            details=f"Combined raw: {raw_path}\nRecomputed: {result_path}",
         )
 
     def rename_selected_dataset(self) -> None:

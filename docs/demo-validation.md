@@ -239,3 +239,48 @@ append rows to an existing dataset. Merge currently concatenates in selection
 order and does not sort timestamps or deduplicate overlaps. These demo files
 have no gaps or overlaps. Generating into a folder containing any of the target
 filenames is rejected to avoid overwriting files.
+
+## End-to-End Workflow Demo Project
+
+Use `Demo -> Generate Workflow Demo Project (Load to Report)...` and choose an
+empty folder. It takes about a minute (the UI stays responsive). It writes the
+three daily files above, `longterm_workflow_demo.evaldata`, and
+`longterm_workflow_demo_report.html`, then offers to open the project, the
+`Workflow / Pipeline` graph, and the report.
+
+The project is produced by a script that calls the same functions as the GUI, so
+it looks like a session done by hand:
+
+1. Load day 1 and rename it `Long-term run - day 1 (raw)`.
+2. FFT on the raw `measurement` (snapshot, decision note: 1 h cycle, slow
+   component, noise -> smooth then detrend).
+3. `moving_average` (60 s) -> `measurement_smooth`, then linear detrend ->
+   `measurement_detrended`, each with a note.
+4. Fixed-length cycle analysis (3600 s) on day 1, note "pipeline accepted".
+5. Publish `Long-term run - processed`.
+6. Load day 2 and day 3 and append each; the appends are inserted ahead of the
+   filters, which are recomputed in place (259,200 rows). The day-1 cycle analysis
+   is marked `[earlier data]` (dashed box); the raw FFT is not, because raw day 1
+   did not change.
+7. On all three days: spectrogram (note: burst on day 3 at noon), hourly cycle analysis,
+   and six 12-hour cycles of `measurement_detrended`. The latter focuses on the
+   slow component without isolating it: the hourly oscillation and anomaly remain.
+   report views "Three-day overview" and "Day 3 anomaly (zoom)".
+8. Publish `Long-term run - report` and generate its report.
+
+Expected report: Results for the spectrogram and both cycle analyses, both Views, a
+Decision Trail with all seven notes, and `Evidence` sections for the raw day-1 FFT
+(peaks near 0.000278 Hz and 0.0000231 Hz) and the day-1 cycle analysis
+(`Evidence based on longterm_run_day_01.csv (86,400 raw rows)`).
+Summary and data tables use soft shaded panels. Statistics and result data tables
+start collapsed; click their headings to expand the bounded data preview.
+In the desktop graph, choose the final publish in `Report for publish`. Disable
+the 12-hour cycle node: it becomes `Excluded`, its dotted report connector goes
+away, and a newly generated report omits its result and note. The hourly result,
+published data, and pipeline stay unchanged. Switching to another publish keeps
+independent choices. Save/reopen the project to verify persistence. Double-click
+cards or use `Compact All` / `Expand All` to change graph density only.
+
+Limits: the notes are written by the script, not derived from the data; the
+project is about 90 MB because every registry dataset (including the
+intermediate appended raw datasets) is embedded.

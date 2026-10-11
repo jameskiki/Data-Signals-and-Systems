@@ -128,12 +128,33 @@ The important rule is that the analysis workspace does not mutate the shared ses
 of input/output revisions. Dataset contexts carry dataset and revision IDs, and
 analysis workspaces share the history while keeping their own working revision.
 Publishing records a pass-through `publish` step with its own output revision, so
-the published registry entry is a distinct graph node; append replay skips it.
+the published registry entry is a distinct graph node; append replay passes through it.
 Workspaces remember the step IDs they record (`history_step_ids`); publish stores
-them as `workspace_steps`, drawn as dashed links in the history graph.
+them as `workspace_steps`, which supply the default report inclusion.
+`OperationHistory.report_selection` stores per-publish step-id/boolean overrides.
+`report_candidates` combines the dataset lineage and original publish links;
+the report and graph use `report_node_enabled` for the same inclusion decisions.
+The manifest validates and restores these overrides (older projects default to
+no overrides), and node deletion cleans affected selections. The graph draws
+dotted connectors for enabled content of the selected report; its rounded cards
+start compact and can expand independently without changing report inclusion.
 
-The main window's `View -> History / Workflow (Prototype)` opens a read-only
-chronological list and top-to-bottom Tk canvas graph. Coverage is deliberately
+Append (`append_workflow.py`) rewrites history instead of copying the chain:
+`execute_append` records `append_raw`, replaces the first chain step with a copy
+whose input is the new revision, and adds `before_append: <append step id>` to
+the parameters of downstream non-metadata steps (results, views, branches).
+`OperationHistory.rewrite_steps` swaps steps by id and restores a stable
+topological order, which `from_steps`, `remove_steps` and the graph layout rely on.
+Datasets registered on chain revisions get their frames replaced in place.
+
+The main window's `View -> Workflow / Pipeline & Reports (Prototype)` opens a
+chronological list and top-to-bottom Tk canvas graph. Decision notes live in
+`OperationHistory.notes` (step id -> text), outside the frozen steps, so editing
+a note never rewrites history; `remove_steps` drops notes of deleted steps and
+the project manifest stores them under `notes`. `OperationHistory.lineage(revision)`
+returns the creating steps of a revision plus every step recorded on an ancestor
+revision; reports use it for the Decision Trail and noted `Evidence` results.
+Coverage is deliberately
 partial; unsupported dataframe replacements are marked untracked. Role edits
 are metadata events on an existing data revision; frequency/cycle analyses and
 cycle review decisions retain independent numeric result tables on that revision.
@@ -150,6 +171,12 @@ matplotlib `Figure` PNGs as base64, and warns about stale, deleted, untracked,
 or missing inputs instead of substituting data. Report views (`report_view` steps
 recorded by `record_workspace_view`) store only plot settings captured by
 `capture_time_series_view` and are re-rendered from the published dataframe.
+
+`Source/datapreparation_app/workflow_demo.py` scripts the long-term demo from
+load to report through the same functions the GUI calls (`register_dataset`,
+`rename_dataset`, history `record`/`record_result`, `plan_append`/`execute_append`,
+publish, `save_project`, `build_publish_report`). The menu runs it on a worker
+thread because report figure rendering and project writing take about a minute.
 
 `Source/datapreparation_app/project_io.py` saves embedded `.evaldata` archives:
 a versioned JSON manifest and Parquet snapshots for registry datasets and result

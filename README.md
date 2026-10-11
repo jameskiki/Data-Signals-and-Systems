@@ -39,8 +39,8 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
 - preparation workflows for assigning compact time/reference, process-value, and ambient-value categories, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
 - session-level dataset reuse across preparation, analysis publishing, and comparison
-- explicit append/reapply prototype for verified filter/derived-signal recipes, preserving old snapshot results; see [workflow and limitations](docs/user-guide.md#append-and-reapply-processing)
-- prototype read-only operation history and workflow graph via `View -> History / Workflow (Prototype)`, including role changes and saved frequency/cycle result tables
+- explicit append/reapply prototype for verified filter/derived-signal recipes: inserts the appended data upstream of the existing operations and marks older results; see [workflow and limitations](docs/user-guide.md#append-and-reapply-processing)
+- prototype workflow/pipeline graph via `View -> Workflow / Pipeline & Reports (Prototype)`: how each dataset is produced, snapshot results as evidence, editable decision notes, appends inserted upstream, and HTML reports from publish nodes
 - embedded project save/reopen via the Files menu (`.evaldata`); preserves registered datasets, history, roles, and numeric analysis results, but not unpublished workspace data or layouts
 - prototype HTML report from a selected publish node in the history window (linked operations, published data summary, result plots)
 - a dedicated analysis workspace with:
@@ -62,6 +62,7 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
   - open-one-back-into-analysis from the comparison summary
 - demo datasets for reproducible walkthroughs and exploratory checks
 - three-day continuous test-run CSV generator (`Demo -> Generate Long-Term Run Files (3 Days)...`) for trying incremental project imports; see [demo validation](docs/demo-validation.md#incremental-long-term-test-demo)
+- end-to-end workflow demo project (`Demo -> Generate Workflow Demo Project (Load to Report)...`): the same three days processed from load to finished HTML report, with decision notes; see [demo validation](docs/demo-validation.md#end-to-end-workflow-demo-project)
 
 ## Workflow Overview
 

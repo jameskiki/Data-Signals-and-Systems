@@ -52,6 +52,8 @@ def save_project(path: str, snapshot: ProjectSnapshot) -> None:
     manifest = {
         "format": "evaldata-project", "schema_version": 1,
         "history": [asdict(step) for step in snapshot.history.steps],
+        "notes": dict(snapshot.history.notes),
+        "report_selection": snapshot.history.report_selection,
         "datasets": [], "artifacts": [],
         "limitations": ["No unpublished workspace data, window layouts, or operation replay."],
         "versions": {
@@ -98,6 +100,21 @@ def load_project(path: str) -> ProjectSnapshot:
         history = OperationHistory.from_steps(manifest["history"])
         known_revisions = {step.output_revision for step in history.steps}
         step_ids = {step.id for step in history.steps}
+        notes = manifest.get("notes", {})
+        if not isinstance(notes, dict) or not all(
+            isinstance(key, str) and key in step_ids and isinstance(value, str) for key, value in notes.items()
+        ):
+            raise ValueError("Invalid project decision notes.")
+        history.notes.update(notes)
+        choices = manifest.get("report_selection", {})
+        if not isinstance(choices, dict):
+            raise ValueError("Invalid project report selection.")
+        for publish_id, overrides in choices.items():
+            if not isinstance(overrides, dict):
+                raise ValueError("Invalid project report selection.")
+            history.report_candidates(publish_id)
+            for step_id, enabled in overrides.items():
+                history.set_report_node_enabled(publish_id, step_id, enabled)
         frames: dict[str, pd.DataFrame] = {}
         contexts: dict[str, DatasetContext] = {}
         dataset_ids: set[str] = set()

@@ -2,6 +2,8 @@
 import os
 import queue
 import threading
+import webbrowser
+from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
 from .data_parser import DataParser, PARSER_WARNINGS_ATTR
@@ -16,6 +18,50 @@ from Source.shared.column_roles import get_available_column_roles, infer_non_tim
 from Source.shared.plot_options import PlotDescriptor
 from Source.shared.plot_utils import create_plot_figure
 from Source.shared.longterm_demo import write_longterm_demo_files
+from .workflow_demo import create_workflow_demo_project
+
+
+def generate_workflow_demo_project(app) -> None:
+	directory = filedialog.askdirectory(parent=app.root, title="Choose an empty folder for the workflow demo project")
+	if not directory:
+		return
+	outcome: dict[str, object] = {}
+
+	def _worker() -> None:
+		try:
+			outcome["demo"] = create_workflow_demo_project(directory)
+		except Exception as error:
+			outcome["error"] = error
+
+	def _poll() -> None:
+		if worker.is_alive():
+			app.root.after(200, _poll)
+			return
+		app.root.config(cursor="")
+		if "error" in outcome:
+			messagebox.showerror("Demo Generation Error", str(outcome["error"]), parent=app.root)
+			return
+		demo = outcome["demo"]
+		app.notifications.success(
+			"Workflow demo project created",
+			details="\n".join((*demo.data_paths, demo.project_path, demo.report_path)),
+		)
+		if messagebox.askyesno(
+			"Workflow Demo Project",
+			"Created three daily files, an embedded project and its HTML report:\n\n"
+			"load day 1 -> FFT on raw data (decision note) -> filter + detrend -> publish -> append day 2 + 3 "
+			"-> spectrogram, cycles, report views -> publish -> report.\n\n"
+			"Open the project and its Workflow / Pipeline graph now?",
+			parent=app.root,
+		) and app.open_project_path(demo.project_path):
+			app.open_history_window()
+			webbrowser.open(Path(demo.report_path).resolve().as_uri())
+
+	app.root.config(cursor="watch")
+	app.notifications.info("Building workflow demo project (about a minute)...")
+	worker = threading.Thread(target=_worker, daemon=True)
+	worker.start()
+	app.root.after(200, _poll)
 
 
 def generate_longterm_demo_files(app) -> None:

@@ -17,7 +17,9 @@ from matplotlib.figure import Figure
 
 from Source.data_ops.summary import build_statistics_frame
 from Source.data_ops.time_axis import reference_axis_seconds
-from Source.shared.operation_history import REPORT_VIEW_OPERATION
+from Source.shared.operation_history import (
+    BASED_ON_KEY, BEFORE_APPEND_KEY, REPORT_VIEW_OPERATION, based_on_text, before_append_step,
+)
 from Source.shared.plot_utils import resolve_x_values
 from .datasets import dataset_display_name
 from .project_io import read_app_version
@@ -45,10 +47,21 @@ def _figure_html(figure: Figure, caption: str) -> str:
     return f'<figure><img alt="{_e(caption)}" src="data:image/png;base64,{encoded}"><figcaption>{_e(caption)}</figcaption></figure>'
 
 
-def _table_html(frame: pd.DataFrame, max_rows: int = MAX_TABLE_ROWS) -> str:
+def _table_panel(content: str) -> str:
+    return f'<div class="table-panel"><div class="table-scroll">{content}</div></div>'
+
+
+def _table_html(frame: pd.DataFrame, max_rows: int = MAX_TABLE_ROWS, title: str = "Data table") -> str:
     shown = frame.head(max_rows)
     note = "" if len(frame) <= max_rows else f'<p class="note">First {max_rows} of {len(frame)} rows shown.</p>'
-    return shown.to_html(classes="data", float_format=lambda value: f"{value:.6g}", border=0) + note
+    table = shown.to_html(classes="data", float_format=lambda value: f"{value:.6g}", border=0)
+    rows_label = "row" if len(frame) == 1 else "rows"
+    columns_label = "column" if len(frame.columns) == 1 else "columns"
+    return (
+        f'<details class="table-panel"><summary>{_e(title)} '
+        f'({len(frame)} {rows_label}, {len(frame.columns)} {columns_label})</summary>'
+        f'<div class="table-scroll">{table}</div>{note}</details>'
+    )
 
 
 def _key_values(items: dict[str, object]) -> str:
@@ -58,7 +71,7 @@ def _key_values(items: dict[str, object]) -> str:
         if len(text) > 300:
             text = text[:300] + " ... (truncated)"
         rows.append(f"<tr><th>{_e(key)}</th><td>{_e(text)}</td></tr>")
-    return '<table class="kv">' + "".join(rows) + "</table>" if rows else '<p class="note">No parameters.</p>'
+    return _table_panel('<table class="kv">' + "".join(rows) + "</table>") if rows else '<p class="note">No parameters.</p>'
 
 
 def _column(table: pd.DataFrame) -> np.ndarray:
@@ -209,11 +222,27 @@ def _dataset_plot(frame: pd.DataFrame, roles: dict[str, str], preferred: list[st
     return _figure_html(figure, "Published signals (one panel per column). " + "; ".join(notes))
 
 
+def _basis_note(step) -> str:
+    return (
+        f'<p class="note"><b>Evidence {_e(based_on_text(step))}</b>: computed before later rows were appended; '
+        "it does not include them.</p>"
+    )
+
+
+def _note_html(history, step) -> str:
+    note = history.notes.get(step.id)
+    return f'<p class="decision"><b>Decision note:</b> {_e(note)}</p>' if note else ""
+
+
 def _result_body(step, tables: dict[str, pd.DataFrame] | None, published_input: str) -> str:
     parameters = json.loads(step.parameters_json)
     table_names = parameters.pop("result_tables", [])
+    parameters.pop(BEFORE_APPEND_KEY, None)
+    parameters.pop(BASED_ON_KEY, None)
     parts = []
-    if step.output_revision != published_input:
+    if before_append_step(step):
+        parts.append(_basis_note(step))
+    elif step.output_revision != published_input:
         parts.append(
             '<p class="warn">Computed on an earlier working state. Later operations changed the data, '
             "so this result does not describe the published dataset.</p>"
@@ -234,7 +263,7 @@ def _result_body(step, tables: dict[str, pd.DataFrame] | None, published_input: 
         if name == "cycles_frame":
             parts.append(f"<p class=\"note\">Table <code>{_e(name)}</code>: {table.shape[0]} x {table.shape[1]} (not shown).</p>")
             continue
-        parts.append(f"<h4>{_e(name)}</h4>" + _table_html(table))
+        parts.append(_table_html(table, title=name))
     return "".join(parts)
 
 
@@ -261,7 +290,12 @@ def _view_body(step, frame: pd.DataFrame, published_input: str) -> str:
     view = json.loads(step.parameters_json)
     title = view.get("title") or "Time series"
     parts = []
-    if step.output_revision != published_input:
+    if before_append_step(step):
+        parts.append(
+            f'<p class="note">Recorded {_e(based_on_text(step))} (before later rows were appended); drawn from the '
+            "current published data with the recorded settings, so the range may not cover the appended rows.</p>"
+        )
+    elif step.output_revision != published_input:
         parts.append(
             '<p class="note">Recorded on an earlier working state; drawn from the published data '
             "with the recorded settings.</p>"
@@ -342,8 +376,10 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
     linked = [step for step in steps if step.id in linked_ids]
     if len(linked) != len(linked_ids):
         warnings.append(f"{len(linked_ids) - len(linked)} linked operation(s) were deleted from the history and are not shown.")
-    if any(not step.tracked for step in linked):
-        warnings.append("Some workspace operations were untracked; their parameters are unknown.")
+    if before_append_step(publish):
+        warnings.append(
+            "This publish was created before rows were appended upstream; its dataset still holds only the earlier data."
+        )
     context = app.dataset_contexts.get(publish.label)
     name = dataset_display_name(publish.label, context)
     frame = app.data_frames.get(publish.label)
@@ -351,6 +387,17 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
     if not data_available:
         warnings.append("The published dataset is no longer loaded in this exact revision; data sections are omitted.")
     published_input = publish.input_revisions[0] if publish.input_revisions else ""
+    candidates = history.report_candidates(publish_step_id)
+    enabled_ids = {
+        step.id for step in candidates if history.report_node_enabled(publish_step_id, step.id)
+    }
+    overrides = history.report_selection.get(publish_step_id, {})
+    linked = [
+        step for step in candidates
+        if step.id in enabled_ids and (step.id in linked_ids or overrides.get(step.id) is True)
+    ]
+    if any(not step.tracked for step in linked):
+        warnings.append("Some workspace operations were untracked; their parameters are unknown.")
 
     sections: list[ReportSection] = []
     source = parameters.get("source_dataset")
@@ -363,6 +410,13 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
         "Output revision": publish.output_revision,
     }
     sections.append(ReportSection("Overview", _key_values(overview)))
+    excluded_count = sum(not enabled for enabled in overrides.values())
+    if excluded_count:
+        sections.append(ReportSection(
+            "Report Selection",
+            f'<p class="note">{excluded_count} node(s) intentionally excluded from this report. '
+            "Pipeline calculations and saved results are unchanged. Published data summaries always remain included.</p>",
+        ))
 
     operation_rows = []
     for step in linked:
@@ -375,12 +429,37 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
             text = {"result snapshot": "see result section", "report view": "see view section"}.get(kind, text[:200] + " ...")
         operation_rows.append(
             f"<tr><td>{numbers[step.id]}</td><td>{_e(step.operation)}</td><td>{_e(kind)}</td>"
-            f"<td>{_e(step.timestamp)}</td><td><code>{_e(text)}</code></td></tr>"
+            f"<td>{_e(step.timestamp)}</td><td><code>{_e(text)}</code></td>"
+            f"<td>{_e(history.notes.get(step.id, ''))}</td></tr>"
         )
     sections.append(ReportSection(
-        "Workspace Operations (in recorded order)",
-        '<table class="data"><tr><th>#</th><th>Operation</th><th>Kind</th><th>UTC</th><th>Parameters</th></tr>'
-        + "".join(operation_rows) + "</table>" if operation_rows else '<p class="note">No linked operations.</p>',
+        "Workspace Operations (in pipeline order)",
+        _table_panel('<table class="data"><tr><th>#</th><th>Operation</th><th>Kind</th><th>UTC</th><th>Parameters</th>'
+        "<th>Decision note</th></tr>"
+        + "".join(operation_rows) + "</table>") if operation_rows else '<p class="note">No linked operations.</p>',
+    ))
+
+    lineage = history.lineage(publish.output_revision)
+    trail = [
+        step for step in lineage
+        if (step.id in enabled_ids or step.id == publish.id)
+        and (step.id in history.notes or before_append_step(step))
+    ]
+    trail_rows = "".join(
+        f"<tr><td>{numbers[step.id]}</td><td>{_e(step.operation)}</td>"
+        f"<td>{_e(dataset_display_name(step.label, app.dataset_contexts.get(step.label)))}</td>"
+        f"<td>{_e(based_on_text(step) or 'current data of that node')}</td>"
+        f"<td>{_e(history.notes.get(step.id, '-'))}</td></tr>"
+        for step in trail
+    )
+    sections.append(ReportSection(
+        "Decision Trail",
+        '<p class="note">Annotated steps and results in the lineage of this dataset (from loading onward), '
+        "including evidence computed on earlier data before appends.</p>"
+        + (
+            _table_panel('<table class="data"><tr><th>#</th><th>Step</th><th>Dataset</th><th>Based on</th><th>Decision note</th></tr>'
+            + trail_rows + "</table>") if trail_rows else '<p class="note">No decision notes recorded.</p>'
+        ),
     ))
 
     if data_available:
@@ -389,26 +468,36 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
         body = (
             f"<p>{len(frame)} rows, {len(frame.columns)} columns.</p>"
             + _key_values({str(column): roles.get(column, "-") for column in frame.columns})
-            + "<h4>Statistics (numeric columns, full data)</h4>"
-            + (_table_html(statistics, max_rows=50) if not statistics.empty else '<p class="note">No numeric columns.</p>')
+            + (_table_html(statistics, max_rows=50, title="Statistics (numeric columns, full data)")
+               if not statistics.empty else '<p class="note">No numeric columns.</p>')
             + _dataset_plot(frame, roles, [
-                json.loads(step.parameters_json).get("output_column") for step in reversed(linked)
+                json.loads(step.parameters_json).get("output_column")
+                for step in reversed(steps) if step.id in linked_ids
             ])
         )
         sections.append(ReportSection("Published Data", body))
 
-    for step in linked:
+    linked_ids_set = {step.id for step in linked}
+    evidence = [
+        step for step in lineage
+        if step.id in enabled_ids and step.id not in linked_ids_set
+        and (step.operation == REPORT_VIEW_OPERATION or step.id in history.artifact_tables
+             or "result_tables" in json.loads(step.parameters_json))
+    ]
+    for step in linked + evidence:
+        prefix = _note_html(history, step)
         if step.operation == REPORT_VIEW_OPERATION:
             title = json.loads(step.parameters_json).get("title") or "Time series"
             sections.append(ReportSection(
                 f"View #{numbers[step.id]}: {title}",
-                _view_body(step, frame, published_input) if data_available
-                else '<p class="warn">Published data unavailable; this view cannot be drawn.</p>',
+                prefix + (_view_body(step, frame, published_input) if data_available
+                else '<p class="warn">Published data unavailable; this view cannot be drawn.</p>'),
             ))
         elif step.id in history.artifact_tables or "result_tables" in json.loads(step.parameters_json):
+            label = "Result" if step.id in linked_ids_set else "Evidence"
             sections.append(ReportSection(
-                f"Result #{numbers[step.id]}: {step.operation}",
-                _result_body(step, history.artifact_tables.get(step.id), published_input),
+                f"{label} #{numbers[step.id]}: {step.operation} ({dataset_display_name(step.label, app.dataset_contexts.get(step.label))})",
+                prefix + _result_body(step, history.artifact_tables.get(step.id), published_input),
             ))
 
     try:
@@ -424,11 +513,21 @@ def build_publish_report(app, publish_step_id: str, generated_at: datetime | Non
 body {{ font-family: Segoe UI, Arial, sans-serif; margin: 2em auto; max-width: 1050px; color: #111827; }}
 h1 {{ border-bottom: 3px solid #00745a; padding-bottom: .3em; overflow-wrap: anywhere; }}
 h2 {{ color: #00745a; margin-top: 1.8em; }}
-table {{ border-collapse: collapse; margin: .6em 0; font-size: .9em; }}
-th, td {{ border: 1px solid #d1d5db; padding: 3px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }}
-th {{ background: #f3f4f6; }}
+.table-panel {{ background: #f0f5fa; border-left: 4px solid #8daec7; border-radius: 6px;
+    margin: .8em 0; padding: .5em .8em; }}
+.table-scroll {{ overflow-x: auto; }}
+table {{ border-collapse: collapse; width: 100%; margin: .2em 0; font-size: .9em; }}
+th, td {{ border: 0; border-bottom: 1px solid #dce6ef; padding: 7px 10px; text-align: left;
+    vertical-align: top; overflow-wrap: anywhere; }}
+th {{ background: #e5edf5; color: #334155; font-weight: 600; }}
+tr:last-child > th, tr:last-child > td {{ border-bottom: 0; }}
+tbody tr:nth-child(even) td {{ background: #f7f9fc; }}
+summary {{ cursor: pointer; color: #334155; font-weight: 600; padding: .25em 0; }}
+summary:focus-visible {{ outline: 2px solid #0072b2; outline-offset: 3px; }}
+details[open] > summary {{ margin-bottom: .5em; }}
 .warn {{ background: #fff0cf; border-left: 4px solid #8a5700; padding: .4em .8em; }}
 .note {{ color: #4b5563; font-size: .9em; }}
+.decision {{ background: #e8f1fb; border-left: 4px solid #0072b2; padding: .4em .8em; }}
 figure {{ margin: 1em 0; }} img {{ max-width: 100%; }} figcaption {{ color: #4b5563; font-size: .85em; }}
 code {{ font-size: .85em; word-break: break-all; }}
 </style></head><body>

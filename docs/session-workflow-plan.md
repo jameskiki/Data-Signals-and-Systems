@@ -5,12 +5,18 @@ save/reopen, and a first publish-node HTML report implemented. Replay remains a 
 
 ## Try the Prototype
 
+Fastest look at the whole workflow: `Demo -> Generate Workflow Demo Project (Load to Report)...`
+builds a finished project and report from the three-day demo files and opens the graph
+(see [demo validation](demo-validation.md#end-to-end-workflow-demo-project)).
+
+By hand:
+
 1. Start the app and load the spectral reference demo from the Demo menu.
 2. Choose columns and optionally a range, then create a prepared dataset.
 3. Open its analysis workspace, select a signal, choose `moving_average`, set a
    window size, and apply the filter.
 4. Publish the current view back to the main dataset list.
-5. Open `View -> History / Workflow (Prototype)` in the main window.
+5. Open `View -> Workflow / Pipeline & Reports (Prototype)` in the main window.
 6. Select a list entry or graph node to inspect its parameters and revision IDs.
    Use Refresh after more operations.
 7. Select the original dataset and prepare another version to see a branch.
@@ -188,11 +194,18 @@ saves and missing sources. Reopening snapshots is not yet operation replay.
 
 ## 4. First Automatic Report
 
-First prototype implemented: select a publish node in `View -> History / Workflow (Prototype)`
-and click **Generate Report from Publish Node...**. EvalData writes one
+First prototype implemented: select a publish node in `View -> Workflow / Pipeline & Reports (Prototype)`
+choose the target in **Report for publish**, and click **Generate Selected Report...**. EvalData writes one
 self-contained HTML file (plots embedded as PNG) and opens it in the browser.
 
-The report contains exactly what is linked to that publish:
+Report content defaults to the linked workspace operations plus annotated lineage evidence.
+The checkbox on each eligible node overrides inclusion separately for each publish.
+Choices are saved in the project; exclusion does not remove data, run or undo a
+calculation, or suppress the published-data provenance warnings. Compact/expanded
+cards only affect graph display. Dotted connectors now show enabled content for
+the selected report, while solid connectors retain the complete pipeline.
+
+The report contains:
 
 - Overview: published dataset name/path, source dataset, publish time and revision.
 - The linked workspace operations in recorded order, with parameters.
@@ -248,15 +261,21 @@ User-endorsed direction:
 - Separate reusable transformations from results computed for a particular
   dataset revision. History remains the record of what happened; a recipe
   specifies what should be reapplied.
-- Append compatible raw inputs into a new combined revision, leaving previous
-  datasets and results intact.
+- Append compatible raw inputs as a new combined revision *upstream* of the
+  existing processing chain (user decision: true history rewrite rather than a
+  duplicated chain). The chain's nodes and revision ids are kept, the first
+  node is re-pointed, and datasets on the chain are recomputed in place.
 - Preview an explicit "Operations to reapply" list before processing. Initially
   support filters and derived signals; unsupported transformations block
   automatic processing with an explanation rather than being silently skipped.
 - Recompute supported transformations over the full combined run, not just the
   incoming rows, so rolling/filter boundary behavior remains consistent.
-- Keep FFT/Welch, statistics, and other computed results attached to their old
-  input revision. New result computation is explicit, not automatic replacement.
+- Keep FFT/Welch, statistics, report views and branches computed on the old data
+  unchanged, but mark them `before_append` so graph and reports say they only
+  describe the earlier data. New result computation is explicit.
+- Known cost of the rewrite: the history no longer shows what the chain looked
+  like before the append (timestamps stay truthful, list order becomes
+  topological), and previous processed values are discarded.
 - Do not carry manual cycle exclusions or selected ranges forward automatically.
 
 Consider splitting the analysis window into two clearly labeled groups:

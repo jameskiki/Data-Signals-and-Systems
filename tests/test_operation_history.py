@@ -21,6 +21,25 @@ class _Result:
     peak: float
 
 
+def test_decision_notes_set_clear_validate_and_follow_deletion():
+    history = OperationHistory()
+    source = history.record("load_file", "raw")
+    branch = history.record("prepare", "other", (source,))
+    filtered = history.record("moving_average", "filtered", (source,))
+    raw_step, branch_step, filter_step = (step.id for step in history.steps)
+    history.set_note(filter_step, "  chosen after FFT  ")
+    assert history.notes == {filter_step: "chosen after FFT"}
+    assert [step.id for step in history.lineage(filtered)] == [raw_step, filter_step]
+    assert branch not in {step.output_revision for step in history.lineage(filtered)}
+    history.set_note(filter_step, " ")
+    assert history.notes == {}
+    with pytest.raises(ValueError):
+        history.set_note("missing", "text")
+    history.set_note(branch_step, "dead end")
+    history.remove_steps(frozenset({branch_step}))
+    assert history.notes == {}
+
+
 def test_history_branches_and_publish_reuses_revision():
     history = OperationHistory()
     source = history.record("load_demo", "source")

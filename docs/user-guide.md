@@ -252,11 +252,22 @@ There are several export paths:
 
 When the latest frequency result is `Transfer Estimate` or `Coherence`, `Export Current View` also writes a sidecar report file named `<csv>.analysis_report.txt` with confidence and dominant-band diagnostics.
 
-To create an HTML report (prototype), publish the analysis workspace, open `View -> History / Workflow (Prototype)`, select the publish node, and click `Generate Report from Publish Node...`. The report contains the operations linked to that publish (dashed green arrows), the published data summary and signal plots, and plots/tables of the linked results. Results computed before later operations and missing or deleted inputs are marked with warnings. The report does not include loading or preparation steps before the workspace and does not interpret results.
+To create an HTML report (prototype), publish the analysis workspace, open `View -> Workflow / Pipeline & Reports (Prototype)`, choose the publish in `Report for publish`, and click `Generate Selected Report...`. By default the report contains linked workspace operations, annotated evidence and earlier-data results, a Decision Trail, and published data summaries and plots. Select a content node and toggle `Include selected node in this report` to include or exclude its entry, note, result or view. Choices apply only to the selected publish and are saved with the embedded project; they never change the pipeline, calculations or stored results. The published data summary and its provenance warnings remain included.
+
+The graph uses soft category-colored cards. Cards start compact; double-click one to show/hide its dataset and category, or use `Compact All` / `Expand All`. Expansion is a window display setting, not a report setting. `In report`, `Excluded`, and `Pipeline only` labels show the selected report's content; dotted connectors link enabled content to the report's publish node. Selecting the target publish lists its enabled nodes in the details pane. Solid arrows always show data flow, even when a node is excluded from the report.
+
+Results with a decision note in the dataset's lineage (for example an FFT on the raw first day that led to choosing a filter) appear as `Evidence` sections unless excluded, even if computed before later appends. Missing or deleted inputs are marked with warnings. The report does not interpret results; it shows the saved results and your notes. Existing exported HTML files do not change when you change choices; generate a new report.
+
+To document why you chose a step, select any node in the Workflow / Pipeline window and click `Edit Decision Note...`. Notes appear in the details pane, as a tooltip on the graph node (marked ✎), and in reports. They are saved with the project.
 
 To add a specific time-series view (chosen signals, zoomed range) to the report, show it in the analysis workspace time-series plot (`Update Plot`, then zoom with the plot toolbar; press `l` over the plot for a log Y axis) and click `Add View to Report (shown columns + zoom)`. EvalData records the columns, X column, zoomed X range, overlay/subplots layout, and Y scale as a history step (no image). The step is linked to the next publish, and the report redraws the view from the published data. Y zoom, colors, and annotations are not kept.
 
 Export behavior is described in more detail in `data-formats.md`.
+
+Report summary tables use soft shaded panels. Statistics and result data tables
+are collapsed initially; click or keyboard-activate the table heading to show
+or hide them. Existing preview limits still apply (expanding does not load the
+full dataset).
 
 ## Step 10: Compare Session Datasets
 
@@ -364,11 +375,28 @@ linked to their original input revisions.
 
 The prototype finds the original raw source through the selected dataset's
 history and verifies that the recorded processing reproduces the old result.
-It reapplies that whole recipe over the combined run, creating a new raw entry
-and a new processed entry. FFT/Welch/cycle result snapshots remain on their old
-revision; none are recalculated automatically. With no processing, only a new
-combined raw entry is created. The combined raw entry must remain registered
-for subsequent appends.
+It then **rewrites the history**: a combined raw entry (`append_raw`) is inserted
+*before* the existing operation nodes, the first operation is re-pointed to it,
+and the whole recipe is recomputed over the combined run. The existing nodes are
+reused (no duplicated chain), and the processed datasets on that chain are
+replaced in place under the same name. The graph then reads
+`load day 1 + load day 2 -> append -> filters -> publish`.
+
+Consequences to be aware of:
+
+- The previous processed values are not kept (the raw files are). Save the
+  project beforehand if you need the earlier state.
+- FFT/Welch/statistics/cycle results, report views and branches that were
+  computed on the old data are kept unchanged but marked `before append #n`
+  (dashed box in the graph, warning in details and reports). None are
+  recalculated automatically.
+- Close analysis windows opened on the affected chain first; the append is
+  refused while they are open.
+- Deleting the append node deletes the rewritten chain and its datasets.
+
+With no processing, only a new combined raw entry is created. The combined raw
+entry must remain registered for subsequent appends; a second append chains
+`append -> append -> operations`.
 
 Supported recipes: simple range masking, signal filters, and derived signals.
 Preparation steps (including column/range selection), splits/merges, resampling,

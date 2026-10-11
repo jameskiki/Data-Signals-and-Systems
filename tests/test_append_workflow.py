@@ -1,17 +1,21 @@
 """Safe append recipes, snapshot isolation, and explicit rejection cases."""
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from Source.datapreparation_app.datasets import register_dataset
+from Source.datapreparation_app.datasets import register_dataset, rename_dataset
 from Source.datapreparation_app.append_workflow import plan_append, execute_append, replay_operation
+from Source.datapreparation_app.history_deletion import delete_history_nodes, plan_history_deletion
 from Source.datapreparation_app.project_io import ProjectSnapshot, save_project, load_project
+from Source.datapreparation_app.report import build_publish_report
 from Source.data_ops.signals import apply_signal_filter
 from Source.data_ops.spectral import compute_fft_spectrum
+from Source.shared.operation_history import OperationHistory, before_append_step, record_workspace_view
 
 
 def example(legacy_publish=False):
@@ -31,29 +35,43 @@ def example(legacy_publish=False):
     return app
 
 
-def test_append_reapplies_whole_run_preserves_old_fft_and_supports_next_delivery(tmp_path):
+def test_append_rewrites_chain_in_place_marks_old_fft_and_supports_next_delivery(tmp_path):
     app = example()
     old = app.data_frames["processed.csv"].copy()
     old_steps = app.operation_history.steps
+    old_revision = app.dataset_contexts["processed.csv"].revision_id
     artifacts = app.operation_history.artifact_tables
     fft_id = old_steps[-1].id
     spectrum = artifacts[fft_id]["amplitudes"].copy()
     plan = plan_append(app, "processed.csv", "day2.csv")
     assert [step.operation for step in plan.operations] == ["moving_average"]
+    assert [step.operation for step in plan.chain] == ["moving_average", "publish"]
+    assert plan.recomputed_paths == ("processed.csv",)
+    assert plan.stale_step_ids == (fft_id,)
     assert not plan.warnings
     raw_path, processed_path = execute_append(app, plan)
+    assert processed_path == "processed.csv"
     combined = pd.concat([app.data_frames["day1.csv"], app.data_frames["day2.csv"]], ignore_index=True)
     expected = apply_signal_filter(combined, "signal", "moving_average", "smooth", window_size=3)
-    pd.testing.assert_frame_equal(app.data_frames[processed_path], expected)
-    pd.testing.assert_frame_equal(app.data_frames["processed.csv"], old)
+    pd.testing.assert_frame_equal(app.data_frames["processed.csv"], expected)
+    assert app.dataset_contexts["processed.csv"].revision_id == old_revision
+    assert app.data_frames["processed.csv"]["smooth"].iloc[11] != old["smooth"].iloc[11]
     pd.testing.assert_frame_equal(artifacts[fft_id]["amplitudes"], spectrum)
-    assert app.operation_history.steps[:len(old_steps)] == old_steps
-    assert app.data_frames[processed_path]["smooth"].iloc[11] != old["smooth"].iloc[11]
-    append_step = next(step for step in app.operation_history.steps if step.operation == "append_raw")
-    assert len(append_step.input_revisions) == 2
+    steps = app.operation_history.steps
+    assert {step.id for step in steps} == {step.id for step in old_steps} | {steps[2].id}
+    operations = [step.operation for step in steps]
+    assert operations == ["load_file", "load_file", "append_raw", "moving_average", "publish", "FFT Amplitude"]
+    append_step, moving = steps[2], steps[3]
+    assert append_step.input_revisions == (
+        app.dataset_contexts["day1.csv"].revision_id, app.dataset_contexts["day2.csv"].revision_id,
+    )
+    assert moving.input_revisions == (append_step.output_revision,)
+    assert before_append_step(steps[-1]) == append_step.id
+    assert before_append_step(moving) is None
     path = str(tmp_path / "run.evaldata")
     save_project(path, ProjectSnapshot(app.data_frames, app.dataset_contexts, app.operation_history))
     restored = load_project(path)
+    assert restored.history.steps == steps
     app = SimpleNamespace(data_frames=restored.data_frames, dataset_contexts=restored.dataset_contexts,
                           operation_history=restored.history)
     register_dataset(app, "day3.csv", pd.DataFrame({"time": np.arange(24, 36, dtype=float),
@@ -62,23 +80,124 @@ def test_append_reapplies_whole_run_preserves_old_fft_and_supports_next_delivery
     next_plan = plan_append(app, processed_path, "day3.csv")
     assert next_plan.raw_path == raw_path
     _, next_processed = execute_append(app, next_plan)
-    assert len(app.data_frames[next_processed]) == 36
+    assert next_processed == "processed.csv"
+    assert len(app.data_frames["processed.csv"]) == 36
     assert len(app.operation_history.artifact_tables) == 1
+    operations = [step.operation for step in app.operation_history.steps]
+    assert operations == [
+        "load_file", "load_file", "append_raw", "load_file", "append_raw", "moving_average", "publish", "FFT Amplitude",
+    ]
+    second_append = app.operation_history.steps[4]
+    assert append_step.output_revision in second_append.input_revisions
+    assert app.operation_history.steps[5].input_revisions == (second_append.output_revision,)
+    assert before_append_step(app.operation_history.steps[-1]) == append_step.id
 
 
-def test_publish_has_own_revision_and_legacy_shared_revision_still_appends():
+def test_publish_keeps_revision_and_legacy_shared_revision_still_appends():
     app = example()
     publish = app.operation_history.steps[-2]
     assert publish.operation == "publish"
     assert app.dataset_contexts["processed.csv"].revision_id == publish.output_revision
     assert publish.output_revision not in publish.input_revisions
+    count = len(app.operation_history.steps)
     _, processed = execute_append(app, plan_append(app, "processed.csv", "day2.csv"))
-    new_publish = app.operation_history.steps[-1]
-    assert new_publish.operation == "publish"
-    assert app.dataset_contexts[processed].revision_id == new_publish.output_revision
+    assert processed == "processed.csv"
+    assert app.dataset_contexts[processed].revision_id == publish.output_revision
+    assert len(app.operation_history.steps) == count + 1
     legacy = example(legacy_publish=True)
     plan = plan_append(legacy, "processed.csv", "day2.csv")
     assert [step.operation for step in plan.operations] == ["moving_average"]
+    execute_append(legacy, plan)
+    assert len(legacy.data_frames["processed.csv"]) == 24
+    legacy_publish = next(step for step in legacy.operation_history.steps if step.operation == "publish")
+    assert before_append_step(legacy_publish) is None
+
+
+def test_append_marks_views_and_branches_but_not_metadata_and_blocks_open_workspaces():
+    app = example()
+    history = app.operation_history
+    target = app.dataset_contexts["processed.csv"].revision_id
+    moving = next(step for step in history.steps if step.operation == "moving_average")
+    workspace = SimpleNamespace(operation_history=history, history_revision=target,
+                                original_history_revision=target, session=SimpleNamespace(source_path="processed.csv"))
+    record_workspace_view(workspace, {"title": "zoom", "y_columns": ["smooth"]})
+    view_id = history.steps[-1].id
+    rename_dataset(app, "processed.csv", "Run A")
+    branch_parameters = {"source_column": "signal", "output_column": "median", "window_size": 3}
+    branch_revision = history.record("median", "branch.csv", (moving.output_revision,), branch_parameters)
+    branch_id = history.steps[-1].id
+    history.record("FFT Amplitude", "branch.csv", (branch_revision,), {}, output_revision=branch_revision)
+    branch_result = history.steps[-1].id
+    app._analysis_workspaces = [workspace]
+    with pytest.raises(ValueError, match="Close the analysis windows"):
+        plan_append(app, "processed.csv", "day2.csv")
+    app._analysis_workspaces = []
+    plan = plan_append(app, "processed.csv", "day2.csv")
+    execute_append(app, plan)
+    marked = {step.id for step in history.steps if before_append_step(step)}
+    fft_id = next(step.id for step in history.steps if step.operation == "FFT Amplitude" and step.label == "processed.csv")
+    assert marked == {fft_id, view_id, branch_id, branch_result}
+    assert app.dataset_contexts["processed.csv"].display_name == "Run A"
+
+
+def test_report_flags_results_computed_before_append():
+    app = example()
+    history = app.operation_history
+    target = app.dataset_contexts["processed.csv"].revision_id
+    fft_id = history.steps[-1].id
+    register_dataset(app, "published.csv", app.data_frames["processed.csv"], history_operation="publish",
+                     history_inputs=(target,), history_parameters={"workspace_steps": [fft_id]},
+                     column_roles={"time": "time"})
+    publish_id = history.steps[-1].id
+    execute_append(app, plan_append(app, "published.csv", "day2.csv"))
+    content = build_publish_report(app, publish_id)
+    assert "Evidence based on day1.csv (12 raw rows)" in content
+    assert "Decision Trail" in content
+    assert len(app.data_frames["published.csv"]) == 24
+
+
+def test_decision_note_on_raw_fft_survives_append_and_reaches_report(tmp_path):
+    app = example()
+    history = app.operation_history
+    raw_revision = app.dataset_contexts["day1.csv"].revision_id
+    history.record_result("FFT Amplitude", "day1.csv", raw_revision,
+                          compute_fft_spectrum(app.data_frames["day1.csv"], "signal", reference_column="time"), {})
+    raw_fft = history.steps[-1].id
+    history.set_note(raw_fft, "FFT on day 1 showed the cycle, so a smoothing filter was chosen.")
+    target = app.dataset_contexts["processed.csv"].revision_id
+    register_dataset(app, "published.csv", app.data_frames["processed.csv"], history_operation="publish",
+                     history_inputs=(target,), history_parameters={"workspace_steps": []},
+                     column_roles={"time": "time"})
+    publish_id = history.steps[-1].id
+    execute_append(app, plan_append(app, "published.csv", "day2.csv"))
+    assert not before_append_step(next(step for step in history.steps if step.id == raw_fft))
+    assert raw_fft in {step.id for step in history.lineage(app.dataset_contexts["published.csv"].revision_id)}
+    content = build_publish_report(app, publish_id)
+    assert "so a smoothing filter was chosen" in content
+    assert "Evidence #" in content
+    path = tmp_path / "notes.evaldata"
+    save_project(str(path), ProjectSnapshot(app.data_frames, app.dataset_contexts, history))
+    assert load_project(str(path)).history.notes == {raw_fft: history.notes[raw_fft]}
+
+
+def test_deleting_append_removes_rewritten_chain():
+    app = example()
+    execute_append(app, plan_append(app, "processed.csv", "day2.csv"))
+    app._analysis_workspaces, app._comparison_windows = [], []
+    append_step = next(step for step in app.operation_history.steps if step.operation == "append_raw")
+    plan = plan_history_deletion(app, append_step.id)
+    assert "processed.csv" in plan.dataset_paths
+    delete_history_nodes(app, append_step.id, plan)
+    assert [step.operation for step in app.operation_history.steps] == ["load_file", "load_file"]
+
+
+def test_rewrite_steps_rejects_cycles():
+    history = OperationHistory()
+    first = history.record("load_file", "a")
+    history.record("moving_average", "a", (first,))
+    step = history.steps[0]
+    with pytest.raises(ValueError, match="cyclic"):
+        history.rewrite_steps({step.id: replace(step, input_revisions=(history.steps[1].output_revision,))})
 
 
 @pytest.mark.parametrize("case,match", [

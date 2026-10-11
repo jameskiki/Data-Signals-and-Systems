@@ -7,7 +7,7 @@ from Source.shared.documentation_links import DOCUMENTATION_LINKS
 from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
 from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, build_demo_menu_description_lines
-from .actions import generate_longterm_demo_files
+from .actions import generate_longterm_demo_files, generate_workflow_demo_project
 
 
 def build_main_ui(app, preview_row_limit: int) -> None:
@@ -31,6 +31,10 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     demo_menu.add_command(
         label="Generate Long-Term Run Files (3 Days)...",
         command=lambda: generate_longterm_demo_files(app),
+    )
+    demo_menu.add_command(
+        label="Generate Workflow Demo Project (Load to Report)...",
+        command=lambda: generate_workflow_demo_project(app),
     )
     demo_menu.add_separator()
     comparison_demo_keys = {spec.key for spec in COMPARISON_DEMO_SPECS}
@@ -77,7 +81,7 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)
-    view_menu.add_command(label="History / Workflow (Prototype)", command=app.open_history_window)
+    view_menu.add_command(label="Workflow / Pipeline & Reports (Prototype)", command=app.open_history_window)
     view_menu.add_command(
         label="Plot Style...",
         command=lambda: open_plot_style_dialog(
