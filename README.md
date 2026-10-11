@@ -20,6 +20,7 @@ The application has two working areas:
 - [docs/user-guide.md](docs/user-guide.md): normal user workflow and window orientation
 - [docs/analysis-methods.md](docs/analysis-methods.md): short reference for filters, derived signals, spectra, cycles, and statistics
 - [docs/technical-overview.md](docs/technical-overview.md): current package layout and runtime flow
+- [docs/session-workflow-plan.md](docs/session-workflow-plan.md): prototype walkthrough and phased plan for session history, workflow visualization, and reports
 - [docs/faq.md](docs/faq.md): practical troubleshooting
 
 ## Features
@@ -38,6 +39,10 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
 - preparation workflows for assigning compact time/reference, process-value, and ambient-value categories, optional channel selection, and dataset splitting
 - preview plotting and table inspection in the main window
 - session-level dataset reuse across preparation, analysis publishing, and comparison
+- explicit append/reapply prototype for verified filter/derived-signal recipes, preserving old snapshot results; see [workflow and limitations](docs/user-guide.md#append-and-reapply-processing)
+- prototype read-only operation history and workflow graph via `View -> History / Workflow (Prototype)`, including role changes and saved frequency/cycle result tables
+- embedded project save/reopen via the Files menu (`.evaldata`); preserves registered datasets, history, roles, and numeric analysis results, but not unpublished workspace data or layouts
+- prototype HTML report from a selected publish node in the history window (linked operations, published data summary, result plots)
 - a dedicated analysis workspace with:
   - simple filtering (min/max masking)
   - signal processing (moving average, median, exponential smoothing, high-pass, Butterworth lowpass/highpass/bandpass)
@@ -56,6 +61,7 @@ The main window also provides an ad-hoc `Plot Data` popup for quick inspection, 
   - refresh of the currently compared session datasets
   - open-one-back-into-analysis from the comparison summary
 - demo datasets for reproducible walkthroughs and exploratory checks
+- three-day continuous test-run CSV generator (`Demo -> Generate Long-Term Run Files (3 Days)...`) for trying incremental project imports; see [demo validation](docs/demo-validation.md#incremental-long-term-test-demo)
 
 ## Workflow Overview
 

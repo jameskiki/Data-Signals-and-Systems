@@ -252,6 +252,10 @@ There are several export paths:
 
 When the latest frequency result is `Transfer Estimate` or `Coherence`, `Export Current View` also writes a sidecar report file named `<csv>.analysis_report.txt` with confidence and dominant-band diagnostics.
 
+To create an HTML report (prototype), publish the analysis workspace, open `View -> History / Workflow (Prototype)`, select the publish node, and click `Generate Report from Publish Node...`. The report contains the operations linked to that publish (dashed green arrows), the published data summary and signal plots, and plots/tables of the linked results. Results computed before later operations and missing or deleted inputs are marked with warnings. The report does not include loading or preparation steps before the workspace and does not interpret results.
+
+To add a specific time-series view (chosen signals, zoomed range) to the report, show it in the analysis workspace time-series plot (`Update Plot`, then zoom with the plot toolbar; press `l` over the plot for a log Y axis) and click `Add View to Report (shown columns + zoom)`. EvalData records the columns, X column, zoomed X range, overlay/subplots layout, and Y scale as a history step (no image). The step is linked to the next publish, and the report redraws the view from the published data. Y zoom, colors, and annotations are not kept.
+
 Export behavior is described in more detail in `data-formats.md`.
 
 ## Step 10: Compare Session Datasets
@@ -329,3 +333,65 @@ Move to the analysis workspace when the task becomes analytical:
 - filter or derive signals
 - inspect statistics
 - export the current working analysis state
+## Dataset Display Names and Later Imports
+
+Select a dataset in the preparation window and click `Rename Selected Dataset...`
+(also available in the Preparation menu). This changes its name in the main
+dataset list and multi-dataset selection dialog, not its path, source file,
+contents, or stable identity. Duplicate display names are allowed; selection
+dialogs also show source filenames. The name is recorded in history and saved
+in embedded projects. Existing plot legends and analysis/comparison window
+titles still use their source labels.
+
+Loading a later file adds another dataset without changing earlier analysis.
+`Merge Selected Files` concatenates selected datasets into a new dataset in
+selection order; it does not rerun previous analyses or automatically apply
+earlier filters to the incoming rows. Analyze the merged result separately.
+If merging already filtered data with raw new data, transformed columns may
+be missing for the new rows. Prefer merging compatible raw inputs first and
+then applying the analysis to the combined dataset. Old result snapshots remain
+linked to their original input revisions.
+
+### Append and Reapply Processing
+
+1. Load the next raw file into the project.
+2. Select the previously processed dataset in the prep list. Publish workspace
+   edits first; this action reads the registered dataset, not an open workspace.
+3. Click `Append + Reapply Processing...` (also in the Preparation menu).
+4. Select exactly one incoming raw dataset.
+5. Review the raw source, full ordered operation list, and time-gap warnings
+   before confirming.
+
+The prototype finds the original raw source through the selected dataset's
+history and verifies that the recorded processing reproduces the old result.
+It reapplies that whole recipe over the combined run, creating a new raw entry
+and a new processed entry. FFT/Welch/cycle result snapshots remain on their old
+revision; none are recalculated automatically. With no processing, only a new
+combined raw entry is created. The combined raw entry must remain registered
+for subsequent appends.
+
+Supported recipes: simple range masking, signal filters, and derived signals.
+Preparation steps (including column/range selection), splits/merges, resampling,
+resets, applied cycle selections, missing parameters, and untracked history
+block this action. It does not guess which steps to discard. Start directly
+from a loaded raw dataset for the first append/reapply trial.
+
+Raw files must retain all existing columns with compatible types and the same assigned time
+column.
+New incoming columns are kept, with missing values for earlier rows (not zeros).
+The preview and append history list these additions; incoming roles are retained.
+Column order may differ. Existing recipes are not automatically extended to new
+sensors. A new column may not collide with a recipe's output name or add a second
+time-role axis. Missing old columns are still rejected. New integer/boolean
+columns retain nullable types to represent their previously unmeasured values.
+Datetime storage resolutions (seconds/milliseconds/microseconds/nanoseconds)
+may differ when timezone semantics match, including after project reopening.
+Other type mismatches list the affected columns and are rejected.
+Timestamps must be finite, unique and strictly increasing; incoming
+times must be later than the existing run. Overlaps are rejected. Gaps and
+irregular spacing are warned about, not interpolated or repaired. A filter may
+still bridge a gap by sample position; review its suitability before proceeding.
+Full-run recomputation can alter earlier filtered values at the join, or across
+the run for global operations such as normalization. Original datasets remain
+unchanged. The entire recipe is reapplied as one ordered chain, not a selectable
+subset. Processing currently runs synchronously.

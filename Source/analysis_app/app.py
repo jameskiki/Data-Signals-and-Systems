@@ -8,7 +8,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 from Source.shared.documentation_links import open_documentation_path
 from Source.shared.notifications import NotificationManager
@@ -51,6 +51,9 @@ from .state import (
     UI_FREQUENCY_ANALYSIS_METHODS,
 )
 from .views import render_correlation_view, render_dataframe_preview, render_statistics_tree
+from Source.shared.operation_history import (
+    OperationHistory, record_workspace_result, record_workspace_view, remember_workspace_step,
+)
 from Source.data_ops.cycles import (
     CycleAnalysisResult,
     rebuild_cycle_analysis_result,
@@ -92,8 +95,13 @@ class AnalysisWorkspace(PresentationShellMixin):
         dataset_description: str = "",
         on_close: Callable[["AnalysisWorkspace"], None] | None = None,
         on_publish_current_view: Callable[["AnalysisWorkspace"], str | None] | None = None,
+        operation_history: OperationHistory | None = None,
+        source_revision: str | None = None,
     ) -> None:
         self.parent = parent
+        self.operation_history = operation_history
+        self.history_revision = source_revision
+        self.original_history_revision = source_revision
         self.on_close = on_close
         self.on_publish_current_view = on_publish_current_view
         self.column_roles = infer_column_roles(dataframe, column_roles)
@@ -150,6 +158,7 @@ class AnalysisWorkspace(PresentationShellMixin):
         self.fft_reference_var = tk.StringVar(value="Index")
         self.frequency_compare_var = tk.StringVar(value="")
         self.transfer_unwrap_phase_var = tk.BooleanVar(value=True)
+        self.frequency_log_scale_var = tk.BooleanVar(value=False)
         self.fft_sample_spacing_var = tk.StringVar(value="1.0")
         self.fft_sample_spacing_status_var = tk.StringVar(value="User-set")
         self.fft_window_var = tk.StringVar(value=FFT_WINDOW_OPTIONS[0])
@@ -323,7 +332,16 @@ class AnalysisWorkspace(PresentationShellMixin):
         self._refresh_summary_widgets()
 
     def refresh_column_roles(self, column_roles: dict[str, str]) -> None:
-        self.column_roles = infer_column_roles(self.session.working_frame, column_roles)
+        updated_roles = infer_column_roles(self.session.working_frame, column_roles)
+        if getattr(self, "operation_history", None) is not None and updated_roles != self.column_roles:
+            self.operation_history.record(
+                "workspace_roles", self.session.source_path,
+                (self.history_revision,) if self.history_revision else (),
+                {"before": self.column_roles, "after": updated_roles},
+                output_revision=self.history_revision,
+            )
+            remember_workspace_step(self, self.operation_history)
+        self.column_roles = updated_roles
         self._refresh_all_views(refresh_summary=False)
         self._refresh_live_plot()
 
@@ -375,6 +393,23 @@ class AnalysisWorkspace(PresentationShellMixin):
     def _update_plot(self) -> None:
         return plotting_ops.update_plot(self)
 
+    def _add_view_to_report(self) -> None:
+        try:
+            view = plotting_ops.capture_time_series_view(self)
+        except ValueError as error:
+            self.notifications.warning(str(error))
+            return
+        title = simpledialog.askstring(
+            "Add View to Report", "Title for this view in the report:",
+            initialvalue=", ".join(view["y_columns"]), parent=self.window,
+        )
+        if title is None:
+            return
+        if not record_workspace_view(self, {"title": title.strip() or ", ".join(view["y_columns"]), **view}):
+            self.notifications.warning("History is unavailable in this workspace; the view was not recorded")
+            return
+        self.notifications.success("View recorded; it is linked to the next publish and drawn in its report")
+
     def _build_time_series_plot_options(
         self,
         selected_columns: list[str],
@@ -400,6 +435,13 @@ class AnalysisWorkspace(PresentationShellMixin):
 
     def _render_spectrogram_result(self, result: SpectrogramResult, plot_data: SpectrogramPlotData) -> None:
         return plotting_ops.render_spectrogram_result(self, result, plot_data)
+
+    def _toggle_frequency_log_scale(self) -> None:
+        figure = self._fft_figure
+        if figure is not None and hasattr(figure, "_evaldata_frequency_axes"):
+            plotting_ops.apply_frequency_scale(figure, self.frequency_log_scale_var.get())
+            if self._fft_canvas is not None:
+                self._fft_canvas.draw_idle()
 
     def _render_filter_bode_response(
         self,
@@ -521,6 +563,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             full_result=self._full_cycle_result,
             kept_cycle_full_indices=kept_full_indices,
         )
+        record_workspace_result(self, "exclude_cycles", updated_result, {"kept_indices": kept_full_indices})
 
     def _restore_all_cycles(self) -> None:
         if self._full_cycle_result is None:
@@ -530,6 +573,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             full_result=self._full_cycle_result,
             kept_cycle_full_indices=list(range(self._full_cycle_result.cycle_count)),
         )
+        record_workspace_result(self, "restore_all_cycles", self._full_cycle_result, {})
 
     def _restore_selected_cycles(self) -> None:
         if self._full_cycle_result is None or self._latest_cycle_result is None:
@@ -562,6 +606,7 @@ class AnalysisWorkspace(PresentationShellMixin):
             full_result=self._full_cycle_result,
             kept_cycle_full_indices=kept_full_indices,
         )
+        record_workspace_result(self, "restore_cycles", updated_result, {"kept_indices": kept_full_indices})
 
     def _apply_kept_cycles_to_working_data(self) -> None:
         if self._latest_cycle_result is None:
@@ -586,12 +631,15 @@ class AnalysisWorkspace(PresentationShellMixin):
         if not should_apply:
             return
 
+        cycle_count = self._latest_cycle_result.cycle_count
         self._replace_working_frame(
             kept_frame,
             focus_column=self._latest_cycle_result.source_column,
+            history_operation="apply_kept_cycles",
+            history_parameters={"ranges": self._latest_cycle_result.cycle_ranges, "end_exclusive": True},
         )
         self.notifications.success(
-            f"Applied kept cycles: {self._latest_cycle_result.cycle_count} cycles, {len(kept_frame)} rows retained"
+            f"Applied kept cycles: {cycle_count} cycles, {len(kept_frame)} rows retained"
         )
 
     def _clear_cycle_results(self, message: str | None = None) -> None:
@@ -615,7 +663,10 @@ class AnalysisWorkspace(PresentationShellMixin):
 
     def _reset_working_data(self) -> None:
         update = build_reset_update(self.session.original_frame)
-        self._replace_working_frame(update.dataframe)
+        self._replace_working_frame(
+            update.dataframe, history_operation="reset",
+            history_parameters={"original_revision": getattr(self, "original_history_revision", None)},
+        )
         self.notifications.success("Reset working dataframe to the original loaded state")
 
     def _export_current_view(self) -> None:
@@ -656,9 +707,21 @@ class AnalysisWorkspace(PresentationShellMixin):
         dataframe: pd.DataFrame,
         role_overrides: dict[str, str] | None = None,
         focus_column: str | None = None,
+        history_operation: str = "untracked",
+        history_parameters: dict[str, object] | None = None,
     ) -> None:
-        self.session.working_frame = dataframe.copy(deep=False)
-        self.column_roles = update_projected_column_roles(self.column_roles, self.session.working_frame, role_overrides)
+        working_frame = dataframe.copy(deep=False)
+        column_roles = update_projected_column_roles(self.column_roles, working_frame, role_overrides)
+        history = getattr(self, "operation_history", None)
+        if history is not None:
+            self.history_revision = history.record(
+                history_operation, self.session.source_path,
+                (self.history_revision,) if self.history_revision else (),
+                history_parameters, tracked=history_operation != "untracked",
+            )
+            remember_workspace_step(self, history)
+        self.session.working_frame = working_frame
+        self.column_roles = column_roles
         self.session.working_revision += 1
         self.session.last_summary = None
         self._latest_frequency_result = None

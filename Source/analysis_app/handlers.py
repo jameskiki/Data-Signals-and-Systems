@@ -7,6 +7,7 @@ are thin one-line delegations to these functions.
 """
 
 import numpy as np
+from Source.shared.operation_history import record_workspace_result
 
 from Source.data_ops.cycles import (
     compute_cycle_analysis_from_ranges,
@@ -137,6 +138,12 @@ def apply_filter(workspace) -> None:
         update.dataframe,
         role_overrides={output_column: get_transformed_column_role(workspace.column_roles, column)},
         focus_column=output_column,
+        history_operation="simple_filter",
+        history_parameters={
+            "source_column": column, "output_column": output_column,
+            "minimum": workspace.filter_min_var.get(), "maximum": workspace.filter_max_var.get(),
+            "keep_missing": workspace.keep_missing_var.get(),
+        },
     )
     workspace.notifications.success(f"Created {output_column} from {column} using simple filtering")
 
@@ -178,10 +185,30 @@ def apply_signal_filter(workspace) -> None:
     if _failed:
         return
 
+    history_parameters = {"source_column": source_column, "output_column": output_column}
+    if operation in {"moving_average", "median", "high_pass"}:
+        history_parameters["window_size"] = max(1, int(workspace.signal_filter_window_var.get() or "5"))
+    elif operation == "exponential_smoothing":
+        history_parameters["alpha"] = float(workspace.signal_filter_alpha_var.get() or "0.2")
+    elif operation.startswith("butterworth"):
+        _, filter_warnings = evaluate_butterworth_settings(
+            operation=operation,
+            cutoff_hz=_get_signal_filter_cutoff_values(workspace, operation),
+            sample_spacing=workspace.signal_filter_spacing_var.get(),
+            filter_order=workspace.signal_filter_order_var.get(),
+        )
+        history_parameters.update(
+            cutoff_hz=_parse_signal_filter_cutoff(workspace, operation),
+            sample_spacing=float(workspace.signal_filter_spacing_var.get() or "0.0"),
+            filter_order=int(workspace.signal_filter_order_var.get() or "4"),
+            warnings=filter_warnings,
+        )
     workspace._replace_working_frame(
         update.dataframe,
         role_overrides={output_column: get_transformed_column_role(workspace.column_roles, source_column)},
         focus_column=output_column,
+        history_operation=operation,
+        history_parameters=history_parameters,
     )
     workspace.notifications.success(f"Created {output_column} using {operation} on {source_column}")
     workspace.signal_filter_name_var.set("")
@@ -307,6 +334,8 @@ def apply_resample(workspace) -> None:
 
     workspace._replace_working_frame(
         resampled,
+        history_operation="resample",
+        history_parameters={"time_column": time_column, "target_spacing": target_spacing},
     )
     workspace.notifications.success(
         f"Resampled to uniform grid (spacing={target_spacing}) using {time_column}"
@@ -339,6 +368,15 @@ def apply_derived_signal(workspace) -> None:
         update.dataframe,
         role_overrides={new_column: get_transformed_column_role(workspace.column_roles, source_column)},
         focus_column=new_column,
+        history_operation=f"derived_{operation}",
+        history_parameters={
+            "source_column": source_column, "output_column": new_column,
+            "reference_column": None if reference_column == "Index" else reference_column,
+            "window_size": (
+                max(1, min(int(workspace.derived_window_var.get() or "5"), 3))
+                if operation == "detrend" else max(1, int(workspace.derived_window_var.get() or "5"))
+            ),
+        },
     )
     workspace.notifications.success(f"Created {new_column} using {operation} on {source_column}")
     workspace.derived_name_var.set("")
@@ -385,6 +423,9 @@ def compute_fft(workspace) -> None:
                 prepare_spectrogram_plot_data(spectrogram_result),
             )
             workspace._latest_frequency_result = None
+            record_workspace_result(workspace, "Spectrogram", spectrogram_result, {
+                "requested_window": common_kwargs["window"], "detrend": common_kwargs["detrend"],
+            })
             diagnostics_callback = getattr(workspace, "_update_frequency_diagnostics", None)
             if diagnostics_callback is not None:
                 diagnostics_callback(None)
@@ -424,6 +465,7 @@ def compute_fft(workspace) -> None:
     )
     workspace._render_fft_result(result, prepare_frequency_plot_values(result, unwrap_phase=unwrap_phase))
     workspace._latest_frequency_result = result
+    record_workspace_result(workspace, result.analysis_name, result, {})
     diagnostics_callback = getattr(workspace, "_update_frequency_diagnostics", None)
     if diagnostics_callback is not None:
         diagnostics_callback(result)
@@ -524,6 +566,11 @@ def compute_cycle_analysis(workspace) -> None:
         return
 
     workspace._render_cycle_result(result)
+    record_workspace_result(workspace, "cycle_analysis", result, {
+        "requested_min_length": cycle_length, "max_cycles": max_cycles,
+        "threshold": float(workspace.cycle_threshold_var.get() or "0") if cycle_mode == "rising_edge" else None,
+        "prominence": float(workspace.cycle_prominence_var.get() or "0") if cycle_mode == "peak" else None,
+    })
     workspace.notifications.success(
         f"Analyzed {result.cycle_count} cycles of length {result.cycle_length} for {source_column}"
     )

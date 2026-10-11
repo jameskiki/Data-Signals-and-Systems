@@ -180,11 +180,16 @@ def test_dataprep_main_ui_uses_horizontal_pane(monkeypatch):
         merge_selected_files=lambda: None,
         export_clean_data=lambda: None,
         create_prepared_dataset=lambda: None,
+        rename_selected_dataset=lambda: None,
+        append_selected_dataset=lambda: None,
         split_selected_dataset=lambda: None,
         plot_selected_data=lambda: None,
         open_analysis_workspace=lambda: None,
         open_comparison_window=lambda: None,
         open_plot_gallery=lambda: None,
+        open_history_window=lambda: None,
+        open_project=lambda: None,
+        save_project=lambda: None,
         open_documentation=lambda _path: None,
     )
 

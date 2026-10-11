@@ -64,6 +64,14 @@ def create_prepared_dataset(app) -> str | None:
         source_paths=collect_source_paths(app, [selected_path]),
         description=f"{description} from {os.path.basename(selected_path)}",
         column_roles=project_column_roles(_get_source_column_roles(app, selected_path), prepared_frame),
+        history_operation="prepare",
+        history_inputs=(context.revision_id,) if context and context.revision_id else (),
+        history_parameters={
+            "requested_range_start": start_text, "requested_range_end": end_text,
+            "column_roles": column_roles,
+            "selected_columns": selected_columns,
+            "output_rows": len(prepared_frame), "output_columns": list(prepared_frame.columns),
+        },
     )
     refresh_dataset_table(app)
     select_dataset_in_table(app, prepared_path)
@@ -96,6 +104,10 @@ def split_selected_dataset(app, raw_ranges_text: str, prefix: str | None = None)
                 f"for rows [{start_index}, {end_index})"
             ),
             column_roles=project_column_roles(_get_source_column_roles(app, selected_path), frame),
+            history_operation="split",
+            history_inputs=(app.dataset_contexts[selected_path].revision_id,)
+            if app.dataset_contexts[selected_path].revision_id else (),
+            history_parameters={"start": start_index, "end": end_index, "end_exclusive": True},
         )
         created_paths.append(prepared_path)
 

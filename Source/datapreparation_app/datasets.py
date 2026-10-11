@@ -2,6 +2,7 @@
 
 import os
 import re
+from uuid import uuid4
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -10,6 +11,7 @@ import tkinter as tk
 from Source.shared.column_roles import get_available_column_roles, infer_column_roles
 from Source.data_ops.models import DataSummary
 from Source.data_ops.summary import summarize_dataframe
+from Source.shared.operation_history import OperationHistory
 
 
 @dataclass
@@ -20,6 +22,30 @@ class DatasetContext:
     description: str = ""
     column_roles: dict[str, str] = field(default_factory=dict)
     cached_summary: DataSummary | None = None
+    revision_id: str | None = None
+    dataset_id: str = field(default_factory=lambda: str(uuid4()))
+    display_name: str = ""
+
+
+def dataset_display_name(dataset_path: str, context: DatasetContext | None) -> str:
+    return context.display_name if context is not None and context.display_name else os.path.basename(dataset_path)
+
+
+def rename_dataset(app, dataset_path: str, name: str) -> None:
+    normalized = name.strip()
+    if not normalized or any(ord(character) < 32 for character in normalized):
+        raise ValueError("Enter a non-empty dataset name without control characters.")
+    context = app.dataset_contexts[dataset_path]
+    before = dataset_display_name(dataset_path, context)
+    if normalized == before:
+        return
+    if context.revision_id is not None:
+        app.operation_history.record(
+            "rename_dataset", dataset_path, (context.revision_id,),
+            {"before": before, "after": normalized, "dataset_id": context.dataset_id},
+            output_revision=context.revision_id,
+        )
+    context.display_name = normalized
 
 
 def register_dataset(
@@ -29,15 +55,27 @@ def register_dataset(
     source_paths: list[str] | None = None,
     description: str = "",
     column_roles: dict[str, str] | None = None,
+    *,
+    history_operation: str = "untracked",
+    history_inputs: tuple[str, ...] = (),
+    history_parameters: dict[str, object] | None = None,
+    history_revision: str | None = None,
 ) -> None:
     """Register or replace a dataset and its lineage context."""
 
+    if not hasattr(app, "operation_history"):
+        app.operation_history = OperationHistory()
+    revision_id = app.operation_history.record(
+        history_operation, dataset_path, history_inputs, history_parameters,
+        tracked=history_operation != "untracked", output_revision=history_revision,
+    )
     app.data_frames[dataset_path] = dataframe
     app.dataset_contexts[dataset_path] = DatasetContext(
         source_paths=list(dict.fromkeys(source_paths or [dataset_path])),
         description=description,
         column_roles=infer_column_roles(dataframe, column_roles),
         cached_summary=None,
+        revision_id=revision_id,
     )
 
 
@@ -110,7 +148,7 @@ def refresh_dataset_table(app) -> None:
             tk.END,
             iid=path,
             values=(
-                os.path.basename(path),
+                dataset_display_name(path, context),
                 summary.row_count,
                 summary.column_count,
                 summary.total_missing_count,

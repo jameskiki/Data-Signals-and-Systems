@@ -1,5 +1,24 @@
 # Data Formats And Exports
 
+## Embedded Projects
+
+`Files -> Save Embedded Project...` writes a `.evaldata` archive containing the
+registered datasets, roles, operation history, and frequency/cycle result tables.
+`Files -> Open Project...` reopens it without requiring original source files.
+This is distinct from individual CSV/Parquet export. Publish workspace edits
+before saving: unpublished working frames, window layouts, and comparison
+settings are not included. See the [project walkthrough and limitations](session-workflow-plan.md#save-and-reopen). And Exports
+
+## Datetime Conversion Diagnostics
+
+Text datetime detection validates the full non-empty column after sampling.
+Conversion requires at least 80% valid non-empty values. Below that threshold,
+original values are retained. Accepted conversions with failures report the
+number of values converted to missing timestamps in the load summary and the
+in-memory load history. Existing blanks/missing values are excluded from the
+validity ratio. Mixed date formats may remain text; check the warnings before
+using the column as a time axis. And Exports
+
 This is a short reference page. The normal workflow is described in [user-guide.md](user-guide.md), and troubleshooting lives in [faq.md](faq.md).
 
 ## Inputs

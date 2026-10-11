@@ -198,3 +198,44 @@ Treat the result as suspicious if any of these happen:
 - the comparison candidates do not show their known gain/offset, drift, spike, or row-count differences
 
 For broader workflow guidance, see [quickstart.md](quickstart.md), [analysis-methods.md](analysis-methods.md), and [which-tool-when.md](which-tool-when.md).
+## Incremental Long-Term Test Demo
+
+Use `Demo -> Generate Long-Term Run Files (3 Days)...` and choose an empty
+output folder. This creates three semicolon-separated CSV files, not three
+independent experiments:
+
+- `longterm_run_day_01.csv`: October 1, 2026, 00:00:00 through 23:59:59.
+- `longterm_run_day_02.csv`: October 2, with continuing timestamps and elapsed time.
+- `longterm_run_day_03.csv`: October 3, with a 10-minute positive anomaly at noon.
+
+Each file contains exactly 86,400 samples at 1-second spacing. All files share
+one run ID and schema. Measurement has an hourly oscillation (amplitude 0.8), a
+slow half-day cycle (12 h period, amplitude 0.5, two full cycles per file), seeded
+noise, and a gradual 0-to-0.6 drift across the full run. Temperature has a daily cycle.
+`known_drift`, `known_slow_cycle`, and `known_anomaly` are validation labels, not measured channels.
+The noon anomaly on day 3 adds 2.5 units for 600 samples.
+
+FFT check: select `reference` as the signal and `timestamp` or `elapsed_s` as
+the time reference. Sampling frequency should be 1 Hz, Nyquist 0.5 Hz, and the
+main peak approximately 0.000277778 Hz (one cycle per hour), amplitude 0.8.
+On the full 0-to-0.5 Hz axis this peak sits very close to zero; zoom into the
+low-frequency region. `measurement` includes drift/noise and the day-3 anomaly,
+so its spectrum will not be a single clean peak. Its slow cycle appears at
+approximately 0.0000231 Hz (1 / 43,200 s); enable the logarithmic frequency
+scale to separate it from the hourly peak. Drift leaks into the lowest bins, so
+`known_slow_cycle` is the clean reference for this peak.
+
+Try the incremental delivery workflow:
+
+1. Load day 1 using `Files -> Load Files`, inspect/analyze it, and save an embedded project.
+2. Reopen the project, then load day 2 using `Load Files`. Existing datasets remain.
+3. Save/reopen again and load day 3.
+4. To get one continuous dataframe, use `Merge Selected Files` and select days
+   1, 2, 3 in chronological order. The result has 259,200 rows.
+5. Save the updated project; publish any workspace edits you want to retain.
+
+Loading adds file datasets to the project registry; it does not automatically
+append rows to an existing dataset. Merge currently concatenates in selection
+order and does not sort timestamps or deduplicate overlaps. These demo files
+have no gaps or overlaps. Generating into a folder containing any of the target
+filenames is rejected to avoid overwriting files.

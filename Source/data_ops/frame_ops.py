@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
+from .time_axis import reference_axis_seconds
 
 
 def select_dataframe_columns(
@@ -89,9 +90,7 @@ def resample_to_uniform(
     if target_spacing <= 0:
         raise ValueError("Target spacing must be greater than zero")
 
-    time_series = pd.to_numeric(dataframe[time_column], errors="coerce")
-    if pd.api.types.is_datetime64_any_dtype(dataframe[time_column]):
-        time_series = pd.to_datetime(dataframe[time_column], errors="coerce").astype("int64") / 1e9
+    time_series = reference_axis_seconds(dataframe[time_column])
 
     valid_mask = time_series.notna()
     t_original = time_series.loc[valid_mask].to_numpy(dtype=float)

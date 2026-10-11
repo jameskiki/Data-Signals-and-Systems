@@ -4,7 +4,7 @@ import queue
 import threading
 from tkinter import filedialog, messagebox, simpledialog
 from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, INPUT_OUTPUT_DEMO, SPECTRAL_REFERENCE_DEMO, create_demo_dataset
-from .data_parser import DataParser
+from .data_parser import DataParser, PARSER_WARNINGS_ATTR
 from .datasets import DatasetContext, register_dataset, select_dataset_in_table, refresh_dataset_table, collect_source_paths, build_virtual_dataset_path, reconcile_merged_column_roles
 from .preparation import create_prepared_dataset as create_prepared_dataset_workflow, split_selected_dataset as split_selected_dataset_workflow
 from .plotting import PlotOptionsDialog
@@ -15,6 +15,23 @@ from Source.shared.dataset_dialogs import ask_dataset_save_path, DatasetExportFo
 from Source.shared.column_roles import get_available_column_roles, infer_non_time_column_role
 from Source.shared.plot_options import PlotDescriptor
 from Source.shared.plot_utils import create_plot_figure
+from Source.shared.longterm_demo import write_longterm_demo_files
+
+
+def generate_longterm_demo_files(app) -> None:
+	directory = filedialog.askdirectory(parent=app.root, title="Choose folder for three daily demo CSV files")
+	if not directory:
+		return
+	try:
+		paths = write_longterm_demo_files(directory)
+	except Exception as error:
+		messagebox.showerror("Demo Generation Error", str(error), parent=app.root)
+		return
+	app.notifications.success(
+		"Generated three daily files from one continuous test run",
+		details="\n".join(paths) + "\n\nLoad day 1, save your project, then reopen and load day 2/day 3. "
+		"Use Merge Selected Files to concatenate datasets when needed.",
+	)
 
 def load_files(app) -> None:
 	files = filedialog.askopenfilenames(filetypes=app.LOG_FILE_TYPES)
@@ -32,6 +49,7 @@ def load_files(app) -> None:
 	loaded_file_paths: list[str] = []
 	parse_info: list[str] = []
 	error_messages: list[str] = []
+	parser_warnings: list[str] = []
 	worker_done = False
 	finalized = False
 
@@ -71,7 +89,11 @@ def load_files(app) -> None:
 		summary_lines = [" | ".join(parse_info), report_text]
 		if error_messages:
 			summary_lines.extend(["", "Warnings:", *error_messages])
-		app.notifications.info("Load summary", details="\n".join(summary_lines))
+		if parser_warnings:
+			summary_lines.extend(["", "Datetime conversion warnings:", *parser_warnings])
+			app.notifications.warning("Load summary", details="\n".join(summary_lines))
+		else:
+			app.notifications.info("Load summary", details="\n".join(summary_lines))
 
 	def _poll_load_queue() -> None:
 		nonlocal worker_done
@@ -91,7 +113,13 @@ def load_files(app) -> None:
 					source_paths=[file_path],
 					description="Loaded source dataset",
 					column_roles=dataframe.attrs.get(DATAFRAME_ROLE_ATTR),
+					history_operation="load_file",
+					history_parameters={
+						"path": file_path, "separator": separator, "decimal_marker": decimal_marker,
+						"warnings": dataframe.attrs.get(PARSER_WARNINGS_ATTR, []),
+					},
 				)
+				parser_warnings.extend(dataframe.attrs.get(PARSER_WARNINGS_ATTR, []))
 				loaded_file_paths.append(file_path)
 				parse_info.append(
 					f"{os.path.basename(file_path)}: Parquet"
@@ -183,6 +211,8 @@ def _load_demo_dataset(app, demo_key: str, show_message: bool = True) -> str:
 		source_paths=[demo_source_path],
 		description=spec.description,
 		column_roles=spec.column_roles,
+		history_operation="load_demo",
+		history_parameters={"demo_key": demo_key},
 	)
 
 	if show_message:
@@ -330,6 +360,12 @@ def merge_selected_files(app) -> None:
 			source_paths=collect_source_paths(app, selected_file_paths),
 			description=f"Merged from {len(selected_file_paths)} datasets",
 			column_roles=merged_roles,
+			history_operation="merge",
+			history_inputs=tuple(
+				context.revision_id for path in selected_file_paths
+				if (context := app.dataset_contexts.get(path)) is not None and context.revision_id is not None
+			),
+			history_parameters={"ignore_index": True, "sort": False, "source_paths": selected_file_paths},
 		)
 		refresh_dataset_table(app)
 		select_dataset_in_table(app, save_path)
@@ -433,6 +469,8 @@ def open_analysis_workspace_for_path(app, selected_path: str) -> object | None:
 		dataset_description=app.dataset_contexts.get(selected_path, DatasetContext()).description,
 		on_close=app._on_analysis_workspace_closed,
 		on_publish_current_view=lambda workspace: publish_analysis_workspace_view(app, workspace),
+		operation_history=app.operation_history,
+		source_revision=app.dataset_contexts[selected_path].revision_id,
 	)
 	app._analysis_workspaces.append(workspace)
 	return workspace
@@ -442,6 +480,8 @@ def publish_analysis_workspace_view(app, workspace) -> str | None:
 	active_column = workspace.active_column_var.get().strip() if getattr(workspace, "active_column_var", None) is not None else ""
 	suffix = f"{active_column}_analysis" if active_column else "analysis_view"
 	published_path = build_virtual_dataset_path(app.data_frames, source_path, suffix)
+	existing_steps = {step.id for step in getattr(getattr(app, "operation_history", None), "steps", ())}
+	workspace_steps = [step_id for step_id in getattr(workspace, "history_step_ids", []) if step_id in existing_steps]
 	register_dataset(
 		app,
 		published_path,
@@ -449,6 +489,13 @@ def publish_analysis_workspace_view(app, workspace) -> str | None:
 		source_paths=collect_source_paths(app, [source_path]),
 		description=f"Published from analysis workspace ({os.path.basename(source_path)})",
 		column_roles=workspace.column_roles,
+		history_operation="publish" if getattr(workspace, "history_revision", None) else "untracked",
+		history_inputs=(workspace.history_revision,) if getattr(workspace, "history_revision", None) else (),
+		history_parameters={
+			"source_dataset": source_path,
+			"columns": [str(column) for column in workspace.session.working_frame.columns],
+			"workspace_steps": workspace_steps,
+		},
 	)
 	refresh_dataset_table(app)
 	select_dataset_in_table(app, published_path)
@@ -553,6 +600,7 @@ def apply_selected_column_role(app) -> None:
 	if context is None:
 		return
 
+	previous_roles = dict(context.column_roles)
 	dataframe = app.data_frames.get(selected_path)
 	if role_name == "time":
 		for existing_column, existing_role in list(context.column_roles.items()):
@@ -562,6 +610,12 @@ def apply_selected_column_role(app) -> None:
 				else:
 					context.column_roles[existing_column] = "metadata"
 	context.column_roles[column_name] = role_name
+	if context.revision_id is not None:
+		app.operation_history.record(
+			"assign_roles", selected_path, (context.revision_id,),
+			{"before": previous_roles, "after": context.column_roles},
+			output_revision=context.revision_id,
+		)
 	app._propagate_role_updates(selected_path, context.column_roles)
 
 	app._set_role_editor_column("", update_var=True)

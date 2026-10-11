@@ -102,12 +102,13 @@ class DummyWorkspace:
         except Exception as error:  # pragma: no cover - mirrors production behavior
             failed.append(error)
 
-    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None):
+    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None, **history):
         self.replace_calls.append(
             {
                 "dataframe": dataframe,
                 "role_overrides": role_overrides,
                 "focus_column": focus_column,
+                **history,
             }
         )
 

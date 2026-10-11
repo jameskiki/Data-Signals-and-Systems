@@ -5,6 +5,7 @@ import pandas as pd
 from scipy.signal import butter, hilbert, sosfiltfilt, sosfreqz
 
 from .filtering import resolve_filtered_column_name
+from .time_axis import reference_axis_seconds
 
 
 def add_derived_column(
@@ -302,11 +303,7 @@ def _get_reference_series(dataframe: pd.DataFrame, reference_column: str | None)
     if reference_column not in dataframe.columns:
         raise KeyError(f"Unknown reference column: {reference_column}")
 
-    reference = dataframe[reference_column]
-    if pd.api.types.is_datetime64_any_dtype(reference):
-        timestamps = pd.to_datetime(reference, errors="coerce")
-        return pd.Series(timestamps.astype("int64") / 1_000_000_000, index=dataframe.index)
-    return pd.to_numeric(reference, errors="coerce")
+    return reference_axis_seconds(dataframe[reference_column])
 
 
 def _validate_butterworth_order(order: int | str) -> int:

@@ -130,6 +130,9 @@ def build_plot_panel(workspace, parent: ttk.LabelFrame) -> None:
     workspace.plot_x_combo = plot_controls.x_combo
     workspace.plot_y_selector_button = plot_controls.y_selector_button
     workspace.plot_y_selector_menu = plot_controls.y_selector_menu
+    ttk.Button(
+        plot_controls.frame, text="Add View to Report (shown columns + zoom)", command=workspace._add_view_to_report,
+    ).grid(row=3, column=1, sticky="ew", padx=5, pady=(0, 5))
 
     workspace.plot_notebook = ttk.Notebook(parent)
     workspace.plot_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -482,6 +485,12 @@ def build_frequency_tab(workspace) -> None:
         values=FFT_WINDOW_OPTIONS,
     )
     workspace.fft_window_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
+    ttk.Checkbutton(
+        workspace.freq_general_frame,
+        text="Logarithmic frequency scale (DC hidden)",
+        variable=workspace.frequency_log_scale_var,
+        command=workspace._toggle_frequency_log_scale,
+    ).grid(row=2, column=0, columnspan=3, sticky="w", padx=5, pady=5)
     workspace.freq_general_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
 
     # --- Welch-specific options (only for Welch, Transfer, Coherence) ---

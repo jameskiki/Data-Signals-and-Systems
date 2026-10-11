@@ -69,6 +69,7 @@ def _verify_required_binary_modules(dist_lib_dir: pathlib.Path) -> None:
 
 def main() -> None:
     pathlib.Path("Dist/EvalData").mkdir(parents=True, exist_ok=True)
+    shutil.copy2("VERSION", pathlib.Path("Dist/EvalData") / "VERSION")
     dist_lib_dir = pathlib.Path("Dist/EvalData/lib")
     py2exe.freeze(
         windows=[{"script": "EvalData.py", "dest_base": "EvalData"}],

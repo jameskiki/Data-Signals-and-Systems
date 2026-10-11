@@ -10,7 +10,9 @@ from Source.data_ops.io_ops import read_dataframe_parquet, write_dataframe_with_
 from Source.datapreparation_app import actions
 from Source.datapreparation_app.app import DataPreparationApp
 from Source.datapreparation_app.datasets import DatasetContext
+from Source.datapreparation_app.datasets import register_dataset
 from Source.shared.plot_options import PlotStyle
+from Source.shared.operation_history import OperationHistory
 
 
 class DummyNotifications:
@@ -32,6 +34,7 @@ class DummyNotifications:
 class DummyApp:
     def __init__(self):
         self.notifications = DummyNotifications()
+        self.operation_history = OperationHistory()
         self.data_frames = {}
         self.dataset_contexts = {}
         self.session = SimpleNamespace(role_editor_column="", role_editor_value="")
@@ -335,6 +338,8 @@ def test_merge_save_wires_format_and_roles(tmp_path, monkeypatch, extension):
         for path in app.data_frames
     }
     app.multiple_selected_paths = list(app.data_frames)
+    for source_path, frame in list(app.data_frames.items()):
+        register_dataset(app, source_path, frame, column_roles={"signal": "metadata"}, history_operation="load_file")
     _configure_immediate_dataset_workflow(app, monkeypatch)
     path = str(tmp_path / ("merged" + extension))
     monkeypatch.setattr(actions, "ask_dataset_save_path", lambda *_: path)
@@ -347,6 +352,8 @@ def test_merge_save_wires_format_and_roles(tmp_path, monkeypatch, extension):
     if extension == ".parquet":
         assert restored.attrs["evaldata_column_roles"] == {"signal": "metadata"}
     assert len(app.notifications.success_messages) == 1
+    assert app.operation_history.steps[-1].operation == "merge"
+    assert len(app.operation_history.steps[-1].input_revisions) == 2
 
 
 def test_load_files_restores_parquet_roles_with_csv_in_same_batch(tmp_path, monkeypatch):

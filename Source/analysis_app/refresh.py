@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .actions import resolve_default_output_names
+from Source.data_ops.time_axis import reference_axis_seconds
 from Source.shared.display_format import format_data_summary_overview
 from Source.shared.column_roles import (
     get_preferred_role_column,
@@ -142,11 +143,7 @@ def infer_sample_spacing(dataframe: pd.DataFrame, time_column: str) -> float | N
     if time_column not in dataframe.columns:
         return None
 
-    reference_series = dataframe[time_column]
-    if pd.api.types.is_datetime64_any_dtype(reference_series):
-        numeric_reference = reference_series.astype("datetime64[ns]").astype("int64") / 1_000_000_000.0
-    else:
-        numeric_reference = pd.to_numeric(reference_series, errors="coerce")
+    numeric_reference = reference_axis_seconds(dataframe[time_column])
 
     diffs = pd.Series(numeric_reference).diff().dropna()
     if diffs.empty:

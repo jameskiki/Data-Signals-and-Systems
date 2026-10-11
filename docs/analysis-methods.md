@@ -244,3 +244,17 @@ Related pages:
 - [which-tool-when.md](which-tool-when.md) for window-level decisions
 - [technical-overview.md](technical-overview.md) for package layout and runtime flow
 - [latex/README.md](latex/README.md) for formal notes
+# Logarithmic Frequency Display
+
+The Frequency controls include `Logarithmic frequency scale (DC hidden)`.
+Linear is the default. Toggling changes the existing plot without recomputing
+the analysis: FFT, Welch, Transfer, and Coherence use a logarithmic horizontal
+frequency axis; spectrograms use a logarithmic vertical frequency axis. Transfer
+magnitude and phase stay aligned. Spectrogram time and color scales are unchanged.
+
+Zero-frequency/DC is outside the logarithmic view, but remains in numeric
+results, saved result tables, and exports. Return to linear to inspect DC.
+This is a workspace display option, not persisted in projects. The setting
+does not affect Bode/filter-preview plots. A log axis spreads existing low
+frequencies; it does not improve spectral resolution or reveal frequencies
+below a spectrogram's first positive bin.

@@ -126,7 +126,7 @@ class AnalysisWorkspaceStub:
         except Exception as error:  # pragma: no cover
             failed.append(error)
 
-    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None):
+    def _replace_working_frame(self, dataframe, role_overrides=None, focus_column=None, **history):
         self.session.working_frame = dataframe
         self.replace_calls.append(
             {

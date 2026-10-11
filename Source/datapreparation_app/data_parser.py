@@ -14,6 +14,7 @@ from Source.data_ops.io_ops import is_parquet_path, read_dataframe_parquet
 
 
 MIN_DATETIME_PARSE_RATIO = 0.8
+PARSER_WARNINGS_ATTR = "evaldata_parser_warnings"
 
 # Compiled once at import time — used in both load_file and parse_datetime_series.
 _DATETIME_COL_RE = re.compile(r"(time|date|timestamp)", re.I)
@@ -81,7 +82,10 @@ class DataParser:
     _DATETIME_PROBE_SIZE = 200
 
     @staticmethod
-    def parse_datetime_series(series: pd.Series) -> pd.Series:
+    def parse_datetime_series(
+        series: pd.Series,
+        diagnostic_callback: Callable[[str], None] | None = None,
+    ) -> pd.Series:
         """
         Attempt to parse a pandas Series as datetime, trying multiple formats.
         Args:
@@ -103,18 +107,36 @@ class DataParser:
             return series
         # Probe format detection on a small sample to avoid O(formats × n_rows) overhead.
         probe = stripped.iloc[: DataParser._DATETIME_PROBE_SIZE]
+        full_parsed = None
         for fmt in _DATETIME_FORMATS:
             parsed = pd.to_datetime(probe, format=fmt, errors="coerce")
             if DataParser._is_sufficient_datetime_parse(parsed):
-                return pd.to_datetime(full_stripped, format=fmt, errors="coerce")
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Could not infer format.*")
-            parsed = pd.to_datetime(probe, errors="coerce")
-        if DataParser._is_sufficient_datetime_parse(parsed):
+                full_parsed = pd.to_datetime(full_stripped, format=fmt, errors="coerce")
+                break
+        if full_parsed is None:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="Could not infer format.*")
-                return pd.to_datetime(full_stripped, errors="coerce")
-        return series
+                parsed = pd.to_datetime(probe, errors="coerce")
+            if not parsed.notna().any():
+                return series
+            full_parsed = pd.to_datetime(full_stripped, format="mixed", errors="coerce")
+        valid_mask = candidate_mask & full_stripped.ne("")
+        failed_count = int(full_parsed[valid_mask].isna().sum())
+        candidate_count = int(valid_mask.sum())
+        if failed_count:
+            accepted = DataParser._is_sufficient_datetime_parse(full_parsed[valid_mask])
+            message = (
+                f"Datetime column '{series.name}': {failed_count} of {candidate_count} "
+                f"non-empty values could not be parsed; "
+                + ("converted to missing timestamps." if accepted else "original values retained (below 80% validity).")
+            )
+            if diagnostic_callback is not None:
+                diagnostic_callback(message)
+            else:
+                warnings.warn(message, RuntimeWarning, stacklevel=2)
+            if not accepted:
+                return series
+        return full_parsed
 
     @staticmethod
     def _is_sufficient_datetime_parse(parsed: pd.Series) -> bool:
@@ -250,6 +272,7 @@ class DataParser:
             if (last_col == "" or str(last_col).startswith("Unnamed")) and df.iloc[:, -1].isna().all():
                 df = df.iloc[:, :-1]
 
+        parser_warnings: list[str] = []
         datetime_columns = [col for col in df.columns if _DATETIME_COL_RE.search(str(col))]
         datetime_total = max(1, len(datetime_columns))
         for index, col in enumerate(datetime_columns, start=1):
@@ -257,9 +280,11 @@ class DataParser:
             _report(progress, 100.0, f"Parsing datetime columns ({index}/{datetime_total})")
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 continue  # already parsed inline by read_csv
-            parsed = DataParser.parse_datetime_series(df[col])
+            parsed = DataParser.parse_datetime_series(df[col], parser_warnings.append)
             if pd.api.types.is_datetime64_any_dtype(parsed):
                 df[col] = parsed
         if not datetime_columns:
             _report(100.0, 100.0, "Finalizing")
+        if parser_warnings:
+            df.attrs[PARSER_WARNINGS_ATTR] = parser_warnings
         return df, sep, decimal_marker

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 from scipy.signal import csd, find_peaks, get_window, spectrogram, welch
+from .time_axis import reference_axis_seconds
 
 
 FFT_WINDOW_OPTIONS = ["hann", "hamming", "blackman", "rectangular"]
@@ -448,10 +449,7 @@ def compute_spectrogram(
 
 
 def _coerce_reference_axis(reference_series: pd.Series) -> pd.Series:
-    if pd.api.types.is_datetime64_any_dtype(reference_series):
-        timestamps = pd.to_datetime(reference_series, errors="coerce")
-        return pd.Series(timestamps.astype("int64") / 1_000_000_000, index=reference_series.index)
-    return pd.to_numeric(reference_series, errors="coerce")
+    return reference_axis_seconds(reference_series)
 
 
 def _estimate_sample_spacing(reference_values: pd.Series) -> tuple[float, float]:

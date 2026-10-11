@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 
@@ -38,6 +40,7 @@ from Source.shared.plot_utils import (
     create_residual_spectrum_figure,
     create_signal_comparison_figure,
     create_spectrogram_figure,
+    resolve_x_values,
 )
 
 from .state import PlotStyleVars
@@ -192,9 +195,44 @@ def render_plot_figure(
         clear_container_before_create=True,
         plot_type=plot_type,
     )
+    workspace._plot_descriptor = plot_type
+
+
+def capture_time_series_view(workspace) -> dict[str, object]:
+    """Describe the shown time-series plot (columns, layout, zoomed X range, Y scale) for a report view."""
+
+    descriptor = getattr(workspace, "_plot_descriptor", None)
+    figure = getattr(workspace, "_plot_figure", None)
+    columns = list(workspace.session.selected_y_columns or [])
+    if figure is None or descriptor is None or descriptor.family != "Time series" or not columns:
+        raise ValueError("Show a time-series plot first (Update Plot), then zoom with the plot toolbar if needed.")
+    axes = [axis for axis in figure.get_axes() if axis.get_visible()]
+    frame = workspace.session.working_frame
+    x_column = workspace.session.selected_x_column or "Index"
+    x_values, _ = resolve_x_values(frame, x_column)
+    x_series = (x_values.to_series() if isinstance(x_values, pd.Index) else x_values).reset_index(drop=True)
+    low, high = sorted(axes[0].get_xlim())
+    if pd.api.types.is_datetime64_any_dtype(x_series):
+        bounds = [pd.Timestamp(mdates.num2date(value)) for value in (low, high)]
+        if x_series.dt.tz is None:
+            bounds = [value.tz_convert(None) for value in bounds]
+        full = bounds[0] <= x_series.min() and bounds[1] >= x_series.max()
+        x_range = None if full else [value.isoformat() for value in bounds]
+    else:
+        numeric = pd.to_numeric(x_series, errors="coerce")
+        full = low <= numeric.min() and high >= numeric.max()
+        x_range = None if full else [float(low), float(high)]
+    return {
+        "x_column": x_column,
+        "y_columns": columns,
+        "subplots": bool(workspace.session.use_subplots),
+        "x_range": x_range,
+        "y_scale": "log" if any(axis.get_yscale() == "log" for axis in axes) else "linear",
+    }
 
 
 def clear_plot_container(workspace) -> None:
+    workspace._plot_descriptor = None
     if workspace._plot_figure is not None:
         plt.close(workspace._plot_figure)
         workspace._plot_figure = None
@@ -202,6 +240,39 @@ def clear_plot_container(workspace) -> None:
     workspace._plot_toolbar = None
     for widget in workspace.plot_container.winfo_children():
         widget.destroy()
+
+
+def configure_frequency_scale(figure, axes, frequencies, direction: str, logarithmic: bool) -> None:
+    positive = np.asarray(frequencies)
+    positive = positive[np.isfinite(positive) & (positive > 0)]
+    if not positive.size:
+        raise ValueError("Frequency plot requires at least one positive frequency.")
+    figure._evaldata_frequency_axes = [
+        (
+            axis, direction, (float(positive.min()), float(positive.max())),
+            axis.get_xlim() if direction == "x" else axis.get_ylim(),
+            (axis.xaxis if direction == "x" else axis.yaxis).get_major_locator(),
+            (axis.xaxis if direction == "x" else axis.yaxis).get_major_formatter(),
+        )
+        for axis in axes
+    ]
+    apply_frequency_scale(figure, logarithmic)
+
+
+def apply_frequency_scale(figure, logarithmic: bool) -> None:
+    from matplotlib.ticker import LogFormatterSciNotation, LogLocator
+
+    for axis, direction, positive_limits, linear_limits, locator, formatter in figure._evaldata_frequency_axes:
+        scale_axis = axis.xaxis if direction == "x" else axis.yaxis
+        set_scale = axis.set_xscale if direction == "x" else axis.set_yscale
+        set_limits = axis.set_xlim if direction == "x" else axis.set_ylim
+        set_scale("log" if logarithmic else "linear")
+        limits = positive_limits if logarithmic else linear_limits
+        if logarithmic and limits[0] == limits[1]:
+            limits = (limits[0] / 2, limits[1] * 2)
+        set_limits(*limits)
+        scale_axis.set_major_locator(LogLocator() if logarithmic else locator)
+        scale_axis.set_major_formatter(LogFormatterSciNotation() if logarithmic else formatter)
 
 
 def render_fft_result(
@@ -285,6 +356,10 @@ def render_fft_result(
         )
     apply_numeric_axis_format(axis, format_x=True, format_y=True)
     figure.tight_layout()
+    log_var = getattr(workspace, "frequency_log_scale_var", None)
+    configure_frequency_scale(
+        figure, figure.get_axes(), frequencies, "x", bool(log_var.get()) if log_var is not None else False,
+    )
     render_frequency_figure(workspace, figure, PlotDescriptor("Frequency", result.analysis_name))
 
 
@@ -326,6 +401,11 @@ def render_spectrogram_result(
 
     style = get_default_plot_style(workspace.style_vars)
     figure = create_spectrogram_figure(plot_data, style=style)
+    log_var = getattr(workspace, "frequency_log_scale_var", None)
+    configure_frequency_scale(
+        figure, figure.get_axes()[:1], plot_data.frequencies, "y",
+        bool(log_var.get()) if log_var is not None else False,
+    )
 
     render_frequency_figure(workspace, figure, PlotDescriptor("Frequency", "Spectrogram"))
 

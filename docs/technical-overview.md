@@ -122,6 +122,43 @@ The current minimal session-data model intentionally keeps the flow explicit:
 
 The important rule is that the analysis workspace does not mutate the shared session dataframe in place. It owns a local original/working copy pair, and publishing creates a new dataset entry back in the session registry.
 
+## Prototype Operation History
+
+`Source/shared/operation_history.py` holds a UI-independent, in-memory record
+of input/output revisions. Dataset contexts carry dataset and revision IDs, and
+analysis workspaces share the history while keeping their own working revision.
+Publishing records a pass-through `publish` step with its own output revision, so
+the published registry entry is a distinct graph node; append replay skips it.
+Workspaces remember the step IDs they record (`history_step_ids`); publish stores
+them as `workspace_steps`, drawn as dashed links in the history graph.
+
+The main window's `View -> History / Workflow (Prototype)` opens a read-only
+chronological list and top-to-bottom Tk canvas graph. Coverage is deliberately
+partial; unsupported dataframe replacements are marked untracked. Role edits
+are metadata events on an existing data revision; frequency/cycle analyses and
+cycle review decisions retain independent numeric result tables on that revision.
+There is no replay.
+Recorded transformations include filtering, derived signals, resampling,
+splits/merges, resets, and applied cycle ranges. Load records retain datetime
+conversion warnings, also surfaced in the load summary.
+See the [prototype walkthrough and plan](session-workflow-plan.md).
+
+`Source/datapreparation_app/report.py` builds a self-contained HTML report from
+one publish step (`build_publish_report`). It reads only the history, loaded
+dataframes, and stored result tables (no widgets), escapes all text, embeds
+matplotlib `Figure` PNGs as base64, and warns about stale, deleted, untracked,
+or missing inputs instead of substituting data. Report views (`report_view` steps
+recorded by `record_workspace_view`) store only plot settings captured by
+`capture_time_series_view` and are re-rendered from the published dataframe.
+
+`Source/datapreparation_app/project_io.py` saves embedded `.evaldata` archives:
+a versioned JSON manifest and Parquet snapshots for registry datasets and result
+tables. Dataframe indexes and types are preserved. Payload checksums, identity
+links, and result-table completeness are validated before opening. A temporary
+archive is validated before atomic replacement on save. Reopening replaces the
+registry after confirmation and closes analysis/comparison windows; it does not
+restore their layouts or unpublished data. Save/open are synchronous for now.
+
 ## Large Dataset Performance
 
 The required pandas 3 runtime provides copy-on-write. Workspace original/working

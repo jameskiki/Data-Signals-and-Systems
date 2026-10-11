@@ -26,14 +26,20 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import pandas as pd
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from .datasets import (
     DatasetContext,
+    dataset_display_name,
+    rename_dataset,
     refresh_dataset_table,
     select_dataset_in_table,
 )
 from .plot_gallery import PlotGallery
+from .history_view import HistoryWindow
+from .project_io import ProjectSnapshot, save_project, load_project
+from .append_workflow import plan_append, execute_append
+from Source.shared.operation_history import OperationHistory
 from .layout import build_main_ui
 from .preview import (
     clear_preview_plot,
@@ -80,6 +86,8 @@ class DataPreparationApp(PresentationShellMixin):
         self.root.geometry(WINDOW_GEOMETRY)
         self.root.protocol("WM_DELETE_WINDOW", self._handle_app_close)
         self.session = DataPreparationSession()
+        self.operation_history = OperationHistory()
+        self._history_window: HistoryWindow | None = None
 
         # Preserve the config surface expected by workflow helpers.
         self.APP_TITLE = APP_TITLE
@@ -872,6 +880,128 @@ class DataPreparationApp(PresentationShellMixin):
         context = self.dataset_contexts.get(selected_path, DatasetContext()) if selected_path else DatasetContext()
         self._refresh_role_editor_styles(context.column_roles)
 
+    def save_project(self) -> None:
+        if self._analysis_workspaces and not messagebox.askyesno(
+            "Save Project",
+            "Only datasets in the main list are embedded. Unpublished workspace edits are NOT saved. "
+            "Analysis result tables and history are saved, but their intermediate input frames may not be. "
+            "Publish any working data you want to retain before saving.\n\nContinue?",
+            parent=self.root,
+        ):
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title="Save Embedded Project", defaultextension=".evaldata",
+            filetypes=[("EvalData project", "*.evaldata")],
+        )
+        if not path:
+            return
+        try:
+            save_project(path, ProjectSnapshot(self.data_frames, self.dataset_contexts, self.operation_history))
+        except Exception as error:
+            messagebox.showerror("Project Save Error", str(error), parent=self.root)
+            return
+        self.notifications.success("Embedded project saved")
+
+    def open_project(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self.root, title="Open Embedded Project", filetypes=[("EvalData project", "*.evaldata")],
+        )
+        if not path:
+            return
+        try:
+            snapshot = load_project(path)
+        except Exception as error:
+            messagebox.showerror("Project Open Error", str(error), parent=self.root)
+            return
+        if self.data_frames or self._analysis_workspaces or self._comparison_windows:
+            if not messagebox.askyesno(
+                "Replace Current Session", "Opening replaces the current datasets and history and closes analysis/comparison "
+                "windows. Unsaved changes will be lost. Continue?", parent=self.root,
+            ):
+                return
+        for workspace in list(self._analysis_workspaces):
+            workspace.close()
+        for window in list(self._comparison_windows):
+            window.close()
+        self.data_frames.clear()
+        self.data_frames.update(snapshot.data_frames)
+        self.dataset_contexts.clear()
+        self.dataset_contexts.update(snapshot.dataset_contexts)
+        self.operation_history = snapshot.history
+        if self._history_window is not None and self._history_window.window.winfo_exists():
+            self._history_window.history = snapshot.history
+            self._history_window.refresh()
+        self._reset_row_range()
+        refresh_dataset_table(self)
+        self._refresh_dataset_preparation_views()
+        self.notifications.success("Embedded project reopened; saved results are available in History / Workflow")
+
+    def append_selected_dataset(self) -> None:
+        target = self._get_single_selected_file_path("Select the dataset whose processing should be continued")
+        if target is None:
+            return
+        incoming = self._prompt_multi_dataset_selection("Select exactly ONE incoming RAW dataset")
+        if not incoming:
+            return
+        if len(incoming) != 1:
+            self.notifications.warning("Select exactly one incoming raw dataset")
+            return
+        try:
+            plan = plan_append(self, target, incoming[0])
+        except Exception as error:
+            messagebox.showerror("Append Preview Error", str(error), parent=self.root)
+            return
+        operations = "\n".join(
+            f"{index}. {step.operation}: {step.parameters_json}" for index, step in enumerate(plan.operations, 1)
+        ) or "(No reusable processing; create combined raw data only.)"
+        preview = (
+            f"Raw source: {dataset_display_name(plan.raw_path, self.dataset_contexts[plan.raw_path])}\n"
+            f"Incoming: {dataset_display_name(plan.incoming_path, self.dataset_contexts[plan.incoming_path])}\n\n"
+            f"Operations to reapply over the FULL combined run:\n{operations}\n\n"
+            + ("\n".join(plan.warnings) + "\n\n" if plan.warnings else "")
+            + "Old data and FFT/Welch/statistics/cycle snapshots stay unchanged. "
+            "New snapshot analyses must be requested separately. Continue?"
+        )
+        if not messagebox.askyesno("Append + Reapply Processing", preview, parent=self.root):
+            return
+        try:
+            raw_path, result_path = execute_append(self, plan)
+        except Exception as error:
+            messagebox.showerror("Append Processing Error", str(error), parent=self.root)
+            return
+        refresh_dataset_table(self)
+        select_dataset_in_table(self, result_path)
+        self._refresh_dataset_preparation_views()
+        self.notifications.success(
+            "Appended raw data and reapplied processing; previous results preserved",
+            details=f"Combined raw: {raw_path}\nResult: {result_path}",
+        )
+
+    def rename_selected_dataset(self) -> None:
+        path = self._get_single_selected_file_path("Select a dataset to rename")
+        if path is None:
+            return
+        name = simpledialog.askstring(
+            "Rename Dataset", "Display name (source file is unchanged):",
+            initialvalue=dataset_display_name(path, self.dataset_contexts.get(path)), parent=self.root,
+        )
+        if name is None:
+            return
+        try:
+            rename_dataset(self, path, name)
+        except ValueError as error:
+            messagebox.showerror("Rename Dataset Error", str(error), parent=self.root)
+            return
+        refresh_dataset_table(self)
+        self.notifications.success("Dataset display name updated; source file and data are unchanged")
+
+    def open_history_window(self) -> None:
+        if self._history_window is None or not self._history_window.window.winfo_exists():
+            self._history_window = HistoryWindow(self.root, self.operation_history, self)
+        else:
+            self._history_window.refresh()
+            self._history_window.window.lift()
+
     def apply_selected_column_role(self) -> None:
         return apply_selected_column_role(self)
 
@@ -885,7 +1015,13 @@ class DataPreparationApp(PresentationShellMixin):
         if context is None or dataframe is None:
             return
 
+        previous_roles = dict(context.column_roles)
         context.column_roles = infer_column_roles(dataframe)
+        if context.revision_id is not None:
+            self.operation_history.record(
+                "reinfer_roles", selected_path, (context.revision_id,),
+                {"before": previous_roles, "after": context.column_roles}, output_revision=context.revision_id,
+            )
         self._propagate_role_updates(selected_path, context.column_roles)
         self._refresh_dataset_preparation_views()
 
@@ -948,7 +1084,10 @@ class DataPreparationApp(PresentationShellMixin):
         listbox.configure(yscrollcommand=scrollbar.set)
 
         paths = list(self.data_frames.keys())
-        self.populate_listbox(listbox, [os.path.basename(path) for path in paths])
+        self.populate_listbox(
+            listbox,
+            [f"{dataset_display_name(path, self.dataset_contexts.get(path))} [{os.path.basename(path)}]" for path in paths],
+        )
 
         result: list[str] = []
 

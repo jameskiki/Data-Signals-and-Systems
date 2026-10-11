@@ -7,6 +7,7 @@ from Source.shared.documentation_links import DOCUMENTATION_LINKS
 from Source.shared.plot_style_dialog import open_plot_style_dialog
 from Source.shared.status_widget import StatusBar
 from .demo import COMPARISON_DEMO_SPECS, DEMO_DATASET_SPECS, build_demo_menu_description_lines
+from .actions import generate_longterm_demo_files
 
 
 def build_main_ui(app, preview_row_limit: int) -> None:
@@ -15,6 +16,9 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar = tk.Menu(app.root)
 
     file_menu = tk.Menu(menu_bar, tearoff=0)
+    file_menu.add_command(label="Open Project...", command=app.open_project)
+    file_menu.add_command(label="Save Embedded Project...", command=app.save_project)
+    file_menu.add_separator()
     file_menu.add_command(label="Load Files", command=app.load_files)
     file_menu.add_command(label="Unload File", command=app.unload_selected_files)
     file_menu.add_separator()
@@ -24,6 +28,10 @@ def build_main_ui(app, preview_row_limit: int) -> None:
 
     demo_menu = tk.Menu(menu_bar, tearoff=0)
     demo_menu.add_command(label="Plot Gallery", command=app.open_plot_gallery)
+    demo_menu.add_command(
+        label="Generate Long-Term Run Files (3 Days)...",
+        command=lambda: generate_longterm_demo_files(app),
+    )
     demo_menu.add_separator()
     comparison_demo_keys = {spec.key for spec in COMPARISON_DEMO_SPECS}
     for spec in DEMO_DATASET_SPECS:
@@ -54,6 +62,8 @@ def build_main_ui(app, preview_row_limit: int) -> None:
 
     preparation_menu = tk.Menu(menu_bar, tearoff=0)
     preparation_menu.add_command(label="Create Prepared Dataset", command=app.create_prepared_dataset)
+    preparation_menu.add_command(label="Rename Selected Dataset...", command=app.rename_selected_dataset)
+    preparation_menu.add_command(label="Append + Reapply Processing...", command=app.append_selected_dataset)
     preparation_menu.add_command(label="Split Into Subframes", command=app.split_selected_dataset)
     menu_bar.add_cascade(label="Preparation", menu=preparation_menu)
 
@@ -67,6 +77,7 @@ def build_main_ui(app, preview_row_limit: int) -> None:
     menu_bar.add_cascade(label="Analysis", menu=analysis_menu)
 
     view_menu = tk.Menu(menu_bar, tearoff=0)
+    view_menu.add_command(label="History / Workflow (Prototype)", command=app.open_history_window)
     view_menu.add_command(
         label="Plot Style...",
         command=lambda: open_plot_style_dialog(
@@ -151,6 +162,8 @@ def build_dataset_selector(app, parent: ttk.Frame) -> None:
 
     info_frame = ttk.Frame(selector_frame, padding=(5, 0, 5, 4))
     info_frame.pack(fill=tk.X)
+    ttk.Button(info_frame, text="Rename Selected Dataset...", command=app.rename_selected_dataset).pack(anchor="w")
+    ttk.Button(info_frame, text="Append + Reapply Processing...", command=app.append_selected_dataset).pack(anchor="w")
     ttk.Label(info_frame, textvariable=app.dataset_shape_var, wraplength=800).pack(anchor="w", padx=5, pady=1)
     ttk.Label(info_frame, textvariable=app.dataset_note_var, wraplength=800).pack(anchor="w", padx=5, pady=(1, 2))
 
